@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: WoL Manager API
+  version: 1.0.0-beta.1
+  description: Les émissions WoL sont toujours résolues depuis la configuration du serveur.
+servers:
+  - url: https://127.0.0.1:8080/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      summary: Santé du service
+      responses:
+        '200': {description: Service disponible, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /servers:
+    get:
+      summary: Liste des serveurs
+      responses:
+        '200': {description: Inventaire, content: {application/json: {schema: {type: object, additionalProperties: {$ref: '#/components/schemas/Server'}}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /servers/{id}/status:
+    parameters: [{$ref: '#/components/parameters/Id'}]
+    get:
+      summary: État observé d'un serveur
+      responses:
+        '200': {description: Résultat, content: {application/json: {schema: {$ref: '#/components/schemas/Status'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /servers/{id}/wake:
+    parameters: [{$ref: '#/components/parameters/Id'}]
+    post:
+      summary: Crée une tâche de réveil
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, properties: {dry_run: {type: boolean}}, additionalProperties: false}
+      responses:
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /groups/{id}/wake:
+    parameters: [{$ref: '#/components/parameters/Id'}]
+    post:
+      summary: Crée une tâche de réveil de groupe
+      responses:
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /wake-all:
+    post:
+      summary: Réveille tous les serveurs actifs
+      responses:
+        '202': {$ref: '#/components/responses/JobAccepted'}
+  /ups:
+    get:
+      summary: États NUT
+      responses:
+        '200': {description: États UPS, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+  /jobs/{id}:
+    parameters: [{$ref: '#/components/parameters/Id'}]
+    get:
+      summary: Consulte une tâche
+      responses:
+        '200': {description: Tâche, content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /jobs/{id}/cancel:
+    parameters: [{$ref: '#/components/parameters/Id'}]
+    post:
+      summary: Demande l'annulation d'une tâche
+      responses:
+        '202': {description: Annulation demandée}
+        '409': {description: Tâche non annulable}
+  /networks:
+    get:
+      summary: Réseaux configurés
+      responses:
+        '200': {description: Réseaux, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+  /networks/diagnostics:
+    get:
+      summary: Plan et raisons de sélection des transports
+      responses:
+        '200': {description: Diagnostics, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+  /networks/discovery:
+    post:
+      summary: Crée une tâche de découverte
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                active: {type: boolean}
+                confirm: {type: boolean, description: Obligatoire pour le mode actif}
+                dry_run: {type: boolean}
+              additionalProperties: false
+      responses:
+        '202': {$ref: '#/components/responses/JobAccepted'}
+        '403': {description: Découverte active non autorisée}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: opaque-256-bit}
+  parameters:
+    Id: {name: id, in: path, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_.-]+$'}}
+  schemas:
+    Object: {type: object, additionalProperties: true}
+    Server:
+      type: object
+      properties:
+        name: {type: string}
+        mac: {type: string}
+        ip: {type: string, format: ipv4}
+        network: {type: string}
+        groups: {type: array, items: {type: string}}
+    Status:
+      type: object
+      required: [server, state, results]
+      properties:
+        server: {type: string}
+        state: {type: string, enum: [reachable, unreachable, unknown, check_impossible]}
+        results: {type: array, items: {$ref: '#/components/schemas/Object'}}
+    Job:
+      type: object
+      required: [id, kind, target, state, created, updated]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        target: {type: string}
+        state: {type: string, enum: [queued, running, completed, failed, cancelled, revalidation_required]}
+        created: {type: string, format: date-time}
+        updated: {type: string, format: date-time}
+        message: {type: string}
+        result: {}
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties: {code: {type: string}, message: {type: string}}
+  responses:
+    JobAccepted: {description: Tâche créée, content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}}
+    Unauthorized: {description: Jeton absent ou invalide, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Forbidden: {description: Permission insuffisante, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    NotFound: {description: Ressource inconnue, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}

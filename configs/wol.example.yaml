@@ -1,0 +1,95 @@
+version: 1
+
+global:
+  port: 9
+  transport_order: [local_broadcast, unicast, directed_broadcast, relay]
+  wake_timeout: 45s
+  wake_retries: 1
+  delay: 2s
+  checks:
+    - type: tcp
+      port: 22
+      timeout: 2s
+
+networks:
+  management:
+    cidr: 192.168.10.0/24
+    interface: eth0.10
+    source_ip: 192.168.10.2
+    allow_local_broadcast: true
+    allow_unicast: true
+    allow_directed_broadcast: false
+  servers:
+    cidr: 192.168.20.0/24
+    allow_local_broadcast: false
+    allow_unicast: true
+    allow_directed_broadcast: false
+    relay: relay-vlan20
+
+groups:
+  infrastructure:
+    priority: 10
+    servers: [storage-1]
+    ups_policy:
+      ups: ups-main
+      require_online: true
+      min_battery: 30
+      min_runtime_seconds: 600
+
+servers:
+  storage-1:
+    name: Stockage principal
+    mac: "02:00:00:00:20:01"
+    ip: 192.168.20.10
+    network: servers
+    groups: [infrastructure]
+    checks:
+      - {type: tcp, port: 22, timeout: 3s}
+      - {type: arp}
+
+api:
+  listen: 127.0.0.1:8080
+  tokens_file: /etc/wol-manager/secrets/tokens.json
+  rate_per_minute: 60
+  allow_active_discovery: false
+
+storage:
+  state_file: /var/lib/wol-manager/state.json
+  audit_file: /var/log/wol-manager/audit.jsonl
+
+network_discovery:
+  passive_enabled: true
+  active_enabled: false
+  allowed_subnets: [192.168.10.0/24, 192.168.20.0/24]
+  safeguards:
+    require_confirmation: true
+    max_packets: 20
+    rate_limit_pps: 2
+    timeout: 30s
+  logging: {enabled: true}
+
+ups:
+  ups-main:
+    address: 127.0.0.1:3493
+    name: ups
+    tls: false
+# Pour un NUT distant : tls: true, ca_cert et server_name explicites.
+#   ca_cert: /etc/wol-manager/pki/nut-ca.crt
+#   server_name: nut.example.internal
+    timeout: 3s
+
+relays:
+  relay-vlan20:
+    url: https://192.168.20.2:9443
+    ca_cert: /etc/wol-manager/pki/ca.crt
+    client_cert: /etc/wol-manager/pki/manager.crt
+    client_key: /etc/wol-manager/secrets/manager.key
+    timeout: 5s
+
+automations:
+  - id: restore-infrastructure
+    enabled: false
+    event: nut.power_restored
+    ups: ups-main
+    group: infrastructure
+    stable_for: 30s

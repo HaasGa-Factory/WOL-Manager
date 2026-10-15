@@ -1,0 +1,11 @@
+{
+  "manifest_version": 1,
+  "version": "1.0.0-beta.1",
+  "channel": "main",
+  "source_revision": "4a0ed83ed5b82ac33d5dcfe7667a85d64a266823",
+  "key_id": "wol-manager-2026-01",
+  "linux_amd64_file": "wol-linux-amd64",
+  "linux_amd64_sha256": "7648de9fb1855399c4abba27b571f68f2ec1668bb176c1cf7bd4a11d5e9754ee",
+  "linux_arm64_file": "wol-linux-arm64",
+  "linux_arm64_sha256": "68f9d8310a0de45872f72e11f207fed6966adad24d7fa34b5b19ff0fde45dfc7"
+}

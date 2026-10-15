@@ -1,0 +1,30 @@
+[Unit]
+Description=WoL Manager API and automation service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wol-manager
+Group=wol-manager
+ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml api serve
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/wol-manager /var/log/wol-manager
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,206 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+type Engine struct {
+	cfg    *Config
+	audit  *Auditor
+	dry    bool
+	noWait bool
+}
+type WakeResult struct {
+	Server      string        `json:"server"`
+	Transport   string        `json:"transport"`
+	Destination string        `json:"destination,omitempty"`
+	Packet      string        `json:"packet"`
+	Verified    bool          `json:"verified"`
+	Status      *StatusResult `json:"status,omitempty"`
+	Note        string        `json:"note"`
+}
+
+func (e *Engine) wakeTree(ctx context.Context, id string, done map[string]bool) ([]WakeResult, error) {
+	if done[id] {
+		return nil, nil
+	}
+	s, ok := e.cfg.Servers[id]
+	if !ok {
+		return nil, fmt.Errorf("serveur inconnu %q", id)
+	}
+	if !enabled(s) {
+		return nil, fmt.Errorf("serveur %s désactivé", id)
+	}
+	if !e.dry {
+		status := checkServer(ctx, e.cfg, id)
+		if status.State == "reachable" {
+			done[id] = true
+			return []WakeResult{{Server: id, Packet: "not_sent", Verified: true, Status: &status, Note: "machine déjà joignable; aucun paquet émis"}}, nil
+		}
+	}
+	var out []WakeResult
+	for _, d := range e.cfg.dependencies(id) {
+		x, err := e.wakeTree(ctx, d, done)
+		out = append(out, x...)
+		if err != nil {
+			return out, fmt.Errorf("dépendance %s: %w", d, err)
+		}
+	}
+	if !e.dry {
+		if err := checkUPSPolicy(ctx, e.cfg, id); err != nil {
+			return out, err
+		}
+	}
+	x, err := e.wakeOne(ctx, id)
+	out = append(out, x)
+	if err != nil {
+		return out, err
+	}
+	done[id] = true
+	_, _, delay := e.cfg.effectiveTiming(id)
+	if delay > 0 {
+		select {
+		case <-ctx.Done():
+			return out, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return out, nil
+}
+func (e *Engine) wakeOne(ctx context.Context, id string) (WakeResult, error) {
+	plan, err := transportPlan(e.cfg, id)
+	if err != nil {
+		return WakeResult{Server: id, Packet: "not_sent", Note: err.Error()}, err
+	}
+	var d TransportDecision
+	for _, x := range plan {
+		if x.State == "selected" {
+			d = x
+			break
+		}
+	}
+	r := WakeResult{Server: id, Transport: d.Name, Destination: d.Destination, Packet: "not_sent", Note: "un paquet émis ne garantit pas le réveil"}
+	if e.dry {
+		r.Packet = "dry_run"
+		r.Note = "simulation: aucun paquet émis; disponibilité et politique UPS à revalider lors de l'exécution"
+		e.audit.write("wake", "cli", id, "dry_run", d)
+		return r, nil
+	}
+	mac, _ := net.ParseMAC(e.cfg.Servers[id].MAC)
+	packet := magicPacket(mac)
+	timeout, retries, _ := e.cfg.effectiveTiming(id)
+	attempts := retries + 1
+	deadline := time.Now().Add(timeout)
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if d.Name == "relay" {
+			err = e.sendRelay(ctx, d.Relay, id)
+		} else {
+			n := e.cfg.Networks[e.cfg.Servers[id].Network]
+			err = sendMagic(d.Destination, sourceForNetwork(n), d.Name != "unicast", packet)
+		}
+		if err != nil {
+			if attempt == attempts {
+				e.audit.write("wake", "engine", id, "failed", err.Error())
+				return r, err
+			}
+			continue
+		}
+		r.Packet = "sent"
+		window := deadline
+		if remaining := attempts - attempt + 1; remaining > 1 {
+			window = time.Now().Add(time.Until(deadline) / time.Duration(remaining))
+		}
+		for {
+			status := checkServer(ctx, e.cfg, id)
+			r.Status = &status
+			r.Verified = status.State == "reachable"
+			if r.Verified {
+				r.Note = "paquet émis et machine joignable selon les vérifications configurées"
+				e.audit.write("wake", "engine", id, "verified", r)
+				return r, nil
+			}
+			if e.noWait {
+				e.audit.write("wake", "engine", id, "sent", r)
+				return r, nil
+			}
+			if time.Now().Add(2 * time.Second).After(window) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return r, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+	e.audit.write("wake", "engine", id, "sent", r)
+	return r, nil
+}
+func (e *Engine) sendRelay(ctx context.Context, relay, id string) error {
+	r := e.cfg.Relays[relay]
+	cl, err := relayHTTPClient(r)
+	if err != nil {
+		return err
+	}
+	requestID, err := newID()
+	if err != nil {
+		return err
+	}
+	b, _ := json.Marshal(map[string]string{"server": id, "request_id": requestID})
+	req, _ := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(r.URL, "/")+"/relay/v1/wake", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cl.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("relais: %s: %s", resp.Status, string(msg))
+	}
+	return nil
+}
+
+func relayHTTPClient(r RelayConfig) (*http.Client, error) {
+	pool := x509.NewCertPool()
+	ca, err := os.ReadFile(r.CACert)
+	if err != nil {
+		return nil, err
+	}
+	if !pool.AppendCertsFromPEM(ca) {
+		return nil, fmt.Errorf("CA relais invalide")
+	}
+	cert, err := tls.LoadX509KeyPair(r.ClientCert, r.ClientKey)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{Timeout: r.Timeout.Value(5 * time.Second), Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool, Certificates: []tls.Certificate{cert}}}}, nil
+}
+
+func relayHealth(ctx context.Context, r RelayConfig) error {
+	cl, err := relayHTTPClient(r)
+	if err != nil {
+		return err
+	}
+	req, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(r.URL, "/")+"/relay/v1/health", nil)
+	resp, err := cl.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relais: %s", resp.Status)
+	}
+	return nil
+}

@@ -1,0 +1,211 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"time"
+)
+
+type Job struct {
+	ID      string    `json:"id"`
+	Kind    string    `json:"kind"`
+	Target  string    `json:"target"`
+	State   string    `json:"state"`
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
+	Message string    `json:"message,omitempty"`
+	Result  any       `json:"result,omitempty"`
+}
+type jobFile struct {
+	Jobs map[string]*Job `json:"jobs"`
+}
+type JobStore struct {
+	mu     sync.Mutex
+	path   string
+	jobs   map[string]*Job
+	cancel map[string]context.CancelFunc
+}
+
+func openJobs(path string) (*JobStore, error) {
+	s := &JobStore{path: path, jobs: map[string]*Job{}, cancel: map[string]context.CancelFunc{}}
+	b, e := os.ReadFile(path)
+	if e != nil && !os.IsNotExist(e) {
+		return nil, e
+	}
+	if len(b) > 0 {
+		var f jobFile
+		if e = json.Unmarshal(b, &f); e != nil {
+			return nil, fmt.Errorf("état des tâches: %w", e)
+		}
+		s.jobs = f.Jobs
+		for _, j := range s.jobs {
+			if j.State == "running" || j.State == "queued" {
+				j.State = "revalidation_required"
+				j.Message = "service redémarré; reprise interdite avant revalidation"
+				j.Updated = time.Now().UTC()
+			}
+		}
+		if e = s.saveLocked(); e != nil {
+			return nil, e
+		}
+	}
+	return s, nil
+}
+func newID() (string, error) {
+	b := make([]byte, 16)
+	if _, e := rand.Read(b); e != nil {
+		return "", e
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return hex.EncodeToString(b[:4]) + "-" + hex.EncodeToString(b[4:6]) + "-" + hex.EncodeToString(b[6:8]) + "-" + hex.EncodeToString(b[8:10]) + "-" + hex.EncodeToString(b[10:]), nil
+}
+func (s *JobStore) saveLocked() error {
+	if e := os.MkdirAll(filepath.Dir(s.path), 0750); e != nil {
+		return e
+	}
+	b, e := json.MarshalIndent(jobFile{Jobs: s.jobs}, "", "  ")
+	if e != nil {
+		return e
+	}
+	tmp := s.path + ".tmp"
+	if e = os.WriteFile(tmp, b, 0640); e != nil {
+		return e
+	}
+	if e = os.Rename(tmp, s.path); e == nil {
+		return nil
+	}
+	// Windows n'autorise pas toujours le remplacement par renommage. La cible
+	// de production est Linux, où le chemin ci-dessus reste atomique.
+	if runtime.GOOS == "windows" {
+		if removeErr := os.Remove(s.path); removeErr != nil && !os.IsNotExist(removeErr) {
+			return e
+		}
+		return os.Rename(tmp, s.path)
+	}
+	return e
+}
+func (s *JobStore) create(kind, target string, fn func(context.Context) (any, error)) (*Job, error) {
+	s.mu.Lock()
+	for _, j := range s.jobs {
+		if j.Kind == kind && j.Target == target && (j.State == "queued" || j.State == "running" || j.State == "revalidation_required") {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("une tâche %s pour %s est déjà active: %s", kind, target, j.ID)
+		}
+	}
+	now := time.Now().UTC()
+	id, idErr := newID()
+	if idErr != nil {
+		s.mu.Unlock()
+		return nil, idErr
+	}
+	j := &Job{ID: id, Kind: kind, Target: target, State: "queued", Created: now, Updated: now}
+	s.jobs[j.ID] = j
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel[j.ID] = cancel
+	if e := s.saveLocked(); e != nil {
+		delete(s.jobs, j.ID)
+		delete(s.cancel, j.ID)
+		s.mu.Unlock()
+		return nil, e
+	}
+	copy := *j
+	s.mu.Unlock()
+	go func() {
+		s.update(j.ID, "running", "", nil)
+		v, e := fn(ctx)
+		if e != nil {
+			state := "failed"
+			if ctx.Err() != nil {
+				state = "cancelled"
+			}
+			s.update(j.ID, state, e.Error(), v)
+		} else {
+			s.update(j.ID, "completed", "", v)
+		}
+	}()
+	return &copy, nil
+}
+
+func (s *JobStore) resume(id string, fn func(context.Context) (any, error)) error {
+	s.mu.Lock()
+	j := s.jobs[id]
+	if j == nil || j.State != "revalidation_required" {
+		s.mu.Unlock()
+		return fmt.Errorf("tâche non reprenable")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel[id] = cancel
+	j.State = "running"
+	j.Message = "conditions en cours de revalidation"
+	j.Updated = time.Now().UTC()
+	_ = s.saveLocked()
+	s.mu.Unlock()
+	go func() {
+		v, e := fn(ctx)
+		if e != nil {
+			state := "failed"
+			if ctx.Err() != nil {
+				state = "cancelled"
+			}
+			s.update(id, state, e.Error(), v)
+		} else {
+			s.update(id, "completed", "", v)
+		}
+	}()
+	return nil
+}
+func (s *JobStore) update(id, state, msg string, result any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if j := s.jobs[id]; j != nil {
+		j.State = state
+		j.Message = msg
+		j.Result = result
+		j.Updated = time.Now().UTC()
+		if state != "queued" && state != "running" {
+			delete(s.cancel, id)
+		}
+		_ = s.saveLocked()
+	}
+}
+func (s *JobStore) get(id string) (Job, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jobs[id]
+	if !ok {
+		return Job{}, false
+	}
+	b := *j
+	return b, true
+}
+func (s *JobStore) list() []Job {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Job, 0, len(s.jobs))
+	for _, j := range s.jobs {
+		out = append(out, *j)
+	}
+	return out
+}
+func (s *JobStore) cancelJob(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j := s.jobs[id]
+	if j == nil {
+		return fmt.Errorf("tâche inconnue")
+	}
+	f := s.cancel[id]
+	if f == nil {
+		return fmt.Errorf("tâche non annulable dans l'état %s", j.State)
+	}
+	f()
+	return nil
+}
