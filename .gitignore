@@ -1,0 +1,12 @@
+# Clés privées et secrets locaux
+.keys/
+.env
+.env.*
+!.env.example
+
+# Artefacts temporaires de développement
+dist/.build.*/
+wol-test-*/
+*.log
+*.tmp
+coverage.out

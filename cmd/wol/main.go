@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -401,7 +402,10 @@ func tokenCLI(c *Config, args []string) error {
 	}
 	var f tokenFile
 	if b, e := os.ReadFile(c.API.TokensFile); e == nil {
-		if e = json.Unmarshal(b, &f); e != nil {
+		if len(bytes.TrimSpace(b)) > 0 {
+			e = json.Unmarshal(b, &f)
+		}
+		if e != nil {
 			return e
 		}
 	} else if !os.IsNotExist(e) {
@@ -423,6 +427,9 @@ func tokenCLI(c *Config, args []string) error {
 	b, _ := json.MarshalIndent(f, "", "  ")
 	if e := os.WriteFile(c.API.TokensFile, b, 0600); e != nil {
 		return e
+	}
+	if e := secureTokenFile(c.API.TokensFile); e != nil {
+		return fmt.Errorf("sécurisation du fichier de jetons: %w", e)
 	}
 	fmt.Println("JETON (affiché une seule fois):", plain)
 	return nil

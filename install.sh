@@ -32,6 +32,7 @@ HELPER_DIR=$(path /usr/local/lib/wol-manager)
 HELPER="$HELPER_DIR/install.sh"
 UNIT=$(path /etc/systemd/system/wol-manager.service)
 CONFIG=$(path /etc/wol-manager/wol.yaml)
+TOKENS_FILE=$(path /etc/wol-manager/secrets/tokens.json)
 RELEASE_CONFIG=$(path /etc/wol-manager/release.conf)
 STATE_DIR=$(path /var/lib/wol-manager)
 LOG_DIR=$(path /var/log/wol-manager)
@@ -292,6 +293,11 @@ create_account_and_dirs() {
     chown wol-manager:wol-manager "$STATE_DIR" "$LOG_DIR"
     chown root:wol-manager "$(path /etc/wol-manager)" "$(path /etc/wol-manager/secrets)"
   fi
+  [ ! -L "$TOKENS_FILE" ] || die "Le fichier de jetons ne doit pas être un lien symbolique: $TOKENS_FILE"
+  [ ! -e "$TOKENS_FILE" ] || [ -f "$TOKENS_FILE" ] || die "Le chemin des jetons n'est pas un fichier régulier: $TOKENS_FILE"
+  [ -e "$TOKENS_FILE" ] || : >"$TOKENS_FILE"
+  chmod 0600 "$TOKENS_FILE"
+  [ "$TEST_MODE" = 1 ] || chown wol-manager:wol-manager "$TOKENS_FILE"
 }
 backup_existing() {
   BACKUP_DIR="$STATE_DIR/backups/install-$timestamp"
@@ -362,27 +368,39 @@ install_candidate() {
       [ "$PREVIOUS_ACTIVE" -eq 0 ] || run systemctl restart wol-manager.service
     else
       case "$SERVICE_MODE" in
-        enable) [ ! -f "$CONFIG" ] || run systemctl enable --now wol-manager.service ;;
+        enable) : ;; # activation différée jusqu'à la création du premier jeton
         install|cli) : ;;
       esac
     fi
     [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le service ne fonctionne pas après mise à jour"
   fi
-  ROLLBACK_READY=0
   log "Installation atomique terminée: $CANDIDATE_VERSION ($CANDIDATE_REVISION)"
 }
 run_setup_if_requested() {
-  if [ "$RUN_SETUP" -ne 1 ]; then
-    [ "$NON_INTERACTIVE" -eq 0 ] || return 0
-    [ ! -f "$CONFIG" ] || return 0
-    confirm "Lancer wol setup maintenant ?" || return 0
+  run_setup=0
+  if [ "$RUN_SETUP" -eq 1 ]; then
+    run_setup=1
+  elif [ "$NON_INTERACTIVE" -eq 0 ] && [ ! -f "$CONFIG" ] && confirm "Lancer wol setup maintenant ?"; then
+    run_setup=1
   fi
-  "$BIN" --config "$CONFIG" setup
-  chmod 0640 "$CONFIG"
-  [ "$TEST_MODE" = 1 ] || chown root:wol-manager "$CONFIG"
-  if [ "$SERVICE_MODE" = enable ] && [ "$SYSTEMD" = yes ] && can_manage_systemd; then
-    run systemctl enable --now wol-manager.service
-    systemctl is-active --quiet wol-manager.service || die "Le service ne fonctionne pas après configuration"
+  if [ "$run_setup" -eq 1 ]; then
+    "$BIN" --config "$CONFIG" setup
+    chmod 0640 "$CONFIG"
+    [ "$TEST_MODE" = 1 ] || chown root:wol-manager "$CONFIG"
+  fi
+  if [ "$SERVICE_MODE" = enable ]; then
+    if [ ! -f "$CONFIG" ]; then
+      warn "Service non activé: configurez d'abord WoL Manager avec sudo wol setup"
+      return 0
+    fi
+    if ! grep -q '[^[:space:]]' "$TOKENS_FILE"; then
+      log "Création du premier jeton administrateur requis par le service"
+      "$BIN" --config "$CONFIG" token create --id admin
+    fi
+    if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
+      run systemctl enable --now wol-manager.service
+      systemctl is-active --quiet wol-manager.service || die "Le service ne fonctionne pas après configuration"
+    fi
   fi
 }
 uninstall() {
@@ -405,4 +423,5 @@ prepare_candidate
 if [ "$CHECK_ONLY" -eq 1 ]; then show_comparison; exit 0; fi
 need_root
 install_candidate
-[ "$ACTION" != install ] || run_setup_if_requested
+if [ "$ACTION" = install ]; then run_setup_if_requested; fi
+ROLLBACK_READY=0

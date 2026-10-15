@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Fichiers exécutés directement par Linux.
+*.sh text eol=lf
+*.service text eol=lf
+
+# Ces octets sont signés ou couverts par SHA256SUMS : aucune conversion EOL.
+dist/manifest.json -text
+dist/manifest.json.sig -text
+dist/SHA256SUMS -text
+dist/wol-linux-* binary

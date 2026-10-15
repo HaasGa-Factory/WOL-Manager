@@ -18,12 +18,16 @@ WoL Manager `v1.0.0-beta.1` est un gestionnaire Wake-on-LAN Linux centralisé po
 ## Démarrage rapide
 
 ```sh
-chmod +x install.sh
 sudo ./install.sh
-sudo wol token create --id admin --permissions read,wake,admin
 ```
 
 L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose le mode systemd. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun binaire compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
+
+Si vous activez immédiatement le service lors d'une première installation interactive, l'installateur crée et affiche le premier jeton administrateur. En mode CLI ou si vous configurez l'API plus tard :
+
+```sh
+sudo wol token create --id admin --permissions read,wake,admin
+```
 
 ```sh
 wol update --check
@@ -40,10 +44,12 @@ Pour un essai sans installation :
 
 ```sh
 cp configs/wol.example.yaml wol.yaml
-./bin/wol --config ./wol.yaml config check
-./bin/wol --config ./wol.yaml --json network discover
-./bin/wol --config ./wol.yaml --json wake storage-1 --dry-run
+./dist/wol-linux-amd64 --config ./wol.yaml config check
+./dist/wol-linux-amd64 --config ./wol.yaml --json network discover
+./dist/wol-linux-amd64 --config ./wol.yaml --json wake storage-1 --dry-run
 ```
+
+Sur ARM64, remplacez `wol-linux-amd64` par `wol-linux-arm64`.
 
 ## Documentation
 
