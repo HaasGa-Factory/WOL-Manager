@@ -385,6 +385,27 @@ assert_contains "$WORK/dev.log" "CANAL DEV/BETA"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.3 ]] || fail "mise à jour dev absente"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
+echo "[transition canal] même version et même révision de dev vers main"
+REMOTE_CHANNEL_SWITCH="$WORK/remote-channel-switch"
+mkdir -p "$REMOTE_CHANNEL_SWITCH/main"
+make_distribution "$REMOTE_CHANNEL_SWITCH/main" 1.0.0-beta.3 "$REV3" main
+ROOT_CHANNEL="$WORK/root-channel"
+cp -a "$ROOT12" "$ROOT_CHANNEL"
+
+run_update_from "$REMOTE_CHANNEL_SWITCH" "$ROOT_CHANNEL" main --channel main --check --non-interactive >"$WORK/channel-switch-check.log"
+assert_contains "$WORK/channel-switch-check.log" "Canal installé    : dev"
+assert_contains "$WORK/channel-switch-check.log" "passage du canal dev vers main"
+[[ $("$ROOT_CHANNEL/usr/local/bin/wol" version --channel) = dev ]] || fail "--check a modifié le canal installé"
+assert_contains "$ROOT_CHANNEL/etc/wol-manager/release.conf" "installed_channel=dev"
+
+run_update_from "$REMOTE_CHANNEL_SWITCH" "$ROOT_CHANNEL" main --channel main --yes --non-interactive >"$WORK/channel-switch-update.log"
+[[ $("$ROOT_CHANNEL/usr/local/bin/wol" version --channel) = main ]] || fail "le binaire main n'a pas remplacé le binaire dev"
+assert_contains "$ROOT_CHANNEL/etc/wol-manager/release.conf" "installed_channel=main"
+assert_contains "$ROOT_CHANNEL/etc/wol-manager/release.conf" "default_channel=main"
+assert_file "$ROOT_CHANNEL/etc/wol-manager/secrets/token"
+assert_file "$ROOT_CHANNEL/var/lib/wol-manager/state.keep"
+assert_file "$ROOT_CHANNEL/var/log/wol-manager/audit.keep"
+
 echo "[protection transition] version dev et manifeste main signé de format 1"
 run_update "$ROOT12" dev --check --non-interactive >"$WORK/dev-check.log"
 assert_contains "$WORK/dev-check.log" "WoL Manager est à jour"

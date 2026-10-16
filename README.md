@@ -52,6 +52,8 @@ wol ups test
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
 
+Lors du retour vers `main`, le canal installé est aussi vérifié : même si la version et la révision source sont identiques, le binaire signé `main` remplace explicitement le binaire `dev` après confirmation.
+
 Si une version `dev` utilisant le manifeste de format 2 est installée alors que `main` publie encore le format signé 1, `wol update --check` explique cette transition et ne modifie rien. Utilisez `wol update --check --channel dev` jusqu'à la publication de cette version sur `main` ; aucun retour automatique vers une ancienne version n'est tenté.
 
 Pour un essai sans installation :

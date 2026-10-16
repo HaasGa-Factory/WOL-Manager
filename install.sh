@@ -305,19 +305,25 @@ version_lt() { [ "$1" = "$2" ] && return 1; [ "$(printf '%s\n%s\n' "$1" "$2" | s
 show_comparison() {
   current=$(installed_version)
   current_revision=$(installed_revision)
+  current_channel=$(installed_channel)
   log "Version installée : $current"
   log "Révision installée: $current_revision"
+  log "Canal installé    : $current_channel"
   log "Version disponible: $CANDIDATE_VERSION"
   log "Révision source   : $CANDIDATE_REVISION"
   log "Canal             : $CHANNEL"
   log "Architecture      : linux/$ARCH"
   [ "$CHANNEL" != dev ] || warn "CANAL DEV/BETA: cette version peut être instable; le canal par défaut reste main"
-  if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
+  if [ "$current" = "$CANDIDATE_VERSION" ] &&
+     [ "$current_revision" = "$CANDIDATE_REVISION" ] &&
+     [ "$current_channel" = "$CHANNEL" ]; then
     UPDATE_NEEDED=0
     log "WoL Manager est à jour"
   else
     UPDATE_NEEDED=1
-    if [ "$current" = "$CANDIDATE_VERSION" ]; then
+    if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
+      log "Mise à jour disponible: passage du canal $current_channel vers $CHANNEL"
+    elif [ "$current" = "$CANDIDATE_VERSION" ]; then
       log "Mise à jour disponible: même version, révision source différente (elle n'est pas présentée comme une version supérieure)"
     else
       log "Mise à jour disponible"

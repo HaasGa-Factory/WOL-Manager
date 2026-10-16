@@ -22,6 +22,8 @@ sudo wol update --channel dev
 
 Un avertissement BETA/DEV est affiché. Ce choix vaut uniquement pour cette commande : l'exécution suivante de `sudo wol update` revient automatiquement à `main`.
 
+Lorsqu'une publication `main` reprend exactement la même version et la même révision source qu'une version `dev` installée, le canal fait partie de la comparaison. WoL Manager propose donc bien de remplacer le binaire `dev` par le binaire signé `main` au lieu d'annoncer à tort que le logiciel est déjà à jour. Le contrôle `--check` ne modifie rien et le canal par défaut reste `main`.
+
 ### Vérification de `main` depuis une version `dev`
 
 Pendant une transition, `dev` peut utiliser le manifeste de format 2 alors que `main` publie encore le format signé 1. Dans ce cas précis, `wol update --check` et `wol update --check --channel main` vérifient d'abord la signature du manifeste, expliquent que `main` ne peut pas remplacer la version `dev`, puis s'arrêtent sans modifier le binaire, l'installateur, la configuration, les secrets, le service ou le canal enregistré. Vérifiez temporairement le canal de développement avec :
