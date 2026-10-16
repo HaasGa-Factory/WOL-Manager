@@ -102,6 +102,45 @@ sudo wol config nut
 
 Le fichier de jetons est préparé en `0600` pour l'utilisateur système `wol-manager`. Lors d'une installation interactive neuve avec activation immédiate du service, l'installateur crée le premier jeton administrateur avant de démarrer systemd et l'affiche une seule fois dans le terminal.
 
+### Ajouter une machine
+
+Exemple pour un serveur TrueNAS :
+
+```text
+Identifiant de la machine: truenas
+Nom: TrueNAS
+Adresse MAC: 9c:6b:00:84:27:a0
+Adresse IPv4: 192.168.1.237
+Réseau: lan
+Groupes: laisser vide si aucun groupe n'est nécessaire
+Dépendances machines: laisser vide si aucune autre machine ne doit être réveillée avant TrueNAS
+Vérification après réveil: 1 — ICMP
+```
+
+| Champ | Rôle |
+| --- | --- |
+| Identifiant | Nom technique stable utilisé dans les commandes, par exemple `wol wake truenas`. |
+| Nom | Libellé lisible affiché à l'utilisateur. |
+| Adresse MAC | Adresse de la carte réseau qui recevra le paquet Wake-on-LAN. |
+| Adresse IPv4 | Adresse utilisée pour vérifier si la machine est joignable et, selon la configuration réseau, pour l'envoi en unicast. Une réservation DHCP est recommandée. |
+| Réseau | Réseau WoL auquel appartient la machine. Ici, `lan` doit contenir `192.168.1.237`. |
+| Groupes | Groupes auxquels rattacher la machine. Une réponse vide signifie aucun groupe. Saisir `-` sert à vider une valeur existante lors d'une modification. |
+| Dépendances | Autres machines que WoL Manager doit réveiller avant celle-ci. Une réponse vide signifie aucune dépendance. |
+
+Le choix `1 — ICMP` convient si TrueNAS répond au ping : WoL Manager l'utilise avant l'envoi pour éviter un réveil inutile, puis après l'envoi pour confirmer que la machine est devenue joignable. Le délai d'une tentative ICMP est de trois secondes. Si le ping est bloqué, utilisez plutôt `2 — TCP` avec un port réellement ouvert sur TrueNAS. Le contrôle ARP indique seulement la présence d'une entrée dans la table de voisinage et ne prouve pas que la machine est allumée.
+
+Le message `Machine truenas prête.` confirme que les valeurs sont valides dans la session en cours. Il ne signifie pas encore qu'elles sont enregistrées sur disque. Revenez au menu principal, choisissez `5 — Résumé, validation et enregistrement`, contrôlez le résumé, puis confirmez `Enregistrer cette configuration ?`.
+
+Après l'enregistrement, effectuez d'abord ces contrôles :
+
+```sh
+sudo -u wol-manager wol --config /etc/wol-manager/wol.yaml config check
+sudo -u wol-manager wol --config /etc/wol-manager/wol.yaml status truenas
+sudo -u wol-manager wol --config /etc/wol-manager/wol.yaml wake truenas --dry-run
+```
+
+Le dernier contrôle est une simulation : aucun paquet Wake-on-LAN n'est envoyé.
+
 NUT et l'API sont facultatifs. `wol setup` peut être relancé : il sauvegarde le YAML, préserve les autres modules et écrit atomiquement seulement après validation. Une configuration existante n'est jamais remplacée par l'exemple. Le YAML reste un format interne ; `wol config edit` est réservé aux administrateurs qui souhaitent une édition avancée.
 
 Les journaux d'installation se trouvent dans `/var/log/wol-manager/install-*.log`. Aucun jeton ni contenu de secret n'y est écrit.
