@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-VERSION="1.1.0-beta"
+VERSION="1.1.1"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -204,6 +204,13 @@ check_debian_updates() {
 
 installed_version() { if [ -x "$BIN" ]; then "$BIN" version 2>/dev/null || printf 'inconnue\n'; else printf 'absente\n'; fi; }
 installed_revision() { if [ -x "$BIN" ]; then "$BIN" version --source-revision 2>/dev/null || printf 'unknown\n'; else printf 'absente\n'; fi; }
+installed_channel() {
+  if [ -x "$BIN" ]; then
+    current_channel=$("$BIN" version --channel 2>/dev/null || true)
+    case "$current_channel" in main|dev) printf '%s\n' "$current_channel"; return ;; esac
+  fi
+  printf 'unknown\n'
+}
 valid_sha() { printf '%s\n' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
 valid_hash() { printf '%s\n' "$1" | grep -Eq '^[0-9a-f]{64}$'; }
 manifest_value() { sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$2" | head -n1; }
@@ -216,7 +223,14 @@ verify_manifest() {
   [ -r "$PUBLIC_KEY" ] || die "Clé publique approuvée absente: $PUBLIC_KEY"
   openssl base64 -d -A -in "$signature" -out "$TMP_WORK/manifest.sig.bin" >>"$LOG_FILE" 2>&1 || die "Signature du manifeste illisible"
   openssl pkeyutl -verify -rawin -pubin -inkey "$PUBLIC_KEY" -in "$manifest" -sigfile "$TMP_WORK/manifest.sig.bin" >>"$LOG_FILE" 2>&1 || die "Authenticité du manifeste non vérifiée"
-  [ "$(manifest_number manifest_version "$manifest")" = 2 ] || die "Format de manifeste non pris en charge; mettez d'abord à jour l'installateur système depuis le dépôt"
+  manifest_format=$(manifest_number manifest_version "$manifest")
+  if [ "$manifest_format" != 2 ]; then
+    if [ "$manifest_format" = 1 ] && [ "$ACTION" = update ] && [ "$CHECK_ONLY" -eq 1 ] && [ "$CHANNEL" = main ] && [ "$(installed_channel)" = dev ]; then
+      log "Une version du canal dev est actuellement installée. Le canal main utilise encore un format de publication plus ancien et ne peut pas remplacer cette version. Utilisez “wol update --check --channel dev” pour vérifier les mises à jour de développement, ou attendez la publication de cette version sur main. Aucun changement n'a été effectué."
+      exit 0
+    fi
+    die "Format de manifeste non pris en charge; mettez d'abord à jour l'installateur système depuis le dépôt"
+  fi
   MANIFEST_VERSION=$(manifest_value version "$manifest")
   MANIFEST_CHANNEL=$(manifest_value channel "$manifest")
   SOURCE_REVISION=$(manifest_value source_revision "$manifest")
@@ -291,19 +305,25 @@ version_lt() { [ "$1" = "$2" ] && return 1; [ "$(printf '%s\n%s\n' "$1" "$2" | s
 show_comparison() {
   current=$(installed_version)
   current_revision=$(installed_revision)
+  current_channel=$(installed_channel)
   log "Version installée : $current"
   log "Révision installée: $current_revision"
+  log "Canal installé    : $current_channel"
   log "Version disponible: $CANDIDATE_VERSION"
   log "Révision source   : $CANDIDATE_REVISION"
   log "Canal             : $CHANNEL"
   log "Architecture      : linux/$ARCH"
   [ "$CHANNEL" != dev ] || warn "CANAL DEV/BETA: cette version peut être instable; le canal par défaut reste main"
-  if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
+  if [ "$current" = "$CANDIDATE_VERSION" ] &&
+     [ "$current_revision" = "$CANDIDATE_REVISION" ] &&
+     [ "$current_channel" = "$CHANNEL" ]; then
     UPDATE_NEEDED=0
     log "WoL Manager est à jour"
   else
     UPDATE_NEEDED=1
-    if [ "$current" = "$CANDIDATE_VERSION" ]; then
+    if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
+      log "Mise à jour disponible: passage du canal $current_channel vers $CHANNEL"
+    elif [ "$current" = "$CANDIDATE_VERSION" ]; then
       log "Mise à jour disponible: même version, révision source différente (elle n'est pas présentée comme une version supérieure)"
     else
       log "Mise à jour disponible"
