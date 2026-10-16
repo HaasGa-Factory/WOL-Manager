@@ -25,39 +25,66 @@ func setup(path string) error {
 
 func setupWithIO(path string, input io.Reader, output io.Writer) error {
 	reader := bufio.NewReader(input)
-	base := []byte(minimalConfig)
-	existing := false
-	current := map[string]UPSConfig{}
-	if data, err := os.ReadFile(path); err == nil {
-		existing = true
-		base = data
-		cfg, loadErr := LoadConfig(path)
-		if loadErr != nil {
-			return fmt.Errorf("configuration existante invalide, aucune modification: %w", loadErr)
-		}
-		for id, ups := range cfg.UPS {
-			current[id] = ups
-		}
-		fmt.Fprintf(output, "Configuration existante détectée: %s (%d UPS configuré(s)).\n", path, len(current))
-	} else if !os.IsNotExist(err) {
+	session, err := newConfigSession(path)
+	if err != nil {
 		return err
 	}
-
-	fmt.Fprintln(output, "Souhaitez-vous configurer un serveur NUT ?")
-	fmt.Fprintln(output, "[1] Oui\n[2] Non\n[3] Plus tard")
-	choice := prompt(reader, output, "> ")
-	if choice != "1" {
-		if existing {
-			fmt.Fprintln(output, "Configuration existante conservée sans modification.")
-			return nil
-		}
-		if choice != "2" && choice != "3" {
+	if session.existing {
+		fmt.Fprintf(output, "Configuration existante détectée: %s.\n", path)
+	} else {
+		fmt.Fprintln(output, "Création d'une nouvelle configuration guidée.")
+		fmt.Fprintln(output, "Souhaitez-vous configurer un serveur NUT ?")
+		fmt.Fprintln(output, "[1] Oui\n[2] Non\n[3] Plus tard")
+		switch prompt(reader, output, "> ") {
+		case "1":
+			if configureNUT(reader, output, session.cfg) {
+				session.changed = true
+			}
+		case "2", "3":
+		default:
 			return errors.New("choix invalide; aucune configuration écrite")
 		}
-		return writeSetupConfig(path, base, current, false)
 	}
 
-	working := cloneUPS(current)
+	for {
+		fmt.Fprintln(output, "\nConfiguration WoL Manager :")
+		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier")
+		switch prompt(reader, output, "> ") {
+		case "1":
+			session.changed = manageNetworks(reader, output, session.cfg) || session.changed
+		case "2":
+			session.changed = manageServers(reader, output, session.cfg) || session.changed
+		case "3":
+			session.changed = manageGroups(reader, output, session.cfg) || session.changed
+		case "4":
+			session.changed = configureNUT(reader, output, session.cfg) || session.changed
+		case "5":
+			showConfigSummary(output, session.cfg)
+			if err := session.cfg.Validate(); err != nil {
+				fmt.Fprintf(output, "Configuration invalide :\n%v\n", err)
+				continue
+			}
+			if !confirmPrompt(reader, output, "Enregistrer cette configuration ?") {
+				fmt.Fprintln(output, "Aucune modification enregistrée.")
+				continue
+			}
+			if err := writeManagedConfig(path, session.base, session.cfg, session.existing); err != nil {
+				return err
+			}
+			fmt.Fprintln(output, "Configuration enregistrée et validée.")
+			return offerDryRun(reader, output, session.cfg)
+		case "6":
+			fmt.Fprintln(output, "Configuration existante conservée sans modification.")
+			return nil
+		default:
+			fmt.Fprintln(output, "Choix invalide.")
+		}
+	}
+}
+
+func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+	working := cfg.UPS
+	before, _ := yaml.Marshal(working)
 	if len(working) == 0 {
 		fmt.Fprintln(output, "Recherche d'un serveur NUT local sur 127.0.0.1:3493...")
 		local := UPSConfig{Address: "127.0.0.1:3493", Timeout: Duration(3 * time.Second)}
@@ -76,24 +103,560 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 
 	for {
 		fmt.Fprintln(output, "\nConfiguration NUT :")
-		fmt.Fprintln(output, "[1] Ajouter ou modifier un serveur\n[2] Supprimer un UPS configuré\n[3] Tester les UPS configurés\n[4] Enregistrer\n[5] Annuler sans modifier")
+		fmt.Fprintln(output, "[1] Ajouter ou modifier un serveur\n[2] Supprimer un UPS configuré\n[3] Tester les UPS configurés\n[4] Terminer\n[5] Annuler les changements NUT")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if err := configureRemoteNUT(reader, output, working); err != nil {
 				fmt.Fprintf(output, "Configuration reportée: %v\n", err)
 			}
 		case "2":
-			removeConfiguredUPS(reader, output, working)
+			removeConfiguredUPS(reader, output, cfg)
 		case "3":
 			testConfiguredUPS(output, working)
 		case "4":
-			return writeSetupConfig(path, base, working, existing)
+			after, _ := yaml.Marshal(working)
+			return !bytes.Equal(before, after)
 		case "5":
-			return errors.New("annulé; configuration existante conservée")
+			var original map[string]UPSConfig
+			_ = yaml.Unmarshal(before, &original)
+			for id := range working {
+				delete(working, id)
+			}
+			for id, ups := range original {
+				working[id] = ups
+			}
+			return false
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
 		}
 	}
+}
+
+type configSession struct {
+	base     []byte
+	cfg      *Config
+	existing bool
+	changed  bool
+}
+
+func newConfigSession(path string) (*configSession, error) {
+	base := []byte(minimalConfig)
+	existing := false
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, errors.New("configuration refusée: la cible est un lien symbolique")
+		}
+		existing = true
+		base, err = os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	cfg, err := loadConfigData(base)
+	if err != nil {
+		if existing {
+			return nil, fmt.Errorf("configuration existante invalide, aucune modification: %w", err)
+		}
+		return nil, err
+	}
+	if cfg.Networks == nil {
+		cfg.Networks = map[string]Network{}
+	}
+	if cfg.Servers == nil {
+		cfg.Servers = map[string]Server{}
+	}
+	if cfg.Groups == nil {
+		cfg.Groups = map[string]Group{}
+	}
+	if cfg.UPS == nil {
+		cfg.UPS = map[string]UPSConfig{}
+	}
+	return &configSession{base: base, cfg: cfg, existing: existing}, nil
+}
+
+func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+	changed := false
+	for {
+		fmt.Fprintln(output, "\nRéseaux WoL :")
+		printNetworks(output, cfg.Networks)
+		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour")
+		switch prompt(reader, output, "> ") {
+		case "1":
+			if addOrEditNetwork(reader, output, cfg, "") {
+				changed = true
+			}
+		case "2":
+			if addOrEditNetwork(reader, output, cfg, prompt(reader, output, "Identifiant du réseau à modifier: ")) {
+				changed = true
+			}
+		case "3":
+			id := prompt(reader, output, "Identifiant du réseau à supprimer: ")
+			if _, ok := cfg.Networks[id]; !ok {
+				fmt.Fprintln(output, "Réseau inconnu.")
+				continue
+			}
+			used := false
+			for serverID, server := range cfg.Servers {
+				if server.Network == id {
+					fmt.Fprintf(output, "Suppression refusée: réseau utilisé par la machine %s.\n", serverID)
+					used = true
+				}
+			}
+			if !used && confirmPrompt(reader, output, "Supprimer le réseau "+id+" ?") {
+				delete(cfg.Networks, id)
+				changed = true
+			}
+		case "4":
+			return changed
+		default:
+			fmt.Fprintln(output, "Choix invalide.")
+		}
+	}
+}
+
+func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id string) bool {
+	old, editing := cfg.Networks[id]
+	if id == "" {
+		id = prompt(reader, output, "Identifiant du réseau: ")
+		if !validID(id) {
+			fmt.Fprintln(output, "Identifiant invalide.")
+			return false
+		}
+		if _, exists := cfg.Networks[id]; exists {
+			fmt.Fprintln(output, "Ce réseau existe déjà.")
+			return false
+		}
+	} else if !editing {
+		fmt.Fprintln(output, "Réseau inconnu.")
+		return false
+	}
+	interfaces := ipv4Interfaces()
+	if len(interfaces) > 0 {
+		fmt.Fprintln(output, "Interfaces IPv4 détectées :")
+		for _, item := range interfaces {
+			fmt.Fprintf(output, "- %s\n", item)
+		}
+	}
+	n := old
+	n.CIDR = promptDefault(reader, output, "Réseau CIDR", n.CIDR)
+	if _, err := parseIPv4CIDR(n.CIDR); err != nil {
+		fmt.Fprintln(output, err)
+		return false
+	}
+	n.Interface = promptDefault(reader, output, "Interface Linux (facultatif)", n.Interface)
+	n.SourceIP = promptDefault(reader, output, "Adresse IPv4 source (facultatif)", n.SourceIP)
+	n.AllowLocalBroadcast = promptBool(reader, output, "Autoriser le broadcast local", valueOrDefault(n.AllowLocalBroadcast, !editing))
+	n.AllowUnicast = promptBool(reader, output, "Autoriser l'unicast", valueOrDefault(n.AllowUnicast, !editing))
+	n.AllowDirectedBroadcast = promptBool(reader, output, "Autoriser le broadcast dirigé", n.AllowDirectedBroadcast)
+	cfg.Networks[id] = n
+	if err := cfg.Validate(); err != nil {
+		if editing {
+			cfg.Networks[id] = old
+		} else {
+			delete(cfg.Networks, id)
+		}
+		fmt.Fprintf(output, "Réseau refusé: %v\n", err)
+		return false
+	}
+	fmt.Fprintf(output, "Réseau %s prêt.\n", id)
+	return true
+}
+
+func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+	changed := false
+	for {
+		fmt.Fprintln(output, "\nMachines :")
+		printServers(output, cfg.Servers)
+		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour")
+		switch prompt(reader, output, "> ") {
+		case "1":
+			if addOrEditServer(reader, output, cfg, "") {
+				changed = true
+			}
+		case "2":
+			if addOrEditServer(reader, output, cfg, prompt(reader, output, "Identifiant de la machine à modifier: ")) {
+				changed = true
+			}
+		case "3":
+			id := prompt(reader, output, "Identifiant de la machine à supprimer: ")
+			if _, ok := cfg.Servers[id]; !ok {
+				fmt.Fprintln(output, "Machine inconnue.")
+				continue
+			}
+			if reason := serverDeleteBlocker(cfg, id); reason != "" {
+				fmt.Fprintln(output, "Suppression refusée:", reason)
+				continue
+			}
+			if confirmPrompt(reader, output, "Supprimer la machine "+id+" ?") {
+				delete(cfg.Servers, id)
+				changed = true
+			}
+		case "4":
+			return changed
+		default:
+			fmt.Fprintln(output, "Choix invalide.")
+		}
+	}
+}
+
+func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id string) bool {
+	if len(cfg.Networks) == 0 {
+		fmt.Fprintln(output, "Ajoutez d'abord un réseau WoL.")
+		return false
+	}
+	old, editing := cfg.Servers[id]
+	if id == "" {
+		id = prompt(reader, output, "Identifiant de la machine: ")
+		if !validID(id) {
+			fmt.Fprintln(output, "Identifiant invalide.")
+			return false
+		}
+		if _, exists := cfg.Servers[id]; exists {
+			fmt.Fprintln(output, "Cette machine existe déjà.")
+			return false
+		}
+	} else if !editing {
+		fmt.Fprintln(output, "Machine inconnue.")
+		return false
+	}
+	s := old
+	s.Name = promptDefault(reader, output, "Nom", s.Name)
+	s.MAC = promptDefault(reader, output, "Adresse MAC", s.MAC)
+	s.IP = promptDefault(reader, output, "Adresse IPv4", s.IP)
+	fmt.Fprintln(output, "Réseaux disponibles:", strings.Join(sortedKeys(cfg.Networks), ", "))
+	s.Network = promptDefault(reader, output, "Réseau", s.Network)
+	s.Groups = promptKnownIDs(reader, output, "Groupes (séparés par des virgules, facultatif)", s.Groups, cfg.Groups)
+	s.Dependencies = promptKnownIDs(reader, output, "Dépendances machines (virgules, facultatif)", s.Dependencies, cfg.Servers)
+	for _, dep := range s.Dependencies {
+		if dep == id {
+			fmt.Fprintln(output, "Une machine ne peut pas dépendre d'elle-même.")
+			return false
+		}
+	}
+	s.Checks = promptChecks(reader, output, s.Checks)
+	cfg.Servers[id] = s
+	if err := cfg.Validate(); err != nil {
+		if editing {
+			cfg.Servers[id] = old
+		} else {
+			delete(cfg.Servers, id)
+		}
+		fmt.Fprintf(output, "Machine refusée: %v\n", err)
+		return false
+	}
+	fmt.Fprintf(output, "Machine %s prête.\n", id)
+	return true
+}
+
+func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+	changed := false
+	for {
+		fmt.Fprintln(output, "\nGroupes :")
+		printGroups(output, cfg.Groups)
+		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour")
+		switch prompt(reader, output, "> ") {
+		case "1":
+			if addOrEditGroup(reader, output, cfg, "") {
+				changed = true
+			}
+		case "2":
+			if addOrEditGroup(reader, output, cfg, prompt(reader, output, "Identifiant du groupe à modifier: ")) {
+				changed = true
+			}
+		case "3":
+			id := prompt(reader, output, "Identifiant du groupe à supprimer: ")
+			if _, ok := cfg.Groups[id]; !ok {
+				fmt.Fprintln(output, "Groupe inconnu.")
+				continue
+			}
+			if reason := groupDeleteBlocker(cfg, id); reason != "" {
+				fmt.Fprintln(output, "Suppression refusée:", reason)
+				continue
+			}
+			if confirmPrompt(reader, output, "Supprimer le groupe "+id+" ?") {
+				delete(cfg.Groups, id)
+				changed = true
+			}
+		case "4":
+			return changed
+		default:
+			fmt.Fprintln(output, "Choix invalide.")
+		}
+	}
+}
+
+func addOrEditGroup(reader *bufio.Reader, output io.Writer, cfg *Config, id string) bool {
+	old, editing := cfg.Groups[id]
+	if id == "" {
+		id = prompt(reader, output, "Identifiant du groupe: ")
+		if !validID(id) {
+			fmt.Fprintln(output, "Identifiant invalide.")
+			return false
+		}
+		if _, exists := cfg.Groups[id]; exists {
+			fmt.Fprintln(output, "Ce groupe existe déjà.")
+			return false
+		}
+	} else if !editing {
+		fmt.Fprintln(output, "Groupe inconnu.")
+		return false
+	}
+	g := old
+	priority := promptDefault(reader, output, "Priorité", strconv.Itoa(g.Priority))
+	value, err := strconv.Atoi(priority)
+	if err != nil {
+		fmt.Fprintln(output, "Priorité invalide.")
+		return false
+	}
+	g.Priority = value
+	g.Servers = promptKnownIDs(reader, output, "Machines du groupe (virgules, facultatif)", g.Servers, cfg.Servers)
+	g.Dependencies = promptKnownIDs(reader, output, "Dépendances machines (virgules, facultatif)", g.Dependencies, cfg.Servers)
+	cfg.Groups[id] = g
+	if err := cfg.Validate(); err != nil {
+		if editing {
+			cfg.Groups[id] = old
+		} else {
+			delete(cfg.Groups, id)
+		}
+		fmt.Fprintf(output, "Groupe refusé: %v\n", err)
+		return false
+	}
+	fmt.Fprintf(output, "Groupe %s prêt.\n", id)
+	return true
+}
+
+func configSection(path, section string, input io.Reader, output io.Writer) error {
+	session, err := newConfigSession(path)
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(input)
+	var changed bool
+	switch section {
+	case "network", "networks":
+		changed = manageNetworks(reader, output, session.cfg)
+	case "machine", "server", "servers":
+		changed = manageServers(reader, output, session.cfg)
+	case "group", "groups":
+		changed = manageGroups(reader, output, session.cfg)
+	case "nut", "ups":
+		changed = configureNUT(reader, output, session.cfg)
+	default:
+		return errUsage
+	}
+	if !changed {
+		fmt.Fprintln(output, "Aucune modification à enregistrer.")
+		return nil
+	}
+	showConfigSummary(output, session.cfg)
+	if err := session.cfg.Validate(); err != nil {
+		return fmt.Errorf("configuration refusée: %w", err)
+	}
+	if !confirmPrompt(reader, output, "Enregistrer ces changements ?") {
+		fmt.Fprintln(output, "Aucune modification enregistrée.")
+		return nil
+	}
+	return writeManagedConfig(path, session.base, session.cfg, session.existing)
+}
+
+func offerDryRun(reader *bufio.Reader, output io.Writer, cfg *Config) error {
+	if len(cfg.Servers) == 0 || !confirmPrompt(reader, output, "Tester une machine en simulation WoL ?") {
+		return nil
+	}
+	printServers(output, cfg.Servers)
+	id := prompt(reader, output, "Machine à simuler: ")
+	if _, ok := cfg.Servers[id]; !ok {
+		return fmt.Errorf("machine inconnue %q", id)
+	}
+	engine := &Engine{cfg: cfg, audit: &Auditor{}, dry: true, noWait: true}
+	result, err := engine.wakeTree(context.Background(), id, map[string]bool{})
+	if err != nil {
+		return err
+	}
+	for _, item := range result {
+		fmt.Fprintf(output, "%s: %s vers %s (%s)\n", item.Server, item.Transport, item.Destination, item.Packet)
+	}
+	return nil
+}
+
+func showConfigSummary(output io.Writer, cfg *Config) {
+	fmt.Fprintf(output, "\nRésumé: %d réseau(x), %d machine(s), %d groupe(s), %d UPS.\n", len(cfg.Networks), len(cfg.Servers), len(cfg.Groups), len(cfg.UPS))
+	printNetworks(output, cfg.Networks)
+	printServers(output, cfg.Servers)
+	printGroups(output, cfg.Groups)
+}
+
+func printNetworks(output io.Writer, networks map[string]Network) {
+	for _, id := range sortedKeys(networks) {
+		n := networks[id]
+		fmt.Fprintf(output, "- %s: %s interface=%s\n", id, n.CIDR, emptyAs(n.Interface, "auto"))
+	}
+}
+
+func printServers(output io.Writer, servers map[string]Server) {
+	for _, id := range sortedKeys(servers) {
+		s := servers[id]
+		fmt.Fprintf(output, "- %s: %s %s réseau=%s\n", id, s.IP, s.MAC, s.Network)
+	}
+}
+
+func printGroups(output io.Writer, groups map[string]Group) {
+	for _, id := range sortedKeys(groups) {
+		g := groups[id]
+		fmt.Fprintf(output, "- %s: priorité=%d machines=%s\n", id, g.Priority, strings.Join(g.Servers, ","))
+	}
+}
+
+func sortedKeys[T any](values map[string]T) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func ipv4Interfaces() []string {
+	var result []string
+	interfaces, _ := net.Interfaces()
+	for _, item := range interfaces {
+		addresses, _ := item.Addrs()
+		for _, address := range addresses {
+			ip, network, err := net.ParseCIDR(address.String())
+			if err == nil && ip.To4() != nil && !ip.IsLoopback() {
+				result = append(result, item.Name+" "+address.String()+" (réseau "+network.String()+")")
+			}
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func promptDefault(reader *bufio.Reader, output io.Writer, label, current string) string {
+	if current == "" {
+		return prompt(reader, output, label+": ")
+	}
+	value := prompt(reader, output, fmt.Sprintf("%s [%s]: ", label, current))
+	if value == "" {
+		return current
+	}
+	if value == "-" {
+		return ""
+	}
+	return value
+}
+
+func promptBool(reader *bufio.Reader, output io.Writer, label string, current bool) bool {
+	def := "N"
+	if current {
+		def = "O"
+	}
+	value := strings.ToLower(prompt(reader, output, fmt.Sprintf("%s [o/n, défaut %s]: ", label, def)))
+	if value == "" {
+		return current
+	}
+	return value == "o" || value == "oui" || value == "y" || value == "yes"
+}
+
+func confirmPrompt(reader *bufio.Reader, output io.Writer, label string) bool {
+	value := strings.ToLower(prompt(reader, output, label+" [y/N]: "))
+	return value == "y" || value == "yes" || value == "o" || value == "oui"
+}
+
+func promptKnownIDs[T any](reader *bufio.Reader, output io.Writer, label string, current []string, known map[string]T) []string {
+	if len(known) > 0 {
+		fmt.Fprintln(output, "Valeurs disponibles:", strings.Join(sortedKeys(known), ", "))
+	}
+	value := promptDefault(reader, output, label+" (- pour vider)", strings.Join(current, ","))
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	var result []string
+	seen := map[string]bool{}
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" && !seen[item] {
+			result = append(result, item)
+			seen[item] = true
+		}
+	}
+	return result
+}
+
+func promptChecks(reader *bufio.Reader, output io.Writer, current []Check) []Check {
+	currentText := "aucune"
+	if len(current) > 0 {
+		currentText = current[0].Type
+	}
+	fmt.Fprintf(output, "Vérification après réveil actuelle: %s\n", currentText)
+	fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune\n[Entrée] Conserver")
+	switch prompt(reader, output, "> ") {
+	case "1":
+		return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}
+	case "2":
+		port, err := strconv.Atoi(promptDefault(reader, output, "Port TCP", "22"))
+		if err != nil || port < 1 || port > 65535 {
+			fmt.Fprintln(output, "Port invalide; vérification précédente conservée.")
+			return current
+		}
+		return []Check{{Type: "tcp", Port: port, Timeout: Duration(3 * time.Second)}}
+	case "3":
+		return []Check{{Type: "arp", Timeout: Duration(3 * time.Second)}}
+	case "4":
+		return nil
+	default:
+		return current
+	}
+}
+
+func serverDeleteBlocker(cfg *Config, id string) string {
+	for otherID, server := range cfg.Servers {
+		for _, dependency := range server.Dependencies {
+			if dependency == id {
+				return "dépendance de la machine " + otherID
+			}
+		}
+	}
+	for groupID, group := range cfg.Groups {
+		for _, serverID := range append(append([]string{}, group.Servers...), group.Dependencies...) {
+			if serverID == id {
+				return "référencée par le groupe " + groupID
+			}
+		}
+	}
+	return ""
+}
+
+func groupDeleteBlocker(cfg *Config, id string) string {
+	for serverID, server := range cfg.Servers {
+		for _, groupID := range server.Groups {
+			if groupID == id {
+				return "utilisé par la machine " + serverID
+			}
+		}
+	}
+	for _, automation := range cfg.Automations {
+		if automation.Group == id {
+			return "utilisé par l'automatisation " + automation.ID
+		}
+	}
+	return ""
+}
+
+func valueOrDefault(value, fallback bool) bool {
+	if value {
+		return true
+	}
+	return fallback
+}
+
+func emptyAs(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[string]UPSConfig) error {
@@ -114,12 +677,12 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 		address = net.JoinHostPort(strings.Trim(address, "[]"), port)
 	}
 	server := UPSConfig{Address: address, Timeout: Duration(3 * time.Second)}
-	if strings.EqualFold(prompt(reader, output, "Utiliser STARTTLS ? [y/N]: "), "y") {
+	if confirmPrompt(reader, output, "Utiliser STARTTLS ?") {
 		server.TLS = true
 		server.ServerName = prompt(reader, output, "Nom TLS du serveur [adresse]: ")
 	} else {
 		fmt.Fprintln(output, "ATTENTION: une connexion NUT distante sans TLS n'est pas chiffrée.")
-		if prompt(reader, output, "Autoriser explicitement cette connexion ? [y/N]: ") != "y" {
+		if !confirmPrompt(reader, output, "Autoriser explicitement cette connexion ?") {
 			return errors.New("connexion distante non sécurisée refusée")
 		}
 		server.AllowInsecureRemote = true
@@ -178,7 +741,7 @@ func selectNUTDevices(reader *bufio.Reader, output io.Writer, serverID string, s
 		baseID := slug(serverID) + "-" + slug(device.Name)
 		id := baseID
 		if _, exists := configured[baseID]; exists {
-			if strings.EqualFold(prompt(reader, output, fmt.Sprintf("%s existe déjà. Le remplacer ? [y/N]: ", baseID)), "y") {
+			if confirmPrompt(reader, output, fmt.Sprintf("%s existe déjà. Le remplacer ?", baseID)) {
 				id = baseID
 			} else {
 				id = uniqueUPSID(configured, baseID)
@@ -220,7 +783,8 @@ func parseSelection(value string, count int) ([]int, error) {
 	return result, nil
 }
 
-func removeConfiguredUPS(reader *bufio.Reader, output io.Writer, configured map[string]UPSConfig) {
+func removeConfiguredUPS(reader *bufio.Reader, output io.Writer, cfg *Config) {
+	configured := cfg.UPS
 	ids := sortedUPSIDs(configured)
 	if len(ids) == 0 {
 		fmt.Fprintln(output, "Aucun UPS configuré.")
@@ -235,7 +799,28 @@ func removeConfiguredUPS(reader *bufio.Reader, output io.Writer, configured map[
 		return
 	}
 	for _, index := range selection {
-		delete(configured, ids[index])
+		id := ids[index]
+		blocked := ""
+		for serverID, server := range cfg.Servers {
+			if server.UPS != nil && server.UPS.UPS == id {
+				blocked = "politique UPS de la machine " + serverID
+			}
+		}
+		for groupID, group := range cfg.Groups {
+			if group.UPS != nil && group.UPS.UPS == id {
+				blocked = "politique UPS du groupe " + groupID
+			}
+		}
+		for _, automation := range cfg.Automations {
+			if automation.UPS == id {
+				blocked = "automatisation " + automation.ID
+			}
+		}
+		if blocked != "" {
+			fmt.Fprintf(output, "%s non supprimé: utilisé par %s.\n", id, blocked)
+			continue
+		}
+		delete(configured, id)
 	}
 }
 
@@ -254,6 +839,18 @@ func testConfiguredUPS(output io.Writer, configured map[string]UPSConfig) bool {
 }
 
 func writeSetupConfig(path string, base []byte, ups map[string]UPSConfig, backup bool) error {
+	cfg, err := loadConfigData(base)
+	if err != nil {
+		return err
+	}
+	cfg.UPS = cloneUPS(ups)
+	return writeManagedConfig(path, base, cfg, backup)
+}
+
+func writeManagedConfig(path string, base []byte, cfg *Config, backup bool) error {
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("nouvelle configuration refusée: %w", err)
+	}
 	var document yaml.Node
 	if err := yaml.Unmarshal(base, &document); err != nil {
 		return fmt.Errorf("YAML existant invalide: %w", err)
@@ -262,25 +859,18 @@ func writeSetupConfig(path string, base []byte, ups map[string]UPSConfig, backup
 		return errors.New("racine YAML invalide")
 	}
 	root := document.Content[0]
-	upsNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-	for _, id := range sortedUPSIDs(ups) {
-		key := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: id}
-		value := &yaml.Node{}
-		if err := value.Encode(ups[id]); err != nil {
+	for _, section := range []struct {
+		name  string
+		value any
+	}{
+		{"networks", cfg.Networks},
+		{"groups", cfg.Groups},
+		{"servers", cfg.Servers},
+		{"ups", cfg.UPS},
+	} {
+		if err := replaceYAMLSection(root, section.name, section.value); err != nil {
 			return err
 		}
-		upsNode.Content = append(upsNode.Content, key, value)
-	}
-	replaced := false
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "ups" {
-			root.Content[i+1] = upsNode
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
-		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "ups"}, upsNode)
 	}
 	var encoded bytes.Buffer
 	encoder := yaml.NewEncoder(&encoded)
@@ -293,6 +883,9 @@ func writeSetupConfig(path string, base []byte, ups map[string]UPSConfig, backup
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return err
 	}
+	if err := rejectConfigSymlinks(path); err != nil {
+		return err
+	}
 	temp, err := os.CreateTemp(filepath.Dir(path), ".wol.yaml.*")
 	if err != nil {
 		return err
@@ -300,7 +893,9 @@ func writeSetupConfig(path string, base []byte, ups map[string]UPSConfig, backup
 	tempPath := temp.Name()
 	defer os.Remove(tempPath)
 	if err := temp.Chmod(0640); err == nil {
-		_, err = temp.Write(encoded.Bytes())
+		if _, err = temp.Write(encoded.Bytes()); err == nil {
+			err = temp.Sync()
+		}
 	}
 	closeErr := temp.Close()
 	if err != nil {
@@ -312,9 +907,27 @@ func writeSetupConfig(path string, base []byte, ups map[string]UPSConfig, backup
 	if _, err := LoadConfig(tempPath); err != nil {
 		return fmt.Errorf("nouvelle configuration refusée: %w", err)
 	}
+	if err := secureConfigFile(tempPath, path); err != nil {
+		return err
+	}
 	if backup {
-		backupPath := path + ".bak-" + time.Now().UTC().Format("20060102T150405Z")
-		if err := os.WriteFile(backupPath, base, 0640); err != nil {
+		backupPath := path + ".bak-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+		file, openErr := os.OpenFile(backupPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0640)
+		if openErr != nil {
+			return fmt.Errorf("sauvegarde impossible: %w", openErr)
+		}
+		_, writeErr := file.Write(base)
+		if writeErr == nil {
+			writeErr = file.Sync()
+		}
+		closeErr := file.Close()
+		if writeErr != nil {
+			return fmt.Errorf("sauvegarde impossible: %w", writeErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("sauvegarde impossible: %w", closeErr)
+		}
+		if err := secureConfigFile(backupPath, path); err != nil {
 			return fmt.Errorf("sauvegarde impossible: %w", err)
 		}
 	}
@@ -326,6 +939,33 @@ func writeSetupConfig(path string, base []byte, ups map[string]UPSConfig, backup
 		}
 	}
 	if err := os.Rename(tempPath, path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func replaceYAMLSection(root *yaml.Node, name string, value any) error {
+	node := &yaml.Node{}
+	if err := node.Encode(value); err != nil {
+		return err
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == name {
+			root.Content[i+1] = node
+			return nil
+		}
+	}
+	root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name}, node)
+	return nil
+}
+
+func rejectConfigSymlinks(path string) error {
+	if info, err := os.Lstat(filepath.Dir(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("configuration refusée: le répertoire cible est un lien symbolique")
+	}
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("configuration refusée: la cible est un lien symbolique")
+	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil

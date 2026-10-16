@@ -39,6 +39,10 @@ cat >"$MOCK_BIN/go" <<'EOF'
 echo "Go ne doit jamais être appelé" >>"${GO_LOG:?}"
 exit 99
 EOF
+cat >"$MOCK_BIN/curl" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
 cat >"$MOCK_BIN/systemctl" <<'EOF'
 #!/bin/sh
 state=${SYSTEMD_STATE:?}
@@ -81,7 +85,7 @@ mkdir -p "$(dirname "$2")"
 cp "$1" "$2"
 chmod +x "$2" 2>/dev/null || true
 EOF
-chmod +x "$MOCK_BIN/apt" "$MOCK_BIN/apt-get" "$MOCK_BIN/go" "$MOCK_BIN/systemctl" "$MOCK_BIN/install"
+chmod +x "$MOCK_BIN/apt" "$MOCK_BIN/apt-get" "$MOCK_BIN/go" "$MOCK_BIN/curl" "$MOCK_BIN/systemctl" "$MOCK_BIN/install"
 
 make_binary() {
   local path=$1 version=$2 revision=$3 channel=$4 post_fail=${5:-0}
@@ -94,6 +98,10 @@ if [ "\${1:-}" = version ]; then
     --channel) echo '$channel' ;;
     *) echo '$version' ;;
   esac
+  exit 0
+fi
+if [ "\${1:-}" = completion ] && [ "\${2:-}" = bash ]; then
+  printf '_wol() { :; }\ncomplete -F _wol wol\n'
   exit 0
 fi
 if [ "\${1:-}" = --config ] && [ "\${3:-}" = setup ]; then
@@ -153,9 +161,10 @@ prepare_payload() {
 
 prepare_root() {
   local root=$1 debian=$2
-  mkdir -p "$root/etc/ssl/certs" "$root/systemd-state"
+  mkdir -p "$root/etc/ssl/certs" "$root/usr/share/bash-completion" "$root/systemd-state"
   printf 'ID=debian\nVERSION_ID="%s"\n' "$debian" >"$root/os-release"
   : >"$root/etc/ssl/certs/ca-certificates.crt"
+  : >"$root/usr/share/bash-completion/bash_completion"
 }
 
 run_installer() {
@@ -172,7 +181,7 @@ REV3=cccccccccccccccccccccccccccccccccccccccc
 PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
-echo "[1/13] Debian 12 AMD64, binaire local, sans Go"
+echo "[1/16] Debian 12 AMD64, binaire local, sans Go"
 ROOT12="$WORK/root12"
 prepare_root "$ROOT12" 12
 : >"$WORK/go.log"
@@ -180,23 +189,37 @@ run_installer "$PAYLOAD" "$ROOT12" amd64 --non-interactive --yes --service cli
 assert_file "$ROOT12/usr/local/bin/wol"
 assert_file "$ROOT12/usr/local/lib/wol-manager/install.sh"
 assert_file "$ROOT12/usr/local/lib/wol-manager/packaging/release-public.pem"
+assert_file "$ROOT12/usr/share/bash-completion/completions/wol"
+assert_contains "$ROOT12/usr/share/bash-completion/completions/wol" "complete -F _wol wol"
 assert_file "$ROOT12/etc/wol-manager/secrets/tokens.json"
 [[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "permissions dangereuses sur le fichier de jetons"
 [[ ! -s "$WORK/go.log" ]] || fail "Go a été utilisé pendant l'installation"
 
-echo "[2/13] installation existante non remplacée"
+echo "[2/16] binaire local et curl manquant"
+ROOT_CURL="$WORK/root-curl"
+prepare_root "$ROOT_CURL" 12
+CURL_MARKER="$WORK/curl-installed"
+: >"$WORK/apt.log"
+APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_CURL/systemd-state" \
+WOL_ROOT="$ROOT_CURL" WOL_OS_RELEASE="$ROOT_CURL/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
+WOL_TEST_FORCE_MISSING_CURL=1 WOL_TEST_DEP_MARKER="$CURL_MARKER" \
+PATH="$MOCK_BIN:$PATH" "$PAYLOAD/install.sh" --non-interactive --yes --service cli
+assert_file "$CURL_MARKER"
+assert_contains "$WORK/apt.log" "curl"
+
+echo "[3/16] installation existante non remplacée"
 if run_installer "$PAYLOAD" "$ROOT12" amd64 --non-interactive --yes --service cli >"$WORK/reinstall.log" 2>&1; then
   fail "une réinstallation silencieuse a été acceptée"
 fi
 assert_contains "$WORK/reinstall.log" "utilisez sudo wol update"
 
-echo "[3/13] Debian 13 ARM64"
+echo "[4/16] Debian 13 ARM64"
 ROOT13="$WORK/root13"
 prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 
-echo "[4/13] dépendance manquante avec consentement"
+echo "[5/16] dépendance manquante avec consentement"
 ROOT_DEP="$WORK/root-dep"
 prepare_root "$ROOT_DEP" 12
 DEP_MARKER="$WORK/dependency-installed"
@@ -236,12 +259,36 @@ run_update() {
   "$root/usr/local/lib/wol-manager/install.sh" --update --channel "$channel" "$@"
 }
 
-echo "[5/13] vérification main sans installation"
+echo "[6/16] vérification de mise à jour sans curl et sans installation APT"
+: >"$WORK/apt.log"
+if APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT12/systemd-state" \
+  WOL_ROOT="$ROOT12" WOL_OS_RELEASE="$ROOT12/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
+  WOL_TEST_FORCE_MISSING_CURL=1 WOL_TEST_DEP_MARKER="$WORK/curl-must-not-install" \
+  PATH="$MOCK_BIN:$PATH" "$ROOT12/usr/local/lib/wol-manager/install.sh" --update --check --non-interactive >"$WORK/check-no-curl.log" 2>&1; then
+  fail "wol update --check a accepté l'absence de curl"
+fi
+assert_contains "$WORK/check-no-curl.log" "curl"
+[[ ! -s "$WORK/apt.log" ]] || fail "wol update --check a installé un paquet"
+
+echo "[7/16] première installation depuis GitHub simulé"
+PAYLOAD_REMOTE="$WORK/payload-remote"
+prepare_payload "$PAYLOAD_REMOTE" 1.0.0-beta.1 "$REV1"
+rm -f "$PAYLOAD_REMOTE/dist/wol-linux-amd64" "$PAYLOAD_REMOTE/dist/wol-linux-arm64"
+ROOT_REMOTE="$WORK/root-remote"
+prepare_root "$ROOT_REMOTE" 12
+APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_REMOTE/systemd-state" \
+REMOTE_DIR="$REMOTE" REMOTE_CHANNEL=main PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
+WOL_ROOT="$ROOT_REMOTE" WOL_OS_RELEASE="$ROOT_REMOTE/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
+WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$MOCK_BIN:$PATH" \
+"$PAYLOAD_REMOTE/install.sh" --non-interactive --yes --service cli
+[[ $("$ROOT_REMOTE/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "installation distante absente"
+
+echo "[8/16] vérification main sans installation"
 run_update "$ROOT12" main --check --non-interactive >"$WORK/check.log"
 assert_contains "$WORK/check.log" "Mise à jour disponible"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "--check a modifié le binaire"
 
-echo "[6/13] mise à jour main et préservation des données"
+echo "[9/16] mise à jour main et préservation des données"
 mkdir -p "$ROOT12/etc/wol-manager/secrets" "$ROOT12/var/lib/wol-manager" "$ROOT12/var/log/wol-manager"
 cp "$REPO/configs/wol.example.yaml" "$ROOT12/etc/wol-manager/wol.yaml"
 echo secret >"$ROOT12/etc/wol-manager/secrets/token"
@@ -254,17 +301,17 @@ assert_file "$ROOT12/var/lib/wol-manager/state.keep"
 assert_file "$ROOT12/var/log/wol-manager/audit.keep"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
-echo "[7/13] absence de mise à jour"
+echo "[10/16] absence de mise à jour"
 run_update "$ROOT12" main --check --non-interactive >"$WORK/current.log"
 assert_contains "$WORK/current.log" "est à jour"
 
-echo "[8/13] canal dev temporaire"
+echo "[11/16] canal dev temporaire"
 run_update "$ROOT12" dev --yes --non-interactive >"$WORK/dev.log" 2>&1
 assert_contains "$WORK/dev.log" "CANAL DEV/BETA"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.3 ]] || fail "mise à jour dev absente"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
-echo "[9/13] manifeste altéré refusé"
+echo "[12/16] manifeste altéré refusé"
 cp -R "$REMOTE/main" "$WORK/tampered"
 sed -i 's/beta.2/beta.9/' "$WORK/tampered/manifest.json"
 if REMOTE_DIR="$WORK" REMOTE_CHANNEL=tampered PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
@@ -276,7 +323,7 @@ if REMOTE_DIR="$WORK" REMOTE_CHANNEL=tampered PUBLICATION_COMMIT="$PUBLICATION_C
 fi
 assert_contains "$WORK/tampered.log" "Authenticité du manifeste non vérifiée"
 
-echo "[10/13] rollback et état systemd"
+echo "[13/16] rollback et état systemd"
 ROOT_ROLL="$WORK/root-roll"
 prepare_root "$ROOT_ROLL" 12
 run_installer "$PAYLOAD" "$ROOT_ROLL" amd64 --non-interactive --yes --service install
@@ -296,7 +343,7 @@ assert_file "$ROOT_ROLL/systemd-state/enabled"
 assert_file "$ROOT_ROLL/systemd-state/active"
 assert_contains "$WORK/rollback.log" "Rollback terminé"
 
-echo "[11/13] échec initial sans installation partielle"
+echo "[14/16] échec initial sans installation partielle"
 PAYLOAD_FAIL="$WORK/payload-fail"
 prepare_payload "$PAYLOAD_FAIL" 1.0.0-beta.1 "$REV1"
 make_distribution "$PAYLOAD_FAIL/dist" 1.0.0-beta.1 "$REV1" main 1
@@ -309,7 +356,7 @@ fi
 [[ ! -e "$ROOT_FAIL/usr/local/lib/wol-manager" ]] || fail "installateur partiel conservé"
 assert_contains "$WORK/initial-fail.log" "Rollback terminé"
 
-echo "[12/13] première configuration avant activation systemd"
+echo "[15/16] première configuration avant activation systemd"
 ROOT_ENABLE="$WORK/root-enable"
 prepare_root "$ROOT_ENABLE" 13
 WOL_TEST_SYSTEMD=1 run_installer "$PAYLOAD" "$ROOT_ENABLE" amd64 --non-interactive --yes --service enable --setup
@@ -321,7 +368,7 @@ ENABLE_LOG=$(find "$ROOT_ENABLE/var/log/wol-manager" -type f -name 'install-*.lo
 assert_file "$ENABLE_LOG"
 assert_not_contains "$ENABLE_LOG" 'test-only'
 
-echo "[13/13] configuration existante et jeton vide avant activation systemd"
+echo "[16/16] configuration existante et jeton vide avant activation systemd"
 ROOT_ENABLE_EXISTING="$WORK/root-enable-existing"
 prepare_root "$ROOT_ENABLE_EXISTING" 13
 mkdir -p "$ROOT_ENABLE_EXISTING/etc/wol-manager"

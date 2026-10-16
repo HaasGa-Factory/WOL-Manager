@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	version        = "1.0.0-beta.1"
+	version        = "1.1.0-beta"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -75,8 +75,21 @@ func run(args []string) error {
 	if cmd == "update" {
 		return updateCLI(args)
 	}
+	if cmd == "completion" {
+		if len(args) != 1 || args[0] != "bash" {
+			return errUsage
+		}
+		fmt.Print(bashCompletion)
+		return nil
+	}
 	if cmd == "config" && len(args) > 0 && args[0] == "edit" {
 		return editConfig(*configPath)
+	}
+	if cmd == "config" && len(args) == 1 {
+		switch args[0] {
+		case "network", "networks", "machine", "server", "servers", "group", "groups", "nut", "ups":
+			return configSection(*configPath, args[0], os.Stdin, os.Stdout)
+		}
 	}
 	c, err := LoadConfig(*configPath)
 	if err != nil {
@@ -149,7 +162,7 @@ func run(args []string) error {
 	case "relay":
 		return relayCLI(c, engine, args)
 	case "menu":
-		return menu(c, engine, *jsonOut)
+		return menu(*configPath, c, engine, *jsonOut)
 	default:
 		return usage()
 	}
@@ -161,12 +174,16 @@ Usage: wol [--config FILE] [--json] COMMAND
   setup                         assistant de configuration
   update [--check] [--channel main|dev]
                                 vérifie ou installe une mise à jour
+  completion bash               génère l'autocomplétion Bash
   list                          liste des serveurs
   status SERVER                 vérifie un serveur
   wake SERVER [--dry-run]       réveille un serveur et ses dépendances
   wake --group GROUP            réveille un groupe
   wake --all                    réveille tous les serveurs actifs
-  config check|edit             valide ou édite la configuration
+  config check                  valide la configuration
+  config network|machine|group|nut
+                                gestion guidée sans édition YAML
+  config edit                   édition avancée manuelle
   token create                  crée un jeton API affiché une seule fois
   network test [SERVER]         explique les transports
   network discover [options]    découverte passive ou active
@@ -177,6 +194,42 @@ Usage: wol [--config FILE] [--json] COMMAND
   relay serve|check             relais distant`)
 	return errUsage
 }
+
+const bashCompletion = `# bash completion for WoL Manager
+_wol() {
+    local cur cmd i
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    for ((i=1; i<COMP_CWORD; i++)); do
+        case "${COMP_WORDS[i]}" in
+            --config) ((i++)) ;;
+            --json) ;;
+            *) cmd="${COMP_WORDS[i]}"; break ;;
+        esac
+    done
+    if [[ -z "$cmd" ]]; then
+        COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs menu api relay version completion --config --json" -- "$cur") )
+        return
+    fi
+    case "$cmd" in
+        update)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--channel" ]]; then
+                COMPREPLY=( $(compgen -W "main dev" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "--check --channel" -- "$cur") )
+            fi ;;
+        config) COMPREPLY=( $(compgen -W "check edit network machine group nut" -- "$cur") ) ;;
+        wake) COMPREPLY=( $(compgen -W "--dry-run --group --all" -- "$cur") ) ;;
+        network) COMPREPLY=( $(compgen -W "test discover" -- "$cur") ) ;;
+        ups) COMPREPLY=( $(compgen -W "status test" -- "$cur") ) ;;
+        token) COMPREPLY=( $(compgen -W "create" -- "$cur") ) ;;
+        api) COMPREPLY=( $(compgen -W "serve" -- "$cur") ) ;;
+        relay) COMPREPLY=( $(compgen -W "serve check" -- "$cur") ) ;;
+        completion) COMPREPLY=( $(compgen -W "bash" -- "$cur") ) ;;
+    esac
+}
+complete -F _wol wol
+`
+
 func wakeCLI(c *Config, e *Engine, args []string, jsonOut bool) error {
 	args = flagsFirst(args, map[string]bool{"--group": true})
 	fs := flag.NewFlagSet("wake", flag.ContinueOnError)
@@ -337,10 +390,10 @@ func editConfig(path string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
-func menu(c *Config, e *Engine, jsonOut bool) error {
+func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("\n1 Liste  2 État  3 Réveiller  4 Réseau  5 UPS  0 Quitter\n> ")
+		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  0 Quitter\n> ")
 		x, _ := r.ReadString('\n')
 		switch strings.TrimSpace(x) {
 		case "0":
@@ -348,26 +401,59 @@ func menu(c *Config, e *Engine, jsonOut bool) error {
 		case "1":
 			_ = output(jsonOut, c.Servers, "")
 		case "2":
-			fmt.Print("Serveur: ")
-			id, _ := r.ReadString('\n')
-			_ = output(jsonOut, checkServer(context.Background(), c, strings.TrimSpace(id)), "")
+			_ = output(jsonOut, c.Networks, "")
 		case "3":
-			fmt.Print("Serveur: ")
-			id, _ := r.ReadString('\n')
-			v, er := e.wakeTree(context.Background(), strings.TrimSpace(id), map[string]bool{})
-			if er != nil {
-				fmt.Fprintln(os.Stderr, er)
-			} else {
-				_ = output(jsonOut, v, "")
-			}
+			_ = output(jsonOut, c.Groups, "")
 		case "4":
-			_ = output(jsonOut, passiveDiscovery(context.Background()), "")
-		case "5":
 			out := map[string]UPSStatus{}
 			for id, u := range c.UPS {
 				out[id] = nutStatus(context.Background(), id, u)
 			}
 			_ = output(jsonOut, out, "")
+		case "5":
+			if err := c.Validate(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			} else {
+				fmt.Println("configuration valide")
+			}
+		case "6":
+			if err := setupWithIO(configPath, r, os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			updated, err := LoadConfig(configPath)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			c = updated
+			e.cfg = updated
+		case "7":
+			fmt.Print("Machine: ")
+			id, _ := r.ReadString('\n')
+			dryEngine := &Engine{cfg: c, audit: e.audit, dry: true, noWait: true}
+			v, err := dryEngine.wakeTree(context.Background(), strings.TrimSpace(id), map[string]bool{})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			} else {
+				_ = output(jsonOut, v, "")
+			}
+		case "8":
+			fmt.Print("Machine: ")
+			id, _ := r.ReadString('\n')
+			id = strings.TrimSpace(id)
+			if !confirmPrompt(r, os.Stdout, "Envoyer réellement un paquet WoL à "+id+" ?") {
+				fmt.Println("Réveil annulé.")
+				continue
+			}
+			v, err := e.wakeTree(context.Background(), id, map[string]bool{})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			} else {
+				_ = output(jsonOut, v, "")
+			}
+		default:
+			fmt.Println("Choix invalide.")
 		}
 	}
 }

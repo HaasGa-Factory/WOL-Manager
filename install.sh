@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-VERSION="1.0.0-beta.1"
+VERSION="1.1.0-beta"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -31,6 +31,7 @@ BIN=$(path /usr/local/bin/wol)
 HELPER_DIR=$(path /usr/local/lib/wol-manager)
 HELPER="$HELPER_DIR/install.sh"
 UNIT=$(path /etc/systemd/system/wol-manager.service)
+COMPLETION=$(path /usr/share/bash-completion/completions/wol)
 CONFIG=$(path /etc/wol-manager/wol.yaml)
 TOKENS_FILE=$(path /etc/wol-manager/secrets/tokens.json)
 RELEASE_CONFIG=$(path /etc/wol-manager/release.conf)
@@ -146,8 +147,13 @@ detect_dependencies() {
   command -v sha256sum >/dev/null 2>&1 || add_missing coreutils "contrôle SHA-256"
   command -v openssl >/dev/null 2>&1 || add_missing openssl "signature Ed25519 du manifeste"
   [ -r "$(path /etc/ssl/certs/ca-certificates.crt)" ] || add_missing ca-certificates "validation HTTPS"
-  if [ "$ACTION" = update ] || [ ! -x "$SCRIPT_DIR/dist/wol-linux-${ARCH:-unknown}" ]; then
-    command -v curl >/dev/null 2>&1 || add_missing curl "téléchargement HTTPS"
+  if [ "$TEST_MODE" = 1 ] && [ "${WOL_TEST_FORCE_MISSING_CURL:-0}" = 1 ] && [ ! -e "${WOL_TEST_DEP_MARKER:-/nonexistent}" ]; then
+    add_missing curl "mises à jour HTTPS"
+  else
+    command -v curl >/dev/null 2>&1 || add_missing curl "mises à jour HTTPS"
+  fi
+  if [ "$ACTION" = install ]; then
+    [ -r "$(path /usr/share/bash-completion/bash_completion)" ] || add_missing bash-completion "autocomplétion de la commande wol avec Tab"
   fi
   if [ "$TEST_MODE" = 1 ] && [ -n "${WOL_TEST_MISSING_PACKAGE:-}" ] && [ ! -e "${WOL_TEST_DEP_MARKER:-/nonexistent}" ]; then
     add_missing "$WOL_TEST_MISSING_PACKAGE" "scénario de test"
@@ -287,7 +293,7 @@ create_account_and_dirs() {
     getent passwd wol-manager >/dev/null 2>&1 || useradd --system --gid wol-manager --home-dir /var/lib/wol-manager --shell /usr/sbin/nologin wol-manager
   fi
   install -d -m 0750 "$(path /etc/wol-manager)" "$(path /etc/wol-manager/secrets)" "$STATE_DIR" "$LOG_DIR"
-  install -d -m 0755 "$(path /usr/local/bin)" "$HELPER_DIR" "$HELPER_DIR/configs" "$HELPER_DIR/packaging/systemd" "$(path /usr/share/doc/wol-manager)"
+  install -d -m 0755 "$(path /usr/local/bin)" "$HELPER_DIR" "$HELPER_DIR/configs" "$HELPER_DIR/packaging/systemd" "$(path /usr/share/doc/wol-manager)" "$(dirname "$COMPLETION")"
   [ "$SERVICE_MODE" = cli ] || install -d -m 0755 "$(path /etc/systemd/system)"
   if [ "$TEST_MODE" != 1 ]; then
     chown wol-manager:wol-manager "$STATE_DIR" "$LOG_DIR"
@@ -305,6 +311,7 @@ backup_existing() {
   [ ! -e "$BIN" ] || cp -p "$BIN" "$BACKUP_DIR/wol"
   [ ! -e "$UNIT" ] || cp -p "$UNIT" "$BACKUP_DIR/wol-manager.service"
   [ ! -e "$HELPER" ] || cp -p "$HELPER" "$BACKUP_DIR/install.sh"
+  [ ! -e "$COMPLETION" ] || cp -p "$COMPLETION" "$BACKUP_DIR/bash-completion-wol"
   [ ! -e "$RELEASE_CONFIG" ] || cp -p "$RELEASE_CONFIG" "$BACKUP_DIR/release.conf"
   log "Sauvegarde créée: $BACKUP_DIR; configuration, secrets, données et journaux restent en place"
 }
@@ -314,6 +321,7 @@ rollback() {
   if [ -f "$BACKUP_DIR/wol" ]; then install -m 0755 "$BACKUP_DIR/wol" "$BIN"; else rm -f "$BIN"; fi
   if [ -f "$BACKUP_DIR/wol-manager.service" ]; then install -m 0644 "$BACKUP_DIR/wol-manager.service" "$UNIT"; else rm -f "$UNIT"; fi
   if [ -f "$BACKUP_DIR/install.sh" ]; then install -m 0755 "$BACKUP_DIR/install.sh" "$HELPER"; else rm -f "$HELPER"; fi
+  if [ -f "$BACKUP_DIR/bash-completion-wol" ]; then install -m 0644 "$BACKUP_DIR/bash-completion-wol" "$COMPLETION"; else rm -f "$COMPLETION"; fi
   if [ -f "$BACKUP_DIR/release.conf" ]; then install -m 0640 "$BACKUP_DIR/release.conf" "$RELEASE_CONFIG"; else rm -f "$RELEASE_CONFIG"; fi
   if [ ! -f "$BACKUP_DIR/install.sh" ]; then
     rm -rf -- "$HELPER_DIR"
@@ -348,6 +356,9 @@ install_candidate() {
   [ "$PREVIOUS_ACTIVE" -eq 0 ] || run systemctl stop wol-manager.service
   install -m 0755 "$CANDIDATE" "$BIN.new.$$"
   mv -f "$BIN.new.$$" "$BIN"
+  "$BIN" completion bash >"$TMP_WORK/bash-completion-wol" || die "Génération de l'autocomplétion Bash impossible"
+  install -m 0644 "$TMP_WORK/bash-completion-wol" "$COMPLETION.new.$$"
+  mv -f "$COMPLETION.new.$$" "$COMPLETION"
   if [ "$SCRIPT_DIR" != "$HELPER_DIR" ]; then
     install -m 0755 "$SCRIPT_DIR/install.sh" "$HELPER"
     install -m 0644 "$SCRIPT_DIR/packaging/release-public.pem" "$HELPER_DIR/packaging/release-public.pem"
@@ -406,7 +417,7 @@ run_setup_if_requested() {
 uninstall() {
   need_root
   if [ "$SYSTEMD" = yes ]; then systemctl disable --now wol-manager.service >>"$LOG_FILE" 2>&1 || true; rm -f "$UNIT"; systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true; fi
-  rm -f "$BIN" "$RELEASE_CONFIG"
+  rm -f "$BIN" "$RELEASE_CONFIG" "$COMPLETION"
   rm -rf -- "$HELPER_DIR"
   log "Programme et service supprimés; configuration, secrets, données, journaux et sauvegardes conservés"
 }

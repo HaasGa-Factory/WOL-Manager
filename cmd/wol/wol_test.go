@@ -54,6 +54,18 @@ func testDir(t *testing.T) string {
 	return dir
 }
 
+func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
+	for _, expected := range []string{
+		`compgen -W "setup update list status wake config token network ups jobs menu`,
+		`config) COMPREPLY=( $(compgen -W "check edit network machine group nut"`,
+		`complete -F _wol wol`,
+	} {
+		if !strings.Contains(bashCompletion, expected) {
+			t.Fatalf("autocomplétion Bash incomplète, fragment absent: %s", expected)
+		}
+	}
+}
+
 func sandboxBlocksNetwork(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "interdite par ses autorisations") || strings.Contains(strings.ToLower(err.Error()), "permission denied"))
 }

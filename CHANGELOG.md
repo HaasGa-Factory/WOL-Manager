@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0-beta - 2026-10-16
+
+- assistant unique pour réseaux, machines, groupes, dépendances et NUT ;
+- gestion guidée accessible depuis `wol setup`, `wol menu` et `wol config` ;
+- sauvegarde validée et atomique, protection contre les liens symboliques et permissions Debian `0640` ;
+- simulations WoL guidées et confirmation obligatoire avant un réveil réel dans le menu ;
+- `curl` vérifié dès l'installation pour garantir le fonctionnement ultérieur de `wol update`.
+- autocomplétion Bash installée pour les commandes et sous-commandes (`wol m<Tab>`, `wol config m<Tab>`).
+
 ## 1.0.0-beta.1 - 2026-10-14
 
 - Première Beta : CLI, API `/api/v1`, moteur WoL multi-réseau et relais mTLS.

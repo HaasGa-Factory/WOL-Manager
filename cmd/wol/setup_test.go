@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -110,5 +111,74 @@ func TestParseNUTSelection(t *testing.T) {
 	}
 	if _, err := parseSelection("4", 3); err == nil {
 		t.Fatal("sélection hors plage acceptée")
+	}
+}
+
+func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
+	directory := testDir(t)
+	path := filepath.Join(directory, "wol.yaml")
+	input := strings.NewReader(strings.Join([]string{
+		"2",      // NUT: non
+		"1", "1", // réseaux: ajouter
+		"lan", "192.168.50.0/24", "", "", "", "", "", "4",
+		"2", "1", // machines: ajouter
+		"test-pc", "Machine test", "02:00:00:00:50:10", "192.168.50.10", "lan", "", "", "1", "4",
+		"5", "y", // valider et enregistrer
+		"y", "test-pc", // simulation WoL
+	}, "\n") + "\n")
+	var output strings.Builder
+	if err := setupWithIO(path, input, &output); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Networks["lan"].CIDR != "192.168.50.0/24" || cfg.Servers["test-pc"].Network != "lan" {
+		t.Fatalf("configuration guidée incorrecte: %#v", cfg)
+	}
+	if !strings.Contains(output.String(), "dry_run") || !strings.Contains(output.String(), "Configuration enregistrée") {
+		t.Fatalf("résultat guidé incomplet:\n%s", output.String())
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0640 {
+		t.Fatalf("permissions = %o, attendu 0640", info.Mode().Perm())
+	}
+}
+
+func TestSetupRejectsSymlinkTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("création de liens symboliques non garantie sous Windows")
+	}
+	directory := testDir(t)
+	realPath := filepath.Join(directory, "real.yaml")
+	linkPath := filepath.Join(directory, "wol.yaml")
+	if err := os.WriteFile(realPath, []byte(minimalConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realPath, linkPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newConfigSession(linkPath); err == nil || !strings.Contains(err.Error(), "lien symbolique") {
+		t.Fatalf("lien symbolique accepté: %v", err)
+	}
+}
+
+func TestDeleteBlockers(t *testing.T) {
+	cfg := &Config{
+		Servers: map[string]Server{
+			"db":  {Dependencies: []string{"nas"}},
+			"nas": {Groups: []string{"infra"}},
+		},
+		Groups: map[string]Group{"infra": {Servers: []string{"nas"}}},
+	}
+	if blocker := serverDeleteBlocker(cfg, "nas"); blocker == "" {
+		t.Fatal("suppression en cascade de machine non bloquée")
+	}
+	if blocker := groupDeleteBlocker(cfg, "infra"); blocker == "" {
+		t.Fatal("suppression en cascade de groupe non bloquée")
 	}
 }

@@ -170,6 +170,10 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadConfigData(b)
+}
+
+func loadConfigData(b []byte) (*Config, error) {
 	var c Config
 	d := yaml.NewDecoder(strings.NewReader(string(b)))
 	d.KnownFields(true)
