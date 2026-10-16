@@ -78,12 +78,13 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$directory" = 1 ]; then
   mkdir -p "$@"
+  [ -z "$mode" ] || chmod "$mode" "$@"
   exit 0
 fi
 [ "$#" -eq 2 ] || exit 2
 mkdir -p "$(dirname "$2")"
 cp "$1" "$2"
-chmod +x "$2" 2>/dev/null || true
+[ -z "$mode" ] || chmod "$mode" "$2"
 EOF
 chmod +x "$MOCK_BIN/apt" "$MOCK_BIN/apt-get" "$MOCK_BIN/go" "$MOCK_BIN/curl" "$MOCK_BIN/systemctl" "$MOCK_BIN/install"
 
@@ -130,13 +131,19 @@ make_distribution() {
   local amd64_sha arm64_sha
   amd64_sha=$(sha256sum "$directory/wol-linux-amd64" | awk '{print $1}')
   arm64_sha=$(sha256sum "$directory/wol-linux-arm64" | awk '{print $1}')
+  cp "$REPO/install.sh" "$directory/install.sh"
+  chmod +x "$directory/install.sh"
+  local installer_sha
+  installer_sha=$(sha256sum "$directory/install.sh" | awk '{print $1}')
   cat >"$directory/manifest.json" <<EOF
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "version": "$version",
   "channel": "$channel",
   "source_revision": "$revision",
   "key_id": "wol-manager-2026-01",
+  "installer_file": "install.sh",
+  "installer_sha256": "$installer_sha",
   "linux_amd64_file": "wol-linux-amd64",
   "linux_amd64_sha256": "$amd64_sha",
   "linux_arm64_file": "wol-linux-arm64",
@@ -161,10 +168,11 @@ prepare_payload() {
 
 prepare_root() {
   local root=$1 debian=$2
-  mkdir -p "$root/etc/ssl/certs" "$root/usr/share/bash-completion" "$root/systemd-state"
+  mkdir -p "$root/etc/ssl/certs" "$root/etc/bash_completion.d" "$root/usr/share/bash-completion/completions" "$root/systemd-state"
   printf 'ID=debian\nVERSION_ID="%s"\n' "$debian" >"$root/os-release"
   : >"$root/etc/ssl/certs/ca-certificates.crt"
   : >"$root/usr/share/bash-completion/bash_completion"
+  printf '# fichier Debian pour une autre commande wol\n_comp_cmd_wol() { :; }\ncomplete -F _comp_cmd_wol wol\n' >"$root/usr/share/bash-completion/completions/wol"
 }
 
 run_installer() {
@@ -184,13 +192,17 @@ prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 echo "[1/16] Debian 12 AMD64, binaire local, sans Go"
 ROOT12="$WORK/root12"
 prepare_root "$ROOT12" 12
+DEBIAN_COMPLETION_SHA=$(sha256sum "$ROOT12/usr/share/bash-completion/completions/wol" | awk '{print $1}')
 : >"$WORK/go.log"
 run_installer "$PAYLOAD" "$ROOT12" amd64 --non-interactive --yes --service cli
 assert_file "$ROOT12/usr/local/bin/wol"
 assert_file "$ROOT12/usr/local/lib/wol-manager/install.sh"
 assert_file "$ROOT12/usr/local/lib/wol-manager/packaging/release-public.pem"
-assert_file "$ROOT12/usr/share/bash-completion/completions/wol"
-assert_contains "$ROOT12/usr/share/bash-completion/completions/wol" "complete -F _wol wol"
+assert_file "$ROOT12/etc/bash_completion.d/wol-manager"
+assert_contains "$ROOT12/etc/bash_completion.d/wol-manager" "complete -F _wol wol"
+[[ $(stat -c %a "$ROOT12/etc/bash_completion.d/wol-manager") = 644 ]] || fail "mode incorrect pour la complétion WoL Manager"
+[[ $(sha256sum "$ROOT12/usr/share/bash-completion/completions/wol" | awk '{print $1}') = "$DEBIAN_COMPLETION_SHA" ]] || fail "le fichier de complétion Debian a été modifié"
+bash --noprofile --norc -c 'source "$1"; complete -p wol | grep -Fq "complete -F _wol wol"' _ "$ROOT12/etc/bash_completion.d/wol-manager" || fail "la complétion WoL Manager ne se charge pas"
 assert_file "$ROOT12/etc/wol-manager/secrets/tokens.json"
 [[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "permissions dangereuses sur le fichier de jetons"
 [[ ! -s "$WORK/go.log" ]] || fail "Go a été utilisé pendant l'installation"
@@ -249,6 +261,35 @@ esac
 EOF
 chmod +x "$MOCK_BIN/curl"
 
+echo "[sécurité PATH] vérification sans /usr/sbin et modification sans root refusée"
+UNTRUSTED_BIN="$WORK/untrusted-bin"
+mkdir -p "$UNTRUSTED_BIN"
+cat >"$UNTRUSTED_BIN/useradd" <<'EOF'
+#!/bin/sh
+: >"${UNTRUSTED_USERADD_MARKER:?}"
+exit 0
+EOF
+chmod +x "$UNTRUSTED_BIN/useradd"
+TRUSTED_TEST_PATH="$MOCK_BIN:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+UNTRUSTED_USERADD_MARKER="$WORK/untrusted-useradd-used" WOL_TEST_SYSTEM_PATH="$TRUSTED_TEST_PATH" \
+  APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT12/systemd-state" \
+  REMOTE_DIR="$REMOTE" REMOTE_CHANNEL=dev PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
+  WOL_ROOT="$ROOT12" WOL_OS_RELEASE="$ROOT12/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
+  WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$UNTRUSTED_BIN:/usr/bin:/bin" \
+  "$ROOT12/usr/local/lib/wol-manager/install.sh" --update --check --channel dev --non-interactive >"$WORK/path-check.log"
+assert_not_contains "$WORK/path-check.log" "Dépendances manquantes: passwd"
+[[ ! -e "$WORK/untrusted-useradd-used" ]] || fail "un useradd provenant du PATH utilisateur a été exécuté"
+if WOL_TEST_UID=1000 WOL_TEST_SYSTEM_PATH="$TRUSTED_TEST_PATH" \
+  APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT12/systemd-state" \
+  REMOTE_DIR="$REMOTE" REMOTE_CHANNEL=dev PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
+  WOL_ROOT="$ROOT12" WOL_OS_RELEASE="$ROOT12/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
+  WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$UNTRUSTED_BIN:/usr/bin:/bin" \
+  "$ROOT12/usr/local/lib/wol-manager/install.sh" --update --channel dev --yes --non-interactive >"$WORK/non-root.log" 2>&1; then
+  fail "une mise à jour modificatrice sans root a été acceptée"
+fi
+assert_contains "$WORK/non-root.log" "Exécutez cette action avec sudo"
+[[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "la tentative sans root a modifié le binaire"
+
 run_update() {
   local root=$1 channel=$2
   shift 2
@@ -296,6 +337,7 @@ echo state >"$ROOT12/var/lib/wol-manager/state.keep"
 echo log >"$ROOT12/var/log/wol-manager/audit.keep"
 run_update "$ROOT12" main --yes --non-interactive
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "mise à jour main absente"
+cmp -s "$REMOTE/main/install.sh" "$ROOT12/usr/local/lib/wol-manager/install.sh" || fail "l'installateur signé n'a pas été mis à jour"
 assert_file "$ROOT12/etc/wol-manager/secrets/token"
 assert_file "$ROOT12/var/lib/wol-manager/state.keep"
 assert_file "$ROOT12/var/log/wol-manager/audit.keep"
@@ -323,10 +365,20 @@ if REMOTE_DIR="$WORK" REMOTE_CHANNEL=tampered PUBLICATION_COMMIT="$PUBLICATION_C
 fi
 assert_contains "$WORK/tampered.log" "Authenticité du manifeste non vérifiée"
 
+echo "[complément] installateur distribué altéré refusé"
+cp "$REMOTE/main/install.sh" "$WORK/install.sh.valid"
+printf '\n# altération de test\n' >>"$REMOTE/main/install.sh"
+if run_update "$ROOT12" main --check --non-interactive >"$WORK/tampered-installer.log" 2>&1; then
+  fail "un installateur dont le SHA-256 est invalide a été accepté"
+fi
+assert_contains "$WORK/tampered-installer.log" "SHA-256 invalide pour install.sh"
+mv "$WORK/install.sh.valid" "$REMOTE/main/install.sh"
+
 echo "[13/16] rollback et état systemd"
 ROOT_ROLL="$WORK/root-roll"
 prepare_root "$ROOT_ROLL" 12
 run_installer "$PAYLOAD" "$ROOT_ROLL" amd64 --non-interactive --yes --service install
+printf 'ancienne complétion WoL Manager\n' >"$ROOT_ROLL/etc/bash_completion.d/wol-manager"
 cp "$REPO/configs/wol.example.yaml" "$ROOT_ROLL/etc/wol-manager/wol.yaml"
 : >"$ROOT_ROLL/systemd-state/enabled"
 : >"$ROOT_ROLL/systemd-state/active"
@@ -341,6 +393,8 @@ fi
 [[ $("$ROOT_ROLL/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "rollback du binaire absent"
 assert_file "$ROOT_ROLL/systemd-state/enabled"
 assert_file "$ROOT_ROLL/systemd-state/active"
+assert_contains "$ROOT_ROLL/etc/bash_completion.d/wol-manager" "ancienne complétion WoL Manager"
+assert_contains "$ROOT_ROLL/usr/share/bash-completion/completions/wol" "_comp_cmd_wol"
 assert_contains "$WORK/rollback.log" "Rollback terminé"
 
 echo "[14/16] échec initial sans installation partielle"
@@ -380,5 +434,24 @@ assert_file "$ROOT_ENABLE_EXISTING/systemd-state/active"
 EXISTING_LOG=$(find "$ROOT_ENABLE_EXISTING/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
 assert_file "$EXISTING_LOG"
 assert_not_contains "$EXISTING_LOG" 'test-only'
+
+echo "[complément] ancienne collision de complétion détectée sans modification"
+ROOT_LEGACY="$WORK/root-legacy"
+prepare_root "$ROOT_LEGACY" 12
+printf '# bash completion for WoL Manager\n_wol() { :; }\ncomplete -F _wol wol\n' >"$ROOT_LEGACY/usr/share/bash-completion/completions/wol"
+LEGACY_SHA=$(sha256sum "$ROOT_LEGACY/usr/share/bash-completion/completions/wol" | awk '{print $1}')
+run_installer "$PAYLOAD" "$ROOT_LEGACY" amd64 --non-interactive --yes --service cli >"$WORK/legacy.log" 2>&1
+assert_contains "$WORK/legacy.log" "restaurez-le si nécessaire"
+[[ $(sha256sum "$ROOT_LEGACY/usr/share/bash-completion/completions/wol" | awk '{print $1}') = "$LEGACY_SHA" ]] || fail "l'ancienne collision a été modifiée automatiquement"
+assert_file "$ROOT_LEGACY/etc/bash_completion.d/wol-manager"
+
+echo "[complément] mise à jour Debian simulée et désinstallation ciblée"
+printf '# fichier Debian mis à jour\n_comp_cmd_wol() { :; }\ncomplete -F _comp_cmd_wol wol\n' >"$ROOT_REMOTE/usr/share/bash-completion/completions/wol"
+assert_file "$ROOT_REMOTE/etc/bash_completion.d/wol-manager"
+APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_REMOTE/systemd-state" \
+  WOL_ROOT="$ROOT_REMOTE" WOL_OS_RELEASE="$ROOT_REMOTE/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
+  PATH="$MOCK_BIN:$PATH" "$ROOT_REMOTE/usr/local/lib/wol-manager/install.sh" --uninstall --non-interactive
+[[ ! -e "$ROOT_REMOTE/etc/bash_completion.d/wol-manager" ]] || fail "la complétion WoL Manager n'a pas été supprimée"
+assert_contains "$ROOT_REMOTE/usr/share/bash-completion/completions/wol" "fichier Debian mis à jour"
 
 echo "Tous les tests simulés de l'installateur ont réussi."

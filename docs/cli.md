@@ -37,3 +37,5 @@ Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
 Codes de sortie : `0` succès, `1` erreur d'exécution/configuration/politique, `2` syntaxe invalide. Les diagnostics actifs affichent toujours un avertissement sur stderr.
 
 L'installateur place automatiquement l'autocomplétion Bash au bon emplacement. Dans un nouveau terminal, `wol m<Tab>` complète `menu` et `wol config m<Tab>` complète `machine`. La commande `wol completion bash` permet aussi d'afficher le script sans l'installer.
+
+`wol --help` affiche l'aide générale sans charger la configuration. Les assistants disposent aussi d'une aide dédiée, par exemple `wol config network --help` ou `wol config machine --help`. Ces aides ne nécessitent ni privilège, ni fichier YAML, ni accès réseau.

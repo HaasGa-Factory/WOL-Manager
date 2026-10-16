@@ -9,4 +9,5 @@
 dist/manifest.json -text
 dist/manifest.json.sig -text
 dist/SHA256SUMS -text
+dist/install.sh -text
 dist/wol-linux-* binary

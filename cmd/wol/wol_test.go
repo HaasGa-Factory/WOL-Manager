@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -62,6 +63,35 @@ func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 	} {
 		if !strings.Contains(bashCompletion, expected) {
 			t.Fatalf("autocomplétion Bash incomplète, fragment absent: %s", expected)
+		}
+	}
+}
+
+func TestHelpDoesNotLoadConfiguration(t *testing.T) {
+	missing := filepath.Join(testDir(t), "absent.yaml")
+	if err := run([]string{"--config", missing, "--help"}); err != nil {
+		t.Fatalf("aide générale: %v", err)
+	}
+	for _, section := range []string{"network", "machine", "group", "nut"} {
+		if err := run([]string{"--config", missing, "config", section, "--help"}); err != nil {
+			t.Fatalf("aide config %s: %v", section, err)
+		}
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("l'aide a créé ou modifié la configuration: %v", err)
+	}
+}
+
+func TestConfigHelpContent(t *testing.T) {
+	for _, section := range []string{"network", "machine", "group", "nut"} {
+		var output bytes.Buffer
+		if err := printConfigHelp(&output, section); err != nil {
+			t.Fatal(err)
+		}
+		for _, expected := range []string{"Actions:", "Paramètres", "Valeurs par défaut:", "Contraintes:", "Exemple:", "Mode interactif:", "Mode non interactif:"} {
+			if !strings.Contains(output.String(), expected) {
+				t.Fatalf("aide %s incomplète: %q absent", section, expected)
+			}
 		}
 	}
 }

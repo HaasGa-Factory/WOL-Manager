@@ -23,7 +23,15 @@ sudo ./install.sh
 
 L'installateur active aussi l'autocomplétion Bash : dans un nouveau terminal, `wol m<Tab>` complète la commande `menu` et `wol config m<Tab>` complète `machine`.
 
-L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose le mode systemd. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun binaire compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
+Pour l'activer immédiatement dans un terminal déjà ouvert :
+
+```sh
+source /etc/bash_completion.d/wol-manager
+# ou, sans écrire de fichier :
+source <(wol completion bash)
+```
+
+L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose le mode systemd. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
 
 `sudo wol setup` guide ensuite l'ajout des réseaux, machines, groupes, dépendances et serveurs NUT. Un utilisateur normal n'a pas à modifier le YAML. Chaque enregistrement est validé, sauvegardé et écrit atomiquement ; un test WoL en simulation est proposé.
 

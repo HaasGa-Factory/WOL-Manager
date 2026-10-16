@@ -16,7 +16,7 @@ La clé publique approuvée est `packaging/release-public.pem`. Sa clé privée 
    ./scripts/build.sh --channel dev
    ```
 
-4. Vérifier `dist/`, `SHA256SUMS`, le manifeste et les deux formats ELF.
+4. Vérifier `dist/`, `SHA256SUMS`, le manifeste, sa copie signée de `install.sh` et les deux formats ELF.
 5. Enregistrer `dist/` dans un second commit de publication puis pousser `dev` après autorisation.
 6. Tester sur Debian : `sudo wol update --channel dev`.
 7. Après validation et autorisation, fusionner `dev` vers `main`, reconstruire avec `--channel main` depuis le commit source propre attendu, puis enregistrer le nouveau `dist/`.
@@ -25,6 +25,6 @@ Le commit source et le commit de publication sont volontairement distincts. Le p
 
 ## Contrôles de `build.sh`
 
-Le script exige `go`, `git`, `sha256sum`, `file` et `openssl`, refuse un arbre source sale hors `dist/`, vérifie les modules, exécute `go test ./...`, compile avec `CGO_ENABLED=0` pour Linux AMD64 et ARM64, contrôle les formats ELF, signe le manifeste Ed25519 et génère `SHA256SUMS`.
+Le script exige `go`, `git`, `sha256sum`, `file` et `openssl`, refuse un arbre source sale hors `dist/`, vérifie les modules, exécute `go test ./...`, compile avec `CGO_ENABLED=0` pour Linux AMD64 et ARM64, contrôle les formats ELF, ajoute une copie exacte de `install.sh`, signe le manifeste Ed25519 et génère `SHA256SUMS`.
 
 Il n'effectue jamais de commit, push, merge, création de branche, GitHub Release ou publication. Le format ARM64 est contrôlé localement ; son exécution doit être validée sur une vraie machine ARM64.

@@ -8,6 +8,10 @@
 - simulations WoL guidées et confirmation obligatoire avant un réveil réel dans le menu ;
 - `curl` vérifié dès l'installation pour garantir le fonctionnement ultérieur de `wol update`.
 - autocomplétion Bash installée pour les commandes et sous-commandes (`wol m<Tab>`, `wol config m<Tab>`).
+- détection des dépendances avec un `PATH` système déterministe, y compris pour `wol update --check` sans sudo ;
+- aides CLI complètes et sans chargement de configuration pour `wol --help` et `wol config … --help` ;
+- complétion Bash déplacée dans `/etc/bash_completion.d/wol-manager` sans toucher au fichier `wol` appartenant à Debian.
+- installateur système désormais inclus dans le manifeste signé et mis à jour atomiquement avec le binaire.
 
 ## 1.0.0-beta.1 - 2026-10-14
 

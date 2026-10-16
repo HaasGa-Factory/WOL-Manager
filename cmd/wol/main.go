@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,8 +41,12 @@ func run(args []string) error {
 	root := flag.NewFlagSet("wol", flag.ContinueOnError)
 	configPath := root.String("config", envOr("WOL_CONFIG", "/etc/wol-manager/wol.yaml"), "fichier de configuration")
 	jsonOut := root.Bool("json", false, "sortie JSON")
-	root.SetOutput(os.Stderr)
+	root.SetOutput(io.Discard)
 	if err := root.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printUsage(os.Stdout)
+			return nil
+		}
 		return errUsage
 	}
 	args = root.Args()
@@ -81,6 +86,9 @@ func run(args []string) error {
 		}
 		fmt.Print(bashCompletion)
 		return nil
+	}
+	if cmd == "config" && len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+		return printConfigHelp(os.Stdout, args[0])
 	}
 	if cmd == "config" && len(args) > 0 && args[0] == "edit" {
 		return editConfig(*configPath)
@@ -169,7 +177,12 @@ func run(args []string) error {
 }
 
 func usage() error {
-	fmt.Fprintln(os.Stderr, `WoL Manager `+version+`
+	printUsage(os.Stderr)
+	return errUsage
+}
+
+func printUsage(output io.Writer) {
+	fmt.Fprintln(output, `WoL Manager `+version+`
 Usage: wol [--config FILE] [--json] COMMAND
   setup                         assistant de configuration
   update [--check] [--channel main|dev]
@@ -192,7 +205,51 @@ Usage: wol [--config FILE] [--json] COMMAND
   menu                          interface interactive
   api serve                     démarre l'API
   relay serve|check             relais distant`)
-	return errUsage
+}
+
+func printConfigHelp(output io.Writer, section string) error {
+	var details string
+	switch section {
+	case "network":
+		details = `Actions: ajouter, modifier, supprimer ou revenir.
+Paramètres demandés: identifiant, CIDR IPv4, interface, IP source et transports WoL.
+Valeurs par défaut: interface et IP source automatiques; broadcast local proposé à la création.
+Contraintes: identifiant unique, CIDR IPv4 valide; suppression refusée si une machine utilise le réseau.
+Exemple: sudo wol config network`
+	case "machine":
+		details = `Actions: ajouter, modifier, supprimer ou revenir.
+Paramètres demandés: identifiant, nom, MAC, IPv4, réseau, groupes, dépendances et vérification après réveil.
+Valeurs par défaut: port WoL global; vérification ICMP/TCP/ARP facultative.
+Contraintes: MAC et IPv4 valides, réseau existant; suppression refusée tant que la machine est référencée.
+Exemple: sudo wol config machine`
+	case "group":
+		details = `Actions: ajouter, modifier, supprimer ou revenir.
+Paramètres demandés: identifiant, priorité, machines et dépendances.
+Valeurs par défaut: listes vides; priorité demandée par l'assistant.
+Contraintes: références existantes; suppression refusée si le groupe est encore utilisé.
+Exemple: sudo wol config group`
+	case "nut":
+		details = `Actions: détecter localement, ajouter ou modifier un serveur, sélectionner ou supprimer des UPS, tester ou reporter.
+Paramètres demandés: adresse IP/DNS, port, TLS éventuel et UPS à surveiller.
+Valeurs par défaut: 127.0.0.1:3493 pour la détection locale; port distant 3493; délai 3 s.
+Contraintes: lecture seule, aucun scan réseau, aucune installation ni modification du serveur NUT.
+Exemple: sudo wol config nut`
+	default:
+		return errUsage
+	}
+	fmt.Fprintf(output, `Usage: wol [--config FILE] config %s [--help]
+
+Gestion guidée interactive de la section %s.
+%s
+
+Options:
+  -h, --help       affiche cette aide et quitte sans charger la configuration
+  --config FILE    option globale à placer avant "config" (défaut: /etc/wol-manager/wol.yaml)
+
+Mode interactif: l'assistant demande les valeurs et une confirmation avant l'écriture atomique.
+Mode non interactif: aucune modification n'est proposée; utilisez "wol config check" pour valider.
+`, section, section, details)
+	return nil
 }
 
 const bashCompletion = `# bash completion for WoL Manager

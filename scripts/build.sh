@@ -116,13 +116,17 @@ fi
 
 amd64_sha=$(sha256sum "$work/wol-linux-amd64" | awk '{print $1}')
 arm64_sha=$(sha256sum "$work/wol-linux-arm64" | awk '{print $1}')
+install -m 0755 install.sh "$work/install.sh"
+installer_sha=$(sha256sum "$work/install.sh" | awk '{print $1}')
 cat >"$work/manifest.json" <<EOF
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "version": "$version",
   "channel": "$CHANNEL",
   "source_revision": "$source_revision",
   "key_id": "wol-manager-2026-01",
+  "installer_file": "install.sh",
+  "installer_sha256": "$installer_sha",
   "linux_amd64_file": "wol-linux-amd64",
   "linux_amd64_sha256": "$amd64_sha",
   "linux_arm64_file": "wol-linux-arm64",
@@ -139,11 +143,11 @@ openssl pkeyutl -verify -rawin -pubin -inkey "$PUBLIC_KEY" \
 
 (
   cd "$work"
-  sha256sum wol-linux-amd64 wol-linux-arm64 manifest.json manifest.json.sig >SHA256SUMS
+  sha256sum wol-linux-amd64 wol-linux-arm64 install.sh manifest.json manifest.json.sig >SHA256SUMS
 )
 
-for artifact in wol-linux-amd64 wol-linux-arm64 manifest.json manifest.json.sig SHA256SUMS; do
-  install -m "$(case "$artifact" in wol-*) echo 0755;; *) echo 0644;; esac)" \
+for artifact in wol-linux-amd64 wol-linux-arm64 install.sh manifest.json manifest.json.sig SHA256SUMS; do
+  install -m "$(case "$artifact" in wol-*|install.sh) echo 0755;; *) echo 0644;; esac)" \
     "$work/$artifact" "$DIST/$artifact"
 done
 

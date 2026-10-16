@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+if [ "${WOL_TEST_MODE:-0}" = 1 ]; then
+  PATH=${WOL_TEST_SYSTEM_PATH:-$PATH}
+else
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+fi
+export PATH
+
 VERSION="1.1.0-beta"
 ACTION=install
 CHECK_ONLY=0
@@ -20,6 +27,7 @@ TEST_SYSTEMD=${WOL_TEST_SYSTEMD:-0}
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TMP_WORK=""
 BACKUP_DIR=""
+INSTALLER_CANDIDATE=""
 ROLLBACK_READY=0
 PREVIOUS_ACTIVE=0
 PREVIOUS_ENABLED=0
@@ -31,7 +39,8 @@ BIN=$(path /usr/local/bin/wol)
 HELPER_DIR=$(path /usr/local/lib/wol-manager)
 HELPER="$HELPER_DIR/install.sh"
 UNIT=$(path /etc/systemd/system/wol-manager.service)
-COMPLETION=$(path /usr/share/bash-completion/completions/wol)
+COMPLETION=$(path /etc/bash_completion.d/wol-manager)
+LEGACY_COMPLETION=$(path /usr/share/bash-completion/completions/wol)
 CONFIG=$(path /etc/wol-manager/wol.yaml)
 TOKENS_FILE=$(path /etc/wol-manager/secrets/tokens.json)
 RELEASE_CONFIG=$(path /etc/wol-manager/release.conf)
@@ -112,7 +121,21 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 need_root() {
-  [ "$TEST_MODE" = 1 ] || [ "$(id -u)" -eq 0 ] || die "Exécutez cette action avec sudo"
+  if [ "$TEST_MODE" = 1 ]; then
+    [ "${WOL_TEST_UID:-0}" -eq 0 ] || die "Exécutez cette action avec sudo"
+    return
+  fi
+  [ "$(id -u)" -eq 0 ] || die "Exécutez cette action avec sudo"
+}
+
+check_legacy_completion() {
+  [ -f "$LEGACY_COMPLETION" ] || return 0
+  grep -Fq '# bash completion for WoL Manager' "$LEGACY_COMPLETION" 2>/dev/null || return 0
+  if dpkg-query -S /usr/share/bash-completion/completions/wol >/dev/null 2>&1; then
+    warn "L'ancien WoL Manager semble avoir remplacé un fichier du paquet bash-completion. Il reste intact; restaurez-le si nécessaire avec: sudo apt-get install --reinstall bash-completion"
+  else
+    warn "Ancienne complétion WoL Manager détectée dans /usr/share/bash-completion/completions/wol. Elle reste intacte; ne la supprimez qu'après vérification de son propriétaire."
+  fi
 }
 
 detect_system() {
@@ -193,11 +216,13 @@ verify_manifest() {
   [ -r "$PUBLIC_KEY" ] || die "Clé publique approuvée absente: $PUBLIC_KEY"
   openssl base64 -d -A -in "$signature" -out "$TMP_WORK/manifest.sig.bin" >>"$LOG_FILE" 2>&1 || die "Signature du manifeste illisible"
   openssl pkeyutl -verify -rawin -pubin -inkey "$PUBLIC_KEY" -in "$manifest" -sigfile "$TMP_WORK/manifest.sig.bin" >>"$LOG_FILE" 2>&1 || die "Authenticité du manifeste non vérifiée"
-  [ "$(manifest_number manifest_version "$manifest")" = 1 ] || die "Format de manifeste non pris en charge"
+  [ "$(manifest_number manifest_version "$manifest")" = 2 ] || die "Format de manifeste non pris en charge; mettez d'abord à jour l'installateur système depuis le dépôt"
   MANIFEST_VERSION=$(manifest_value version "$manifest")
   MANIFEST_CHANNEL=$(manifest_value channel "$manifest")
   SOURCE_REVISION=$(manifest_value source_revision "$manifest")
   KEY_ID=$(manifest_value key_id "$manifest")
+  INSTALLER_NAME=$(manifest_value installer_file "$manifest")
+  INSTALLER_HASH=$(manifest_value installer_sha256 "$manifest")
   case "$ARCH" in
     amd64) CANDIDATE_NAME=$(manifest_value linux_amd64_file "$manifest"); CANDIDATE_HASH=$(manifest_value linux_amd64_sha256 "$manifest") ;;
     arm64) CANDIDATE_NAME=$(manifest_value linux_arm64_file "$manifest"); CANDIDATE_HASH=$(manifest_value linux_arm64_sha256 "$manifest") ;;
@@ -206,9 +231,16 @@ verify_manifest() {
   [ "$KEY_ID" = wol-manager-2026-01 ] || die "Clé de distribution inconnue: $KEY_ID"
   valid_sha "$SOURCE_REVISION" || die "Révision source invalide"
   valid_hash "$CANDIDATE_HASH" || die "SHA-256 du binaire invalide"
+  valid_hash "$INSTALLER_HASH" || die "SHA-256 de l'installateur invalide"
   [ "$CANDIDATE_NAME" = "wol-linux-$ARCH" ] || die "Nom de binaire inattendu: $CANDIDATE_NAME"
+  [ "$INSTALLER_NAME" = install.sh ] || die "Nom d'installateur inattendu: $INSTALLER_NAME"
   printf '%s\n' "$MANIFEST_VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.+-]*$' || die "Version invalide dans le manifeste"
   log "Manifeste signé vérifié ($KEY_ID)"
+}
+verify_installer_candidate() {
+  actual=$(sha256sum "$INSTALLER_CANDIDATE" | awk '{print $1}')
+  [ "$actual" = "$INSTALLER_HASH" ] || die "SHA-256 invalide pour $INSTALLER_NAME"
+  sh -n "$INSTALLER_CANDIDATE" || die "Syntaxe de l'installateur distribué invalide"
 }
 verify_candidate() {
   actual=$(sha256sum "$CANDIDATE" | awk '{print $1}')
@@ -234,6 +266,7 @@ prepare_candidate() {
     manifest="$SCRIPT_DIR/dist/manifest.json"
     signature="$SCRIPT_DIR/dist/manifest.json.sig"
     CANDIDATE="$SCRIPT_DIR/dist/wol-linux-$ARCH"
+    INSTALLER_CANDIDATE="$SCRIPT_DIR/dist/install.sh"
     PUBLICATION_COMMIT=local
     verify_manifest "$manifest" "$signature"
     log "Distribution locale sélectionnée"
@@ -247,7 +280,10 @@ prepare_candidate() {
     verify_manifest "$manifest" "$signature"
     CANDIDATE="$TMP_WORK/$CANDIDATE_NAME"
     download "$base/$CANDIDATE_NAME" "$CANDIDATE" || die "Aucun binaire compatible linux/$ARCH n'est disponible"
+    INSTALLER_CANDIDATE="$TMP_WORK/$INSTALLER_NAME"
+    download "$base/$INSTALLER_NAME" "$INSTALLER_CANDIDATE" || die "Installateur signé indisponible pour $CHANNEL"
   fi
+  verify_installer_candidate
   verify_candidate
 }
 
@@ -356,11 +392,13 @@ install_candidate() {
   [ "$PREVIOUS_ACTIVE" -eq 0 ] || run systemctl stop wol-manager.service
   install -m 0755 "$CANDIDATE" "$BIN.new.$$"
   mv -f "$BIN.new.$$" "$BIN"
+  install -m 0755 "$INSTALLER_CANDIDATE" "$HELPER.new.$$"
+  mv -f "$HELPER.new.$$" "$HELPER"
   "$BIN" completion bash >"$TMP_WORK/bash-completion-wol" || die "Génération de l'autocomplétion Bash impossible"
   install -m 0644 "$TMP_WORK/bash-completion-wol" "$COMPLETION.new.$$"
+  [ "$TEST_MODE" = 1 ] || chown root:root "$COMPLETION.new.$$"
   mv -f "$COMPLETION.new.$$" "$COMPLETION"
   if [ "$SCRIPT_DIR" != "$HELPER_DIR" ]; then
-    install -m 0755 "$SCRIPT_DIR/install.sh" "$HELPER"
     install -m 0644 "$SCRIPT_DIR/packaging/release-public.pem" "$HELPER_DIR/packaging/release-public.pem"
     install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$HELPER_DIR/configs/wol.example.yaml"
     install -m 0644 "$SCRIPT_DIR/packaging/systemd/wol-manager.service" "$HELPER_DIR/packaging/systemd/wol-manager.service"
@@ -424,6 +462,7 @@ uninstall() {
 
 if [ "$ACTION" = version ]; then log "Installateur $VERSION; version installée: $(installed_version)"; exit 0; fi
 detect_system
+check_legacy_completion
 [ "$CHANNEL" != dev ] || warn "CANAL DEV/BETA: ce choix n'est jamais enregistré comme canal par défaut"
 if [ "$ACTION" = uninstall ]; then uninstall; exit 0; fi
 if [ "$ACTION" = install ] && [ -x "$BIN" ]; then die "WoL Manager est déjà installé; utilisez sudo wol update"; fi

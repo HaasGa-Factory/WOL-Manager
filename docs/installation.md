@@ -18,7 +18,7 @@ sudo ./install.sh
 
 L'installation affiche la version Debian, l'architecture, l'espace libre, les dépendances et les mises à jour Debian connues du cache APT. Elle n'exécute jamais `apt upgrade`, `apt full-upgrade` ou `apt dist-upgrade`. `curl` est contrôlé même lorsqu'un binaire local est disponible, car il est indispensable aux futures vérifications et mises à jour HTTPS.
 
-L'installateur utilise d'abord la distribution locale signée dans `dist/`. Sinon, il résout la branche GitHub `main` vers un commit de publication immuable, puis télécharge depuis ce même commit le manifeste signé et le seul binaire correspondant à l'architecture. Il vérifie la signature Ed25519, le SHA-256, la version, le canal et la révision source intégrés au binaire.
+L'installateur utilise d'abord la distribution locale signée dans `dist/`. Sinon, il résout la branche GitHub `main` vers un commit de publication immuable, puis télécharge depuis ce même commit le manifeste signé, l'installateur et le seul binaire correspondant à l'architecture. Il vérifie la signature Ed25519, les SHA-256, la version, le canal et la révision source intégrés au binaire. L'installateur système se met ensuite à jour atomiquement avec la copie couverte par le manifeste signé.
 
 Il ne télécharge jamais les sources, n'installe jamais Go et ne tente aucune compilation. Un binaire absent, incompatible ou non vérifiable provoque un arrêt propre avant remplacement.
 
@@ -67,7 +67,21 @@ wol m<Tab>          # complète ou propose « menu »
 wol config m<Tab>   # complète ou propose « machine »
 ```
 
-Si le terminal était déjà ouvert pendant l'installation, ouvrez-en un nouveau ou chargez une fois `/usr/share/bash-completion/bash_completion`.
+WoL Manager installe son propre fichier dans `/etc/bash_completion.d/wol-manager`. Il ne remplace et ne supprime jamais `/usr/share/bash-completion/completions/wol`, qui appartient au paquet Debian et concerne une autre commande portant le même nom.
+
+Si le terminal était déjà ouvert pendant l'installation, ouvrez-en un nouveau ou utilisez :
+
+```sh
+source /etc/bash_completion.d/wol-manager
+```
+
+Un contournement temporaire sans écriture système reste disponible :
+
+```sh
+source <(wol completion bash)
+```
+
+L'installateur utilise un `PATH` système déterministe contenant notamment `/usr/sbin`. Ainsi, `wol update --check` ne signale pas faussement l'absence du paquet `passwd` lorsque le `PATH` d'un utilisateur normal ne contient pas `useradd`.
 
 ## Première configuration
 
