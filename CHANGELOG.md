@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-10-16
+
+- message explicite et sans modification lorsque `wol update --check` consulte un manifeste `main` signé de format 1 depuis une installation `dev` plus récente ;
+- refus strict conservé pour les signatures invalides et les formats de manifeste inconnus ;
+- canal `dev` toujours temporaire, avec `main` conservé comme canal par défaut.
+
 ## 1.1.0-beta - 2026-10-16
 
 - assistant unique pour réseaux, machines, groupes, dépendances et NUT ;

@@ -83,6 +83,8 @@ source <(wol completion bash)
 
 L'installateur utilise un `PATH` système déterministe contenant notamment `/usr/sbin`. Ainsi, `wol update --check` ne signale pas faussement l'absence du paquet `passwd` lorsque le `PATH` d'un utilisateur normal ne contient pas `useradd`.
 
+Après l'installation d'une version `dev`, `wol update --check` continue de consulter `main` par défaut. Si `main` utilise encore l'ancien manifeste signé de format 1, la commande indique qu'il faut utiliser temporairement `wol update --check --channel dev` ou attendre la publication sur `main`. Elle ne modifie aucun fichier et ne tente aucun retour vers une ancienne version.
+
 ## Première configuration
 
 ```sh

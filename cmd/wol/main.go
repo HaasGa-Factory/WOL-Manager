@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	version        = "1.1.0-beta"
+	version        = "1.1.1"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )

@@ -22,6 +22,16 @@ sudo wol update --channel dev
 
 Un avertissement BETA/DEV est affiché. Ce choix vaut uniquement pour cette commande : l'exécution suivante de `sudo wol update` revient automatiquement à `main`.
 
+### Vérification de `main` depuis une version `dev`
+
+Pendant une transition, `dev` peut utiliser le manifeste de format 2 alors que `main` publie encore le format signé 1. Dans ce cas précis, `wol update --check` et `wol update --check --channel main` vérifient d'abord la signature du manifeste, expliquent que `main` ne peut pas remplacer la version `dev`, puis s'arrêtent sans modifier le binaire, l'installateur, la configuration, les secrets, le service ou le canal enregistré. Vérifiez temporairement le canal de développement avec :
+
+```sh
+wol update --check --channel dev
+```
+
+Il faut attendre la publication de la version sur `main` avant de revenir au canal stable. Cette exception d'affichage ne s'applique qu'au format signé connu 1 pendant un contrôle sans installation : une signature incorrecte ou tout autre format incompatible reste une erreur stricte. Le canal par défaut reste `main`.
+
 ### Transition unique depuis le manifeste de format 1
 
 Les installations `1.1.0-beta` construites depuis la révision `0d423dd` possèdent un ancien moteur qui ne sait mettre à jour que le binaire. Pour éviter qu'il réécrive le fichier de complétion appartenant à Debian, le premier passage au manifeste de format 2 est volontairement refusé par cet ancien moteur.

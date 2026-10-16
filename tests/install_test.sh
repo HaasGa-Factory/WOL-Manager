@@ -155,6 +155,32 @@ EOF
   printf '\n' >>"$directory/manifest.json.sig"
 }
 
+make_legacy_distribution() {
+  local directory=$1 version=$2 revision=$3 channel=$4 format=${5:-1}
+  mkdir -p "$directory"
+  make_binary "$directory/wol-linux-amd64" "$version" "$revision" "$channel"
+  make_binary "$directory/wol-linux-arm64" "$version" "$revision" "$channel"
+  local amd64_sha arm64_sha
+  amd64_sha=$(sha256sum "$directory/wol-linux-amd64" | awk '{print $1}')
+  arm64_sha=$(sha256sum "$directory/wol-linux-arm64" | awk '{print $1}')
+  cat >"$directory/manifest.json" <<EOF
+{
+  "manifest_version": $format,
+  "version": "$version",
+  "channel": "$channel",
+  "source_revision": "$revision",
+  "key_id": "wol-manager-2026-01",
+  "linux_amd64_file": "wol-linux-amd64",
+  "linux_amd64_sha256": "$amd64_sha",
+  "linux_arm64_file": "wol-linux-arm64",
+  "linux_arm64_sha256": "$arm64_sha"
+}
+EOF
+  openssl pkeyutl -sign -rawin -inkey "$PRIVATE_KEY" -in "$directory/manifest.json" -out "$directory/signature.bin"
+  openssl base64 -A -in "$directory/signature.bin" -out "$directory/manifest.json.sig"
+  printf '\n' >>"$directory/manifest.json.sig"
+}
+
 prepare_payload() {
   local payload=$1 version=$2 revision=$3 channel=${4:-main}
   mkdir -p "$payload/configs" "$payload/packaging/systemd" "$payload/dist"
@@ -293,11 +319,17 @@ assert_contains "$WORK/non-root.log" "Exécutez cette action avec sudo"
 run_update() {
   local root=$1 channel=$2
   shift 2
+  run_update_from "$REMOTE" "$root" "$channel" --channel "$channel" "$@"
+}
+
+run_update_from() {
+  local remote=$1 root=$2 remote_channel=$3
+  shift 3
   APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$root/systemd-state" \
-  REMOTE_DIR="$REMOTE" REMOTE_CHANNEL="$channel" PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
+  REMOTE_DIR="$remote" REMOTE_CHANNEL="$remote_channel" PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
   WOL_ROOT="$root" WOL_OS_RELEASE="$root/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
   WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$MOCK_BIN:$PATH" \
-  "$root/usr/local/lib/wol-manager/install.sh" --update --channel "$channel" "$@"
+  "$root/usr/local/lib/wol-manager/install.sh" --update "$@"
 }
 
 echo "[6/16] vérification de mise à jour sans curl et sans installation APT"
@@ -352,6 +384,49 @@ run_update "$ROOT12" dev --yes --non-interactive >"$WORK/dev.log" 2>&1
 assert_contains "$WORK/dev.log" "CANAL DEV/BETA"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.3 ]] || fail "mise à jour dev absente"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
+
+echo "[protection transition] version dev et manifeste main signé de format 1"
+run_update "$ROOT12" dev --check --non-interactive >"$WORK/dev-check.log"
+assert_contains "$WORK/dev-check.log" "WoL Manager est à jour"
+
+REMOTE_LEGACY="$WORK/remote-legacy"
+mkdir -p "$REMOTE_LEGACY/main"
+make_legacy_distribution "$REMOTE_LEGACY/main" 1.0.0-beta.2 "$REV2" main
+ROOT12_BEFORE_LEGACY="$WORK/root12-before-legacy"
+cp -a "$ROOT12" "$ROOT12_BEFORE_LEGACY"
+
+run_update_from "$REMOTE_LEGACY" "$ROOT12" main --check --non-interactive >"$WORK/legacy-main-default.log"
+assert_contains "$WORK/legacy-main-default.log" "Une version du canal dev est actuellement installée."
+assert_contains "$WORK/legacy-main-default.log" 'wol update --check --channel dev'
+assert_contains "$WORK/legacy-main-default.log" "Aucun changement n'a été effectué."
+
+run_update_from "$REMOTE_LEGACY" "$ROOT12" main --channel main --check --non-interactive >"$WORK/legacy-main-explicit.log"
+assert_contains "$WORK/legacy-main-explicit.log" "Une version du canal dev est actuellement installée."
+diff -r "$ROOT12_BEFORE_LEGACY" "$ROOT12" >/dev/null || fail "le contrôle du manifeste main ancien a modifié l'installation dev"
+assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
+assert_contains "$ROOT12/etc/wol-manager/release.conf" "installed_channel=dev"
+
+if run_update_from "$REMOTE_LEGACY" "$ROOT_REMOTE" main --check --non-interactive >"$WORK/legacy-main-from-main.log" 2>&1; then
+  fail "une installation main a accepté un manifeste de format 1 incompatible"
+fi
+assert_contains "$WORK/legacy-main-from-main.log" "Format de manifeste non pris en charge"
+
+REMOTE_LEGACY_TAMPERED="$WORK/remote-legacy-tampered"
+mkdir -p "$REMOTE_LEGACY_TAMPERED"
+cp -a "$REMOTE_LEGACY/main" "$REMOTE_LEGACY_TAMPERED/main"
+sed -i 's/beta.2/beta.9/' "$REMOTE_LEGACY_TAMPERED/main/manifest.json"
+if run_update_from "$REMOTE_LEGACY_TAMPERED" "$ROOT12" main --check --non-interactive >"$WORK/legacy-main-tampered.log" 2>&1; then
+  fail "un ancien manifeste altéré a déclenché le message de transition"
+fi
+assert_contains "$WORK/legacy-main-tampered.log" "Authenticité du manifeste non vérifiée"
+
+REMOTE_UNKNOWN="$WORK/remote-unknown"
+mkdir -p "$REMOTE_UNKNOWN/main"
+make_legacy_distribution "$REMOTE_UNKNOWN/main" 9.9.9 "$REV2" main 99
+if run_update_from "$REMOTE_UNKNOWN" "$ROOT12" main --check --non-interactive >"$WORK/unknown-format.log" 2>&1; then
+  fail "un format de manifeste inconnu a été accepté"
+fi
+assert_contains "$WORK/unknown-format.log" "Format de manifeste non pris en charge"
 
 echo "[12/16] manifeste altéré refusé"
 cp -R "$REMOTE/main" "$WORK/tampered"

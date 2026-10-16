@@ -1,6 +1,6 @@
 # WoL Manager
 
-WoL Manager `v1.1.0-beta` est un gestionnaire Wake-on-LAN Linux centralisé pour plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fournit une CLI, un menu, une API REST authentifiée et une orchestration persistante sans Docker ni accès Internet à l'exécution.
+WoL Manager `v1.1.1` est un gestionnaire Wake-on-LAN Linux centralisé pour plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fournit une CLI, un menu, une API REST authentifiée et une orchestration persistante sans Docker ni accès Internet à l'exécution.
 
 > Beta : testez d'abord avec `--dry-run`. Un paquet WoL émis ne prouve ni sa réception ni le réveil d'une machine.
 
@@ -51,6 +51,8 @@ wol ups test
 ```
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
+
+Si une version `dev` utilisant le manifeste de format 2 est installée alors que `main` publie encore le format signé 1, `wol update --check` explique cette transition et ne modifie rien. Utilisez `wol update --check --channel dev` jusqu'à la publication de cette version sur `main` ; aucun retour automatique vers une ancienne version n'est tenté.
 
 Pour un essai sans installation :
 
