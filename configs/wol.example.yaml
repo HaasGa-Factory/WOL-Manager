@@ -3,9 +3,12 @@ version: 1
 global:
   port: 9
   transport_order: [local_broadcast, unicast, directed_broadcast, relay]
-  wake_timeout: 45s
   wake_retries: 1
   delay: 2s
+  verification:
+    initial_delay: 0s
+    timeout: 45s
+    interval: 2s
   checks:
     - type: tcp
       port: 22
@@ -43,6 +46,10 @@ servers:
     ip: 192.168.20.10
     network: servers
     groups: [infrastructure]
+    verification:
+      initial_delay: 90s
+      timeout: 180s
+      interval: 5s
     checks:
       - {type: tcp, port: 22, timeout: 3s}
       - {type: arp}

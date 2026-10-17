@@ -59,6 +59,7 @@ func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 	for _, expected := range []string{
 		`compgen -W "setup update list status wake config token network ups jobs menu`,
 		`config) COMPREPLY=( $(compgen -W "check edit network machine group nut"`,
+		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all"`,
 		`complete -F _wol wol`,
 	} {
 		if !strings.Contains(bashCompletion, expected) {

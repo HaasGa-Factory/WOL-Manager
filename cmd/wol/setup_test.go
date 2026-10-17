@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"os"
@@ -122,7 +123,7 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 		"1", "1", // réseaux: ajouter
 		"lan", "192.168.50.0/24", "", "", "", "", "", "4",
 		"2", "1", // machines: ajouter
-		"test-pc", "Machine test", "02:00:00:00:50:10", "192.168.50.10", "lan", "", "", "1", "4",
+		"test-pc", "Machine test", "02:00:00:00:50:10", "192.168.50.10", "lan", "", "", "1", "90s", "180s", "5s", "4",
 		"5", "y", // valider et enregistrer
 		"y", "test-pc", // simulation WoL
 	}, "\n") + "\n")
@@ -137,6 +138,10 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 	if cfg.Networks["lan"].CIDR != "192.168.50.0/24" || cfg.Servers["test-pc"].Network != "lan" {
 		t.Fatalf("configuration guidée incorrecte: %#v", cfg)
 	}
+	initialDelay, timeout, interval := cfg.effectiveVerification("test-pc")
+	if initialDelay != 90*time.Second || timeout != 180*time.Second || interval != 5*time.Second {
+		t.Fatalf("délais guidés incorrects: %s, %s, %s", initialDelay, timeout, interval)
+	}
 	if !strings.Contains(output.String(), "dry_run") || !strings.Contains(output.String(), "Configuration enregistrée") {
 		t.Fatalf("résultat guidé incomplet:\n%s", output.String())
 	}
@@ -146,6 +151,44 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0640 {
 		t.Fatalf("permissions = %o, attendu 0640", info.Mode().Perm())
+	}
+}
+
+func TestGuidedGlobalVerification(t *testing.T) {
+	cfg := testConfig(t)
+	input := bufio.NewReader(strings.NewReader("10s\n3m\n5s\n"))
+	var output strings.Builder
+	if !configureGlobalVerification(input, &output, cfg) {
+		t.Fatalf("configuration globale non modifiée: %s", output.String())
+	}
+	initialDelay, timeout, interval := cfg.effectiveVerification("two")
+	if initialDelay != 10*time.Second || timeout != 3*time.Minute || interval != 5*time.Second {
+		t.Fatalf("délais globaux incorrects: %s, %s, %s", initialDelay, timeout, interval)
+	}
+}
+
+func TestWriteGlobalVerificationPreservesOtherGlobalSettings(t *testing.T) {
+	directory := testDir(t)
+	path := filepath.Join(directory, "wol.yaml")
+	base := strings.Replace(minimalConfig, "port: 9", "port: 7 # conserver", 1)
+	cfg, err := loadConfigData([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Global.Verification = VerificationConfig{
+		InitialDelay: durationPointer(90 * time.Second),
+		Timeout:      durationPointer(3 * time.Minute),
+		Interval:     durationPointer(5 * time.Second),
+	}
+	if err := writeManagedConfig(path, []byte(base), cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "port: 7 # conserver") || !strings.Contains(string(data), "initial_delay: 1m30s") {
+		t.Fatalf("configuration globale mal préservée:\n%s", data)
 	}
 }
 

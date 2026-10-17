@@ -12,7 +12,7 @@ Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
 | `wol version` | affiche la version installée |
 | `wol list` | liste les serveurs |
 | `wol status ID` | exécute les vérifications configurées |
-| `wol wake ID [--dry-run]` | dépendances puis serveur |
+| `wol wake ID [--dry-run] [--verification-delay 90s]` | dépendances puis serveur ; surcharge temporaire du délai avant vérification |
 | `wol wake --group ID` | groupe |
 | `wol wake --all` | tous les serveurs actifs |
 | `wol config check` | validation stricte |

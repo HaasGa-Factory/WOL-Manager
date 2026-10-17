@@ -15,6 +15,8 @@ import (
 
 type Duration time.Duration
 
+const maxVerificationDuration = 24 * time.Hour
+
 func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 	v, err := time.ParseDuration(n.Value)
 	if err != nil {
@@ -48,12 +50,13 @@ type Config struct {
 }
 
 type Defaults struct {
-	Port           int      `yaml:"port"`
-	TransportOrder []string `yaml:"transport_order"`
-	Checks         []Check  `yaml:"checks"`
-	WakeTimeout    Duration `yaml:"wake_timeout"`
-	WakeRetries    int      `yaml:"wake_retries"`
-	Delay          Duration `yaml:"delay"`
+	Port           int                `yaml:"port"`
+	TransportOrder []string           `yaml:"transport_order"`
+	Checks         []Check            `yaml:"checks"`
+	WakeTimeout    Duration           `yaml:"wake_timeout"`
+	WakeRetries    int                `yaml:"wake_retries"`
+	Delay          Duration           `yaml:"delay"`
+	Verification   VerificationConfig `yaml:"verification,omitempty"`
 }
 
 type Network struct {
@@ -85,19 +88,26 @@ type Group struct {
 }
 
 type Server struct {
-	Name         string     `yaml:"name" json:"name"`
-	MAC          string     `yaml:"mac" json:"mac"`
-	IP           string     `yaml:"ip" json:"ip"`
-	Network      string     `yaml:"network" json:"network"`
-	Groups       []string   `yaml:"groups" json:"groups"`
-	Dependencies []string   `yaml:"dependencies" json:"dependencies"`
-	Checks       []Check    `yaml:"checks" json:"checks"`
-	Transports   []string   `yaml:"transports" json:"transports"`
-	WakeTimeout  Duration   `yaml:"wake_timeout" json:"-"`
-	WakeRetries  *int       `yaml:"wake_retries" json:"-"`
-	Delay        Duration   `yaml:"delay" json:"-"`
-	UPS          *UPSPolicy `yaml:"ups_policy" json:"-"`
-	Enabled      *bool      `yaml:"enabled" json:"enabled,omitempty"`
+	Name         string             `yaml:"name" json:"name"`
+	MAC          string             `yaml:"mac" json:"mac"`
+	IP           string             `yaml:"ip" json:"ip"`
+	Network      string             `yaml:"network" json:"network"`
+	Groups       []string           `yaml:"groups" json:"groups"`
+	Dependencies []string           `yaml:"dependencies" json:"dependencies"`
+	Checks       []Check            `yaml:"checks" json:"checks"`
+	Transports   []string           `yaml:"transports" json:"transports"`
+	WakeTimeout  Duration           `yaml:"wake_timeout" json:"-"`
+	WakeRetries  *int               `yaml:"wake_retries" json:"-"`
+	Delay        Duration           `yaml:"delay" json:"-"`
+	Verification VerificationConfig `yaml:"verification,omitempty" json:"-"`
+	UPS          *UPSPolicy         `yaml:"ups_policy" json:"-"`
+	Enabled      *bool              `yaml:"enabled" json:"enabled,omitempty"`
+}
+
+type VerificationConfig struct {
+	InitialDelay *Duration `yaml:"initial_delay,omitempty"`
+	Timeout      *Duration `yaml:"timeout,omitempty"`
+	Interval     *Duration `yaml:"interval,omitempty"`
 }
 
 type Check struct {
@@ -268,8 +278,19 @@ func (c *Config) Validate() error {
 			seen[x] = true
 		}
 	}
+	checkVerification := func(where string, v VerificationConfig) {
+		if v.InitialDelay != nil && (time.Duration(*v.InitialDelay) < 0 || time.Duration(*v.InitialDelay) > maxVerificationDuration) {
+			problems = append(problems, where+": initial_delay doit être compris entre 0s et 24h")
+		}
+		for name, value := range map[string]*Duration{"timeout": v.Timeout, "interval": v.Interval} {
+			if value != nil && (time.Duration(*value) <= 0 || time.Duration(*value) > maxVerificationDuration) {
+				problems = append(problems, where+": "+name+" doit être strictement positif et inférieur ou égal à 24h")
+			}
+		}
+	}
 	checkOrder("global.transport_order", c.Global.TransportOrder)
 	checkChecks("global.checks", c.Global.Checks)
+	checkVerification("global.verification", c.Global.Verification)
 	for id, n := range c.Networks {
 		if !validID(id) {
 			problems = append(problems, "identifiant réseau invalide "+id)
@@ -341,9 +362,14 @@ func (c *Config) Validate() error {
 		}
 		checkOrder("server "+id, s.Transports)
 		checkChecks("server "+id, s.Checks)
+		checkVerification("server "+id+" verification", s.Verification)
 		checkPolicy("server "+id, s.UPS)
 		if s.WakeRetries != nil && *s.WakeRetries < 0 {
 			problems = append(problems, "server "+id+": wake_retries négatif")
+		}
+		_, timeout, interval := c.effectiveVerification(id)
+		if interval > timeout {
+			problems = append(problems, "server "+id+": verification.interval ne peut pas dépasser verification.timeout")
 		}
 	}
 	priorities := map[int]string{}
@@ -536,6 +562,9 @@ func (c *Config) effectiveTransportOrder(id string) []string {
 func (c *Config) effectiveTiming(id string) (time.Duration, int, time.Duration) {
 	s := c.Servers[id]
 	timeout := c.Global.WakeTimeout.Value(45 * time.Second)
+	if c.Global.Verification.Timeout != nil {
+		timeout = time.Duration(*c.Global.Verification.Timeout)
+	}
 	retries := c.Global.WakeRetries
 	delay := c.Global.Delay.Value(0)
 	n := c.Networks[s.Network]
@@ -562,6 +591,9 @@ func (c *Config) effectiveTiming(id string) (time.Duration, int, time.Duration) 
 	if s.WakeTimeout != 0 {
 		timeout = time.Duration(s.WakeTimeout)
 	}
+	if s.Verification.Timeout != nil {
+		timeout = time.Duration(*s.Verification.Timeout)
+	}
 	if s.WakeRetries != nil {
 		retries = *s.WakeRetries
 	}
@@ -569,6 +601,24 @@ func (c *Config) effectiveTiming(id string) (time.Duration, int, time.Duration) 
 		delay = time.Duration(s.Delay)
 	}
 	return timeout, retries, delay
+}
+
+func (c *Config) effectiveVerification(id string) (initialDelay, timeout, interval time.Duration) {
+	timeout, _, _ = c.effectiveTiming(id)
+	interval = 2 * time.Second
+	if value := c.Global.Verification.InitialDelay; value != nil {
+		initialDelay = time.Duration(*value)
+	}
+	if value := c.Global.Verification.Interval; value != nil {
+		interval = time.Duration(*value)
+	}
+	if value := c.Servers[id].Verification.InitialDelay; value != nil {
+		initialDelay = time.Duration(*value)
+	}
+	if value := c.Servers[id].Verification.Interval; value != nil {
+		interval = time.Duration(*value)
+	}
+	return initialDelay, timeout, interval
 }
 func (c *Config) effectiveUPS(id string) *UPSPolicy {
 	var p *UPSPolicy

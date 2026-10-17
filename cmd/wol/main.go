@@ -190,7 +190,8 @@ Usage: wol [--config FILE] [--json] COMMAND
   completion bash               génère l'autocomplétion Bash
   list                          liste des serveurs
   status SERVER                 vérifie un serveur
-  wake SERVER [--dry-run]       réveille un serveur et ses dépendances
+  wake SERVER [--dry-run] [--verification-delay DURÉE]
+                                réveille un serveur et ses dépendances
   wake --group GROUP            réveille un groupe
   wake --all                    réveille tous les serveurs actifs
   config check                  valide la configuration
@@ -218,7 +219,7 @@ Contraintes: identifiant unique, CIDR IPv4 valide; suppression refusée si une m
 Exemple: sudo wol config network`
 	case "machine":
 		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, nom, MAC, IPv4, réseau, groupes, dépendances et vérification après réveil.
+Paramètres demandés: identifiant, nom, MAC, IPv4, réseau, groupes, dépendances, méthode et délais de vérification après réveil.
 Valeurs par défaut: port WoL global; vérification ICMP/TCP/ARP facultative.
 Contraintes: MAC et IPv4 valides, réseau existant; suppression refusée tant que la machine est référencée.
 Exemple: sudo wol config machine`
@@ -275,7 +276,7 @@ _wol() {
                 COMPREPLY=( $(compgen -W "--check --channel" -- "$cur") )
             fi ;;
         config) COMPREPLY=( $(compgen -W "check edit network machine group nut" -- "$cur") ) ;;
-        wake) COMPREPLY=( $(compgen -W "--dry-run --group --all" -- "$cur") ) ;;
+        wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all" -- "$cur") ) ;;
         network) COMPREPLY=( $(compgen -W "test discover" -- "$cur") ) ;;
         ups) COMPREPLY=( $(compgen -W "status test" -- "$cur") ) ;;
         token) COMPREPLY=( $(compgen -W "create" -- "$cur") ) ;;
@@ -288,15 +289,26 @@ complete -F _wol wol
 `
 
 func wakeCLI(c *Config, e *Engine, args []string, jsonOut bool) error {
-	args = flagsFirst(args, map[string]bool{"--group": true})
+	args = flagsFirst(args, map[string]bool{"--group": true, "--verification-delay": true})
 	fs := flag.NewFlagSet("wake", flag.ContinueOnError)
 	group := fs.String("group", "", "groupe")
 	all := fs.Bool("all", false, "tous")
 	dry := fs.Bool("dry-run", false, "simulation")
+	verificationDelay := fs.String("verification-delay", "", "attente avant la première vérification")
 	if er := fs.Parse(args); er != nil {
 		return errUsage
 	}
+	if *verificationDelay != "" {
+		delay, er := time.ParseDuration(*verificationDelay)
+		if er != nil || delay < 0 || delay > maxVerificationDuration {
+			return fmt.Errorf("verification-delay doit être une durée Go comprise entre 0s et 24h")
+		}
+		e.verificationDelay = &delay
+	}
 	e.dry = *dry
+	if !jsonOut {
+		e.progress = os.Stdout
+	}
 	var v any
 	var er error
 	switch {

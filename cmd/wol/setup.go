@@ -48,7 +48,7 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 
 	for {
 		fmt.Fprintln(output, "\nConfiguration WoL Manager :")
-		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier")
+		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier\n[7] Délais globaux de vérification")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			session.changed = manageNetworks(reader, output, session.cfg) || session.changed
@@ -76,6 +76,8 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 		case "6":
 			fmt.Fprintln(output, "Configuration existante conservée sans modification.")
 			return nil
+		case "7":
+			session.changed = configureGlobalVerification(reader, output, session.cfg) || session.changed
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
 		}
@@ -336,6 +338,12 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		}
 	}
 	s.Checks = promptChecks(reader, output, s.Checks)
+	verification, err := promptVerification(reader, output, s.Verification)
+	if err != nil {
+		fmt.Fprintf(output, "Délais de vérification refusés: %v\n", err)
+		return false
+	}
+	s.Verification = verification
 	cfg.Servers[id] = s
 	if err := cfg.Validate(); err != nil {
 		if editing {
@@ -611,6 +619,62 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check) []Che
 	}
 }
 
+func configureGlobalVerification(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+	value, err := promptVerification(reader, output, cfg.Global.Verification)
+	if err != nil {
+		fmt.Fprintf(output, "Délais de vérification refusés: %v\n", err)
+		return false
+	}
+	if sameVerification(value, cfg.Global.Verification) {
+		return false
+	}
+	cfg.Global.Verification = value
+	fmt.Fprintln(output, "Délais globaux de vérification prêts.")
+	return true
+}
+
+func promptVerification(reader *bufio.Reader, output io.Writer, current VerificationConfig) (VerificationConfig, error) {
+	var err error
+	if current.InitialDelay, err = promptDurationOverride(reader, output, "Attente avant la première vérification", current.InitialDelay, true); err != nil {
+		return current, err
+	}
+	if current.Timeout, err = promptDurationOverride(reader, output, "Durée maximale des vérifications", current.Timeout, false); err != nil {
+		return current, err
+	}
+	if current.Interval, err = promptDurationOverride(reader, output, "Intervalle entre deux vérifications", current.Interval, false); err != nil {
+		return current, err
+	}
+	return current, nil
+}
+
+func promptDurationOverride(reader *bufio.Reader, output io.Writer, label string, current *Duration, allowZero bool) (*Duration, error) {
+	shown := "hérité"
+	if current != nil {
+		shown = time.Duration(*current).String()
+	}
+	value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
+	if value == "" {
+		return current, nil
+	}
+	if value == "-" {
+		return nil, nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration < 0 || (!allowZero && duration == 0) || duration > maxVerificationDuration {
+		return current, fmt.Errorf("durée %q invalide", value)
+	}
+	result := Duration(duration)
+	return &result, nil
+}
+
+func sameVerification(a, b VerificationConfig) bool {
+	return sameDuration(a.InitialDelay, b.InitialDelay) && sameDuration(a.Timeout, b.Timeout) && sameDuration(a.Interval, b.Interval)
+}
+
+func sameDuration(a, b *Duration) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
+}
+
 func serverDeleteBlocker(cfg *Config, id string) string {
 	for otherID, server := range cfg.Servers {
 		for _, dependency := range server.Dependencies {
@@ -859,6 +923,9 @@ func writeManagedConfig(path string, base []byte, cfg *Config, backup bool) erro
 		return errors.New("racine YAML invalide")
 	}
 	root := document.Content[0]
+	if err := replaceGlobalVerification(root, cfg.Global.Verification); err != nil {
+		return err
+	}
 	for _, section := range []struct {
 		name  string
 		value any
@@ -956,6 +1023,50 @@ func replaceYAMLSection(root *yaml.Node, name string, value any) error {
 		}
 	}
 	root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name}, node)
+	return nil
+}
+
+func replaceGlobalVerification(root *yaml.Node, value VerificationConfig) error {
+	var global *yaml.Node
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "global" {
+			global = root.Content[i+1]
+			break
+		}
+	}
+	if global == nil {
+		if value == (VerificationConfig{}) {
+			return nil
+		}
+		global = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "global"}, global)
+	}
+	if global.Kind != yaml.MappingNode {
+		return errors.New("section global YAML invalide")
+	}
+	for i := 0; i+1 < len(global.Content); i += 2 {
+		if global.Content[i].Value != "verification" {
+			continue
+		}
+		if value == (VerificationConfig{}) {
+			global.Content = append(global.Content[:i], global.Content[i+2:]...)
+			return nil
+		}
+		node := &yaml.Node{}
+		if err := node.Encode(value); err != nil {
+			return err
+		}
+		global.Content[i+1] = node
+		return nil
+	}
+	if value == (VerificationConfig{}) {
+		return nil
+	}
+	node := &yaml.Node{}
+	if err := node.Encode(value); err != nil {
+		return err
+	}
+	global.Content = append(global.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "verification"}, node)
 	return nil
 }
 
