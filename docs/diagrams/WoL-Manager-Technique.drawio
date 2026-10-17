@@ -1,0 +1,1539 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" modified="2026-10-17T06:04:20.130052+00:00" agent="Codex documentation generator" version="24.7.17" type="device" compressed="false">
+  <diagram id="page-t01-01" name="T01 — Architecture générale">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t01-title" value="T01 — Architecture générale" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-subtitle" value="Composants du binaire unique et dépendances externes." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-refs" value="RÉFÉRENCES CODE — cmd/wol/main.go; api.go; engine.go; network.go; nut.go; jobs.go; packaging/systemd/wol-manager.service — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-users" value="CLI / menu / setup" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="220" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-clients" value="Clients REST" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="500" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-entry" value="run()&amp;#xa;routeur de commandes" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="340" y="210" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-api" value="APIServer&amp;#xa;net/http" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="340" y="500" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-engine" value="Engine&amp;#xa;wakeTree / wakeOne" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="650" y="280" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-network" value="Réseau / UDP / relais mTLS" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="140" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-nut" value="Client NUT TCP/STARTTLS" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="300" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-jobs" value="JobStore + automatisations" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="460" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-config" value="Config YAML validée" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="650" y="570" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-files" value="state.json / audit.jsonl / tokens.json" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="570" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-systemd" value="systemd&amp;#xa;api serve" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="680" width="210" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-users" target="t01-entry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-clients" target="t01-api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-systemd" target="t01-api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-entry" target="t01-engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-api" target="t01-engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-engine" target="t01-network">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-engine" target="t01-nut">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-api" target="t01-jobs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-entry" target="t01-config">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-api" target="t01-config">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-jobs" target="t01-files">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t01-e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t01-api" target="t01-files">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t02-02" name="T02 — Packages Go">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t02-title" value="T02 — Architecture des packages Go" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-subtitle" value="Le projet applicatif est un unique package main; la séparation est par fichiers, sans packages internes distincts." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-refs" value="RÉFÉRENCES CODE — cmd/wol/*.go; go.mod — Implémenté. Réserve: architecture monolithique package main" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-pkg" value="package main&amp;#xa;cmd/wol" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-main" value="main.go&amp;#xa;CLI/menu/tokens" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="330" y="150" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-setup" value="setup.go&amp;#xa;assistants/écriture" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="565" y="150" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-cfg" value="config.go&amp;#xa;modèle/validation" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="150" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-eng" value="engine.go&amp;#xa;réveil/relais client" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1035" y="150" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-net" value="network.go + udp_*&amp;#xa;plan/UDP/découverte" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="150" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-api" value="api.go&amp;#xa;HTTP/relais/automation" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="330" y="450" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-nut" value="nut.go&amp;#xa;protocole NUT" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="565" y="450" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-jobs" value="jobs.go&amp;#xa;persistance tâches" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="450" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-check" value="check.go&amp;#xa;TCP/ICMP/ARP" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1035" y="450" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-audit" value="audit.go&amp;#xa;audit JSONL" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="450" width="195" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-yaml" value="gopkg.in/yaml.v3&amp;#xa;seule dépendance Go externe" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="650" width="300" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-setup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-cfg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-eng">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-net">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-nut">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-jobs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-check">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t02-pkg" target="t02-audit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t02-cfg" target="t02-yaml">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t02-e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t02-setup" target="t02-yaml">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t03-03" name="T03 — Initialisation et cycle de vie">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t03-title" value="T03 — Initialisation et cycle de vie" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-subtitle" value="Commandes ponctuelles versus service API permanent." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-refs" value="RÉFÉRENCES CODE — cmd/wol/main.go: main, run; api.go: serveAPI, monitorAutomations, resumeJobs; packaging/systemd/wol-manager.service — Implémenté/partiel" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-main" value="main() → run(os.Args[1:])" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="50" y="250" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-parse" value="Parser flags globaux et commande" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="330" y="250" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-early" value="version/setup/update/completion/config edit" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="640" y="120" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-load" value="LoadConfig strict + defaults + Validate" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="640" y="360" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-init" value="openJobs + Auditor + Engine" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="360" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-one" value="Commande ponctuelle&amp;#xa;retour puis code 0/1/2" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="150" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-service" value="api serve: tokens, reprise, monitor, HTTP" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="410" width="230" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-stop" value="Arrêt par fin du processus/systemd" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="650" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-gap" value="Pas de signal.Notify ni Shutdown HTTP explicite" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="620" y="650" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-main" target="t03-parse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e2" value="Commande précoce" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-parse" target="t03-early">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-early" target="t03-one">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e4" value="Autres" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-parse" target="t03-load">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-load" target="t03-init">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e6" value="Ponctuelle" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-init" target="t03-one">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e7" value="api serve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-init" target="t03-service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t03-service" target="t03-stop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t03-e9" value="Limite" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-stop" target="t03-gap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t04-04" name="T04 — CLI, menu et API">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t04-title" value="T04 — CLI, menu, assistant et API" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-subtitle" value="Les interfaces convergent sur Config, Engine, checkServer, NUT et JobStore; l&amp;#x27;API seule crée des tâches asynchrones." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-refs" value="RÉFÉRENCES CODE — cmd/wol/main.go; setup.go; api.go; engine.go — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-cli" value="CLI run()/wakeCLI/networkCLI" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="150" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-menu" value="menu()&amp;#xa;lecture/config/dry/real" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-setup" value="setupWithIO/configSection" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="510" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-api" value="APIServer handlers" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="690" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-config" value="Config + Validate + writeManagedConfig" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="450" y="260" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-services" value="Engine / checkServer / NUT / discovery" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="830" y="260" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-jobs" value="JobStore&amp;#xa;API uniquement pour actions longues" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="830" y="510" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-result" value="Texte/JSON, HTTP JSON, audit" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="350" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-cli" target="t04-config">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-menu" target="t04-config">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-setup" target="t04-config">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-api" target="t04-config">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-cli" target="t04-services">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-menu" target="t04-services">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-api" target="t04-services">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-api" target="t04-jobs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-jobs" target="t04-services">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-services" target="t04-result">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t04-e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t04-config" target="t04-result">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t05-05" name="T05 — Moteur WoL">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t05-title" value="T05 — Moteur Wake-on-LAN" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-subtitle" value="Sélection de transport, paquet magique, retries et vérification post-réveil." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-refs" value="RÉFÉRENCES CODE — cmd/wol/engine.go: Engine, wakeTree, wakeOne; network.go: transportPlan, magicPacket; udp_linux.go: sendMagic; check.go — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-n1" value="wakeTree(id)" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-n2" value="connu, enabled, non déjà joignable ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="265" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-n3" value="DFS dépendances + déduplication" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="480" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-n4" value="checkUPSPolicy" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="695" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-n5" value="transportPlan: premier selected" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="910" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-n6" value="magicPacket: FF×6 + MAC×16" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-udp" value="UDP/IPv4; source optionnelle; SO_BROADCAST pour broadcast" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="900" y="320" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-relay" value="HTTPS mTLS POST /relay/v1/wake" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="320" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-verify" value="checkServer toutes les 2 s jusqu&amp;#x27;à deadline; retries+1" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="900" y="500" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-out" value="WakeResult: sent/dry_run/not_sent, Verified, Status, Note" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="480" y="650" width="500" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-fail" value="Erreur d&amp;#x27;envoi ou contexte annulé" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="650" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n1" target="t05-n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n2" target="t05-n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n3" target="t05-n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n4" target="t05-n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n5" target="t05-n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e6" value="local/unicast/directed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n6" target="t05-udp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e7" value="relay" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n6" target="t05-relay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-udp" target="t05-verify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-relay" target="t05-verify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e10" value="Joignable ou non observé" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-verify" target="t05-out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e11" value="Échec final" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-udp" target="t05-fail">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t05-e12" value="HTTP ≠ 202" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-relay" target="t05-fail">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t06-06" name="T06 — Réseau et relais">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t06-title" value="T06 — Architecture réseau et relais" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-subtitle" value="La configuration cible IPv4; VLAN/routage sont externes. Un relais exécute le même binaire en serveur mTLS." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-refs" value="RÉFÉRENCES CODE — cmd/wol/network.go; engine.go: relayHTTPClient; api.go: serveRelay; docs/multi-vlan.md — Implémenté avec limites" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-manager" value="WoL Manager principal" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="50" y="300" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-iface" value="Interface locale / source IPv4" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="120" width="250" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-lan" value="Sous-réseau/VLAN local&amp;#xa;broadcast ou unicast UDP" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="120" width="270" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-router" value="Routeur / ACL / VLAN&amp;#xa;non géré par l&amp;#x27;application" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="120" width="270" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-relay" value="Relais HTTPS mTLS&amp;#xa;:9443 par défaut CLI" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="720" y="430" width="270" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-remote" value="Réseau distant autorisé&amp;#xa;broadcast local du relais" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="430" width="270" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-guards" value="URL HTTPS, CA + cert/key client, réseau affecté, serveur imposé, request_id dédupliqué 24 h" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="370" y="650" width="700" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t06-manager" target="t06-iface">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-e2" value="UDP 9 par défaut" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t06-iface" target="t06-lan">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-e3" value="routage externe" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t06-lan" target="t06-router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-e4" value="HTTPS mTLS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t06-manager" target="t06-relay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-e5" value="UDP local" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t06-relay" target="t06-remote">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t06-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t06-guards" target="t06-relay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t07-07" name="T07 — API REST">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t07-title" value="T07 — API REST et authentification" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-subtitle" value="Serveur standard net/http, Bearer tokens hachés et permissions read/wake/admin." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-refs" value="RÉFÉRENCES CODE — cmd/wol/api.go: APIServer, middleware, need, decodeJSON, serveAPI; main.go: tokenCLI — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-client" value="Client HTTP(S)" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="300" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-http" value="http.Server&amp;#xa;limits + timeouts + TLS ≥1.2" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="310" y="300" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-auth" value="middleware: Bearer → SHA-256 → comparaison constante" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="120" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-rate" value="Rate limit / minute par token + IP" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="300" width="290" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-perm" value="need(read|wake|admin)" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="470" width="290" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-routes" value="health, servers/status/wake, groups/wake, wake-all, ups, jobs, networks, diagnostics, discovery" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="990" y="250" width="330" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-services" value="Config / Engine / JobStore / NUT / discovery" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="990" y="500" width="330" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-resp" value="JSON + codes HTTP" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="300" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-tokens" value="tokens.json 0600&amp;#xa;hash seulement" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="310" y="590" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t07-client" target="t07-http">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t07-http" target="t07-auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t07-tokens" target="t07-auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t07-auth" target="t07-rate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t07-rate" target="t07-perm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t07-perm" target="t07-routes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t07-routes" target="t07-services">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t07-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t07-services" target="t07-resp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t08-08" name="T08 — Client NUT">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t08-title" value="T08 — Client NUT" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-subtitle" value="Client texte NUT en lecture seule avec TCP, STARTTLS optionnel et délais de connexion/lecture." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-refs" value="RÉFÉRENCES CODE — cmd/wol/nut.go: openNUT, listNUTUPS, nutStatus, applyNUTVars, checkUPSPolicy — Implémenté; pas de reconnexion persistante" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-n1" value="nutStatus/listNUTUPS" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-n2" value="TCP host:port&amp;#xa;3493 par défaut setup" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="265" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-n3" value="TLS ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="480" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-n4" value="STARTTLS puis handshake TLS ≥1.2 + CA/ServerName" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="695" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-n5" value="USERNAME/PASSWORD depuis fichiers si configurés" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="910" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-n6" value="LIST UPS ou LIST VAR" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-parse" value="Valider BEGIN/END; parser ups.status, battery.charge, battery.runtime" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="970" y="330" width="330" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-state" value="FSD &amp;gt; LB &amp;gt; OB &amp;gt; OL &amp;gt; unknown" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="650" y="500" width="260" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-event" value="Polling 5 s transmet l&amp;#x27;état au moniteur d&amp;#x27;automations" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="500" width="320" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-error" value="Timeout/refus/protocole/auth/UPS inconnu → erreur classifiée" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="250" y="650" width="440" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-limit" value="Connexion ouverte à chaque lecture; pas de boucle de reconnexion dédiée" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="830" y="650" width="420" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n1" target="t08-n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n2" target="t08-n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n3" target="t08-n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n4" target="t08-n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n5" target="t08-n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e6" value="Connexion échoue" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n2" target="t08-error">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e7" value="Non" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n3" target="t08-n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-n6" target="t08-parse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-parse" target="t08-state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t08-state" target="t08-event">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e11" value="Réponse invalide" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t08-parse" target="t08-error">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t08-e12" value="limite" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t08-event" target="t08-limit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t09-09" name="T09 — Orchestrateur">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t09-title" value="T09 — Orchestrateur de retour secteur" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-subtitle" value="Moniteur en mémoire dans le processus API; aucun arrêt contrôlé ni machine d&amp;#x27;états persistée." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-refs" value="RÉFÉRENCES CODE — cmd/wol/api.go: monitorAutomations, isPowerRestore; jobs.go; engine.go — Partiel" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-ticker" value="Ticker 5 s" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="60" y="300" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-read" value="nutStatus pour chaque UPS" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="300" y="300" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-maps" value="previous[state] + onlineSince[time]&amp;#xa;en mémoire" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="590" y="300" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-transition" value="old ∈ {OB,LB,FSD} et current=OL ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="920" y="300" width="250" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-stable" value="stable_for atteint ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="180" width="190" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-job" value="JobStore.create automation" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="430" width="230" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-wake" value="Engine.wakeGroup&amp;#xa;dépendances + policies UPS + checks" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="880" y="600" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-clear" value="Supprimer onlineSince pour éviter un redéclenchement immédiat" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="470" y="600" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-gap" value="Partiel: état du moniteur non persisté; pas d&amp;#x27;arrêt, retry ou backoff orchestrateur" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="700" width="620" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-ticker" target="t09-read">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-read" target="t09-maps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-maps" target="t09-transition">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e4" value="Oui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-transition" target="t09-stable">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e5" value="Non" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-transition" target="t09-ticker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e6" value="Oui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-stable" target="t09-job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e7" value="Non" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-stable" target="t09-ticker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-job" target="t09-wake">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-wake" target="t09-clear">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t09-clear" target="t09-ticker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t09-e11" value="limites" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t09-clear" target="t09-gap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t10-10" name="T10 — Automatisations et planificateur">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t10-title" value="T10 — Automatisations et tâches" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-subtitle" value="Pas de planificateur temporel générique: un ticker NUT produit l&amp;#x27;unique événement pris en charge." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-refs" value="RÉFÉRENCES CODE — cmd/wol/config.go: Automation; api.go: monitorAutomations/resumeJobs; jobs.go: JobStore — Partiel" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-model" value="Automation {id, enabled, event, ups, group, stable_for}" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="50" y="180" width="310" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-trigger" value="Ticker NUT → nut.power_restored" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="440" y="180" width="250" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-create" value="JobStore.create(kind=automation,target=id)" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="770" y="180" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-state" value="queued → running → completed/failed/cancelled" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="180" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-file" value="state.json&amp;#xa;écriture .tmp + rename" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="430" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-restart" value="Au restart: revalidation_required" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="770" y="430" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-resume" value="automation/discovery non repris automatiquement" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="440" y="430" width="270" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-gaps" value="Non implémenté: cron/calendrier, déclencheurs multiples, file externe, retry/backoff, historique distinct" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="250" y="650" width="980" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t10-model" target="t10-trigger">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t10-trigger" target="t10-create">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t10-create" target="t10-state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t10-state" target="t10-file">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-e5" value="processus redémarre" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t10-file" target="t10-restart">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t10-restart" target="t10-resume">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t10-e7" value="limites" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t10-resume" target="t10-gaps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t11-11" name="T11 — Configuration YAML">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t11-title" value="T11 — Configuration YAML" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-subtitle" value="Parsing strict, héritage global→réseau→groupes triés→machine, sauvegarde atomique Debian." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-refs" value="RÉFÉRENCES CODE — cmd/wol/config.go: LoadConfig/defaults/Validate/effective*; setup.go: writeManagedConfig/rejectConfigSymlinks; config_file_linux.go — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-n1" value="wol.yaml" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-n2" value="yaml.Decoder KnownFields(true)" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="265" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-n3" value="defaults()" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="480" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-n4" value="Validate() sans problème ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="695" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-n5" value="Config en mémoire" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="910" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-n6" value="Assistants modifient une session" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-validate2" value="Revalider; préserver sections non gérées" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="330" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-symlink" value="Refuser symlinks cible/répertoire" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="700" y="500" width="270" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-temp" value="Temp même répertoire, 0640, fsync, validation" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="500" width="300" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-backup" value=".bak-timestamp si fichier existant" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="700" y="650" width="270" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-rename" value="secureConfigFile root:wol-manager puis rename atomique Linux" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="650" width="360" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-invalid" value="Erreur: aucun remplacement" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="300" y="500" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-n1" target="t11-n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-n2" target="t11-n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-n3" target="t11-n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-n4" target="t11-n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-n5" target="t11-n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e6" value="Non" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-n4" target="t11-invalid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-n6" target="t11-validate2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-validate2" target="t11-symlink">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e9" value="Sûr" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-symlink" target="t11-temp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-temp" target="t11-backup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t11-e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t11-backup" target="t11-rename">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t12-12" name="T12 — Stockage et sécurité">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t12-title" value="T12 — Stockage persistant et sécurité" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-subtitle" value="Séparation configuration, secrets, état, audit, sauvegardes et journaux." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-refs" value="RÉFÉRENCES CODE — cmd/wol/config.go; jobs.go; audit.go; token_file_linux.go; config_file_linux.go; install.sh; packaging/systemd/wol-manager.service — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-process" value="Processus wol-manager&amp;#xa;NoNewPrivileges + FS strict" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="330" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-cfg" value="/etc/wol-manager/wol.yaml&amp;#xa;0640 root:wol-manager" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="400" y="150" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-tokens" value="/etc/wol-manager/secrets/tokens.json&amp;#xa;0600 wol-manager" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="750" y="150" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-state" value="/var/lib/wol-manager/state.json&amp;#xa;0640" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="150" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-audit" value="/var/log/wol-manager/audit.jsonl&amp;#xa;0640" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="400" y="450" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-backups" value="/var/lib/wol-manager/backups/&amp;#xa;0750" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="750" y="450" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-release" value="/etc/wol-manager/release.conf&amp;#xa;027 umask" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="450" width="290" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-protections" value="Secrets jamais dans l&amp;#x27;audit; tokens hachés; pas de destination réseau libre; symlinks refusés; écritures temporaires/rename" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="500" y="650" width="850" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-cfg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-tokens">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-audit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-backups">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-release">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-cfg" target="t12-protections">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-tokens" target="t12-protections">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-state" target="t12-protections">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-audit" target="t12-protections">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t13-13" name="T13 — systemd">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t13-title" value="T13 — Intégration systemd" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-subtitle" value="Service facultatif, compte non privilégié, redémarrage sur échec et durcissement du processus." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-refs" value="RÉFÉRENCES CODE — packaging/systemd/wol-manager.service; install.sh: choose_service_mode/install_candidate/run_setup_if_requested — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-n1" value="install.sh choisit enable/install/cli" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-n2" value="Mode CLI seul ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="265" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-n3" value="Installer unit dans /etc/systemd/system" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-n4" value="daemon-reload" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="695" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-n5" value="Config + token disponibles et mode enable ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="910" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-n6" value="systemctl enable --now" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-exec" value="ExecStart: wol --config /etc/... api serve" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="330" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-identity" value="User/Group wol-manager; UMask 0027" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="700" y="500" width="260" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-hard" value="ProtectSystem=strict, ProtectHome, PrivateTmp, NoNewPrivileges, aucune capability" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="500" width="400" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-logs" value="stdout/stderr → journald; Restart=on-failure 5 s" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="420" y="650" width="400" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-err" value="Échec d&amp;#x27;activation → rollback installateur" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="920" y="650" width="300" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-n1" target="t13-n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-n2" target="t13-n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-n3" target="t13-n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-n4" target="t13-n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-n5" target="t13-n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e6" value="Oui — pas de service" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-n2" target="t13-logs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-n6" target="t13-exec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-exec" target="t13-identity">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-identity" target="t13-hard">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-hard" target="t13-logs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t13-e11" value="inactif" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t13-exec" target="t13-err">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t14-14" name="T14 — Compilation et distribution">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t14-title" value="T14 — Compilation locale et distribution" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-subtitle" value="Build local signé; aucun workflow GitHub obligatoire dans le dépôt." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-refs" value="RÉFÉRENCES CODE — scripts/build.sh; cmd/wol/main.go; packaging/release-public.pem; dist/manifest.json; dist/SHA256SUMS — Implémenté; ARM64 non exécuté ici" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-n1" value="Commit source propre&amp;#xa;hors dist/" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-n2" value="Clé privée correspond à la clé publique ?" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="265" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-n3" value="go mod verify + go test ./..." style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="480" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-n4" value="CGO_ENABLED=0 GOOS=linux&amp;#xa;amd64 + arm64" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="695" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-n5" value="Formats ELF conformes ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="910" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-n6" value="Injecter version, sourceRevision, buildChannel" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-manifest" value="manifest v2: version/canal/révision, noms et SHA-256" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="330" width="300" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-sign" value="Signature Ed25519 + vérification locale" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="740" y="500" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-dist" value="dist/: 2 binaires, install.sh, manifest(.sig), SHA256SUMS" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="650" width="360" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-branches" value="Canal main ou dev choisi explicitement / selon branche reconnue" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="300" y="500" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-gap" value="Validation ARM64: format seulement; machine réelle requise" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="300" y="650" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-n1" target="t14-n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-n2" target="t14-n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-n3" target="t14-n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-n4" target="t14-n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-n5" target="t14-n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-n6" target="t14-manifest">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t14-branches" target="t14-manifest">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-manifest" target="t14-sign">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-sign" target="t14-dist">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t14-e10" value="ARM64 non exécuté" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t14-n5" target="t14-gap">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t15-15" name="T15 — Installation Debian">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t15-title" value="T15 — Installation Debian technique" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-subtitle" value="Chaîne Bash de sélection et d&amp;#x27;installation d&amp;#x27;artefacts signés." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-refs" value="RÉFÉRENCES CODE — install.sh: detect_system, detect_dependencies, prepare_candidate, verify_manifest, install_candidate, rollback — Implémenté; tests hôte simulés" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-n1" value="Shell POSIX set -eu&amp;#xa;PATH système figé" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-n2" value="root + Debian 12/13 + amd64/arm64" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="265" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-n3" value="Dépendances runtime/crypto/download" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="480" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-n4" value="Artefacts locaux signés ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="695" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-n5" value="Sinon HTTPS: API commit + raw commit/dist" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="910" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-n6" value="Ed25519 + SHA-256 + exécution version metadata" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="130" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-dirs" value="Compte système, répertoires, permissions, tokens 0600" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="320" width="330" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-backup" value="Sauvegarde composants existants" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="720" y="500" width="280" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-replace" value="BIN/HELPER/completion: .new.$$ puis mv -f" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="500" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-systemd" value="Installer unit selon mode; setup/token; enable éventuel" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="650" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-rollback" value="Trap EXIT: rollback si échec après sauvegarde" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="550" y="650" width="350" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-n1" target="t15-n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-n2" target="t15-n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-n3" target="t15-n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-n4" target="t15-n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-n5" target="t15-n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-n6" target="t15-dirs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-dirs" target="t15-backup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-backup" target="t15-replace">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-replace" target="t15-systemd">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e10" value="Échec" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-replace" target="t15-rollback">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t15-e11" value="Échec" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t15-systemd" target="t15-rollback">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t16-16" name="T16 — Mise à jour et rollback">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t16-title" value="T16 — Mise à jour et rollback" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-subtitle" value="L&amp;#x27;installateur signé remplace le binaire et sa propre copie tout en préservant configuration, secrets et données." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-refs" value="RÉFÉRENCES CODE — cmd/wol/update.go; install.sh: resolve_publication/show_comparison/backup_existing/install_candidate/rollback; docs/updates.md — Implémenté avec transition legacy" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-cli" value="updateCLI&amp;#xa;--check / --channel" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="50" y="280" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-trust" value="Lstat installateur: root, régulier, mode non 022" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="310" y="280" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-resolve" value="main/dev → commit de publication immuable" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="630" y="130" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-verify" value="Manifeste signé format 2; artefacts + métadonnées" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="630" y="350" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-compare" value="Comparer version + source_revision + canal" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="980" y="240" width="270" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-backup" value="Sauvegarder bin/unit/helper/completion/release.conf" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="130" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-atomic" value="Remplacer atomiquement; conserver config/secrets/state/logs" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="350" width="240" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-health" value="version + config check + service actif si auparavant" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="550" width="270" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-rollback" value="Restaurer sauvegarde et état systemd" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="630" y="650" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-done" value="Succès / aucun changement (--check/à jour)" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="700" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-cli" target="t16-trust">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-trust" target="t16-resolve">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-resolve" target="t16-verify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-verify" target="t16-compare">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e5" value="--check ou à jour" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-compare" target="t16-done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e6" value="installer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-compare" target="t16-backup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-backup" target="t16-atomic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-atomic" target="t16-health">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e9" value="OK" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-health" target="t16-done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e10" value="Échec" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-health" target="t16-rollback">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t16-e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t16-rollback" target="t16-done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t17-17" name="T17 — Matrice des composants">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t17-title" value="T17 — Matrice des composants" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-subtitle" value="Synthèse traçable des responsabilités et protocoles." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-refs" value="RÉFÉRENCES CODE — Ensemble cmd/wol, install.sh, scripts/build.sh, packaging/systemd, dist — Synthèse" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-h0" value="Composant" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="190" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-h1" value="Responsabilité" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="230" y="130" width="300" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-h2" value="Entrée / fichiers" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="530" y="130" width="330" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-h3" value="Dépendances / protocoles" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="130" width="320" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-h4" value="Données / pages" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="130" width="280" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r0c0" value="CLI/menu/setup" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r0c1" value="Routage et configuration" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="190" width="300" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r0c2" value="main.go; setup.go" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="530" y="190" width="330" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r0c3" value="flags, stdin/stdout, YAML" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="190" width="320" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r0c4" value="Config / F03-F05 / T03-T04" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="190" width="280" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r1c0" value="Engine WoL" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="272" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r1c1" value="Dépendances, UPS, envoi, checks" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="272" width="300" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r1c2" value="engine.go; check.go" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="530" y="272" width="330" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r1c3" value="UDP/IPv4, HTTPS mTLS, ICMP/TCP" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="272" width="320" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r1c4" value="WakeResult / F06 / T05" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="272" width="280" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r2c0" value="API" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="354" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r2c1" value="REST, auth, jobs" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="354" width="300" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r2c2" value="api.go" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="530" y="354" width="330" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r2c3" value="HTTP(S), Bearer" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="354" width="320" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r2c4" value="JSON / F11 / T07" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="354" width="280" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r3c0" value="NUT" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="436" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r3c1" value="État UPS en lecture seule" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="436" width="300" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r3c2" value="nut.go" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="530" y="436" width="330" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r3c3" value="TCP, STARTTLS, NUT texte" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="436" width="320" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r3c4" value="UPSStatus / F08 / T08" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="436" width="280" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r4c0" value="JobStore" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="518" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r4c1" value="Tâches persistées" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="518" width="300" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r4c2" value="jobs.go" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="530" y="518" width="330" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r4c3" value="goroutines, JSON rename" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="518" width="320" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r4c4" value="state.json / F10 / T10" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="518" width="280" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r5c0" value="Install/build" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="600" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r5c1" value="Artefacts signés et rollback" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="230" y="600" width="300" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r5c2" value="install.sh; scripts/build.sh" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="530" y="600" width="330" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r5c3" value="HTTPS, SHA-256, Ed25519, systemd" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="600" width="320" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-r5c4" value="dist/backups / F02,F12 / T14-T16" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="600" width="280" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r0c0" target="t17-r0c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r0c1" target="t17-r0c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r0c2" target="t17-r0c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r0c3" target="t17-r0c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r1c0" target="t17-r1c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r1c1" target="t17-r1c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r1c2" target="t17-r1c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r1c3" target="t17-r1c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r2c0" target="t17-r2c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r2c1" target="t17-r2c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r2c2" target="t17-r2c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r2c3" target="t17-r2c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r3c0" target="t17-r3c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r3c1" target="t17-r3c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r3c2" target="t17-r3c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r3c3" target="t17-r3c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e17" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r4c0" target="t17-r4c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r4c1" target="t17-r4c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r4c2" target="t17-r4c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r4c3" target="t17-r4c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r5c0" target="t17-r5c1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r5c1" target="t17-r5c2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r5c2" target="t17-r5c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t17-e24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t17-r5c3" target="t17-r5c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-t18-18" name="T18 — Fonctions partielles ou prévues">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t18-title" value="T18 — Fonctions partielles, absentes ou non vérifiées" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-subtitle" value="Aucune roadmap inventée: uniquement les écarts observés entre vocabulaire attendu, documentation et code/tests." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-refs" value="RÉFÉRENCES CODE — cmd/wol/api.go; jobs.go; setup.go; main.go; packaging/systemd; tests/install_test.sh; docs/installation.md — État qualifié" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-confirmed" value="IMPLÉMENTÉ&amp;#xa;WoL UDP/relais, config stricte, API tokens, NUT lecture, retour secteur, update signé/rollback" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="50" y="150" width="430" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-partial" value="PARTIEL&amp;#xa;Automatisations = power_restored seulement; orchestration = réveil seulement; jobs sans retry générique; arrêt HTTP non gracieux" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="540" y="150" width="450" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-absent" value="NON IMPLÉMENTÉ&amp;#xa;Arrêt sur batterie/faible, calendrier/cron, commandes NUT, modification machine via API, reload dynamique config" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="150" width="430" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-unverified" value="NON VÉRIFIÉ ICI&amp;#xa;Ouverture visuelle complète dans l&amp;#x27;app desktop diagrams.net; exécution ARM64 réelle; matrice Debian réelle 12/13" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="420" width="440" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-docs" value="ÉCARTS DOC/CODE&amp;#xa;Aucun package interne séparé; aucun handler signal; activeDiscovery ouvre un socket UDP de route et peut envoyer WoL; priorities influencent l&amp;#x27;héritage" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+          <mxGeometry x="800" y="420" width="500" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-rule" value="Règle de lecture: les pages principales décrivent le code actuel; cette page porte les limites." style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="420" y="680" width="700" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t18-confirmed" target="t18-rule">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t18-partial" target="t18-rule">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t18-absent" target="t18-rule">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t18-unverified" target="t18-rule">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t18-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t18-docs" target="t18-rule">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
