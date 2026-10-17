@@ -5,7 +5,7 @@
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="f01-title" value="F01 — Vue générale fonctionnelle" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+        <mxCell id="f01-title" value="F01 : Vue générale fonctionnelle" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
         </mxCell>
         <mxCell id="f01-subtitle" value="Sommaire visuel des accès administrateur et des fonctions confirmées dans WoL Manager 1.1.1." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
@@ -26,88 +26,71 @@
         <mxCell id="f01-api" value="Client API REST&amp;#xa;Bearer token" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="290" y="430" width="200" height="70" as="geometry" />
         </mxCell>
+        <mxCell id="f01-hub" value="WoL Manager&amp;#xa;accès aux fonctions" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=15;fontStyle=1;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="540" y="285" width="180" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="f01-group-admin" value="CONFIGURATION ET PARC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fbff;strokeColor=#9bb7d8;fontSize=12;fontStyle=1;fontColor=#4b5563;align=left;verticalAlign=top;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="770" y="125" width="750" height="165" as="geometry" />
+        </mxCell>
+        <mxCell id="f01-group-ops" value="EXPLOITATION ET SUPERVISION" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fbff;strokeColor=#9bb7d8;fontSize=12;fontStyle=1;fontColor=#4b5563;align=left;verticalAlign=top;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="770" y="405" width="750" height="165" as="geometry" />
+        </mxCell>
         <mxCell id="f01-install" value="Installation / mise à jour" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="570" y="150" width="195" height="75" as="geometry" />
+          <mxGeometry x="790" y="175" width="160" height="75" as="geometry" />
         </mxCell>
         <mxCell id="f01-setup" value="Configuration / setup" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="805" y="150" width="195" height="75" as="geometry" />
+          <mxGeometry x="970" y="175" width="160" height="75" as="geometry" />
         </mxCell>
         <mxCell id="f01-assets" value="Machines, réseaux, groupes" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1040" y="150" width="195" height="75" as="geometry" />
+          <mxGeometry x="1150" y="175" width="160" height="75" as="geometry" />
         </mxCell>
         <mxCell id="f01-wake" value="WoL, état, relais" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1275" y="150" width="195" height="75" as="geometry" />
+          <mxGeometry x="1330" y="175" width="160" height="75" as="geometry" />
         </mxCell>
         <mxCell id="f01-disc" value="Découverte / diagnostics" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="570" y="400" width="195" height="75" as="geometry" />
+          <mxGeometry x="790" y="455" width="160" height="75" as="geometry" />
         </mxCell>
         <mxCell id="f01-nut" value="NUT / UPS" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="805" y="400" width="195" height="75" as="geometry" />
+          <mxGeometry x="970" y="455" width="160" height="75" as="geometry" />
         </mxCell>
         <mxCell id="f01-auto" value="Retour secteur automatisé" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1040" y="400" width="195" height="75" as="geometry" />
+          <mxGeometry x="1150" y="455" width="160" height="75" as="geometry" />
         </mxCell>
         <mxCell id="f01-logs" value="Tâches persistées / audit" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
-          <mxGeometry x="1275" y="400" width="195" height="75" as="geometry" />
+          <mxGeometry x="1330" y="455" width="160" height="75" as="geometry" />
         </mxCell>
-        <mxCell id="f01-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f01-admin" target="f01-cli">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="f01-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="f01-admin" target="f01-cli">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="335" />
+              <mxPoint x="260" y="205" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="f01-e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f01-admin" target="f01-menu">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f01-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f01-admin" target="f01-api">
+        <mxCell id="f01-e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="f01-admin" target="f01-api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="335" />
+              <mxPoint x="260" y="465" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f01-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f01-cli" target="f01-hub">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f01-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-setup">
+        <mxCell id="f01-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f01-menu" target="f01-hub">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f01-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-assets">
+        <mxCell id="f01-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="f01-api" target="f01-hub">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f01-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-wake">
+        <mxCell id="f01-e7" value="Fonctions d’administration" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-hub" target="f01-group-admin">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="f01-e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-disc">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-nut">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-auto">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-logs">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-menu" target="f01-setup">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-menu" target="f01-assets">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-menu" target="f01-wake">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-menu" target="f01-nut">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-api" target="f01-wake">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-api" target="f01-disc">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e17" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-api" target="f01-nut">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-api" target="f01-auto">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-api" target="f01-logs">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="f01-e20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-cli" target="f01-install">
+        <mxCell id="f01-e8" value="Fonctions d’exploitation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="f01-hub" target="f01-group-ops">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>

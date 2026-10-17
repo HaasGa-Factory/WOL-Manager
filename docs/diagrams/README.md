@@ -7,6 +7,18 @@ Ce dossier contient deux diagrammes diagrams.net entièrement modifiables, const
 
 Les fichiers utilisent le XML natif draw.io non compressé. Les formes, textes et connecteurs restent éditables individuellement ; aucune page n'est une image aplatie.
 
+## Aperçus
+
+Les images ci-dessous affichent la première page de chaque cartographie sur GitHub. Cliquer sur un aperçu ouvre le fichier `.drawio` multipage correspondant, qui reste la source modifiable.
+
+### Cartographie fonctionnelle
+
+[![Aperçu de la vue générale fonctionnelle de WoL Manager](WoL-Manager-Fonctionnel-preview.svg)](WoL-Manager-Fonctionnel.drawio)
+
+### Cartographie technique
+
+[![Aperçu de l'architecture générale technique de WoL Manager](WoL-Manager-Technique-preview.svg)](WoL-Manager-Technique.drawio)
+
 ## Référence analysée
 
 - Branche locale : `promote-v1.1.1-main`.
