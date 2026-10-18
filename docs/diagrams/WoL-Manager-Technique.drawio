@@ -216,7 +216,7 @@
         <mxCell id="t03-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="t03-refs" value="RÉFÉRENCES CODE — cmd/wol/main.go: main, run; api.go: serveAPI, monitorAutomations, resumeJobs; packaging/systemd/wol-manager.service — Implémenté/partiel" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="t03-refs" value="RÉFÉRENCES CODE — cmd/wol/main.go: main, run; api.go: serveAPI, resumeJobs; automation.go; packaging/systemd/wol-manager.service — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
         </mxCell>
         <mxCell id="t03-main" value="main() → run(os.Args[1:])" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
@@ -284,7 +284,7 @@
         <mxCell id="t04-title" value="T04 — CLI, menu, assistant et API" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="t04-subtitle" value="Les interfaces convergent sur Config, Engine, checkServer, NUT et JobStore; l&amp;#x27;API seule crée des tâches asynchrones." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+        <mxCell id="t04-subtitle" value="Les interfaces convergent sur Config, Engine, checkServer, NUT et JobStore; l&amp;#x27;API et AutomationManager créent des tâches asynchrones." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
           <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
         </mxCell>
         <mxCell id="t04-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
@@ -311,7 +311,7 @@
         <mxCell id="t04-services" value="Engine / checkServer / NUT / discovery" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="830" y="260" width="300" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t04-jobs" value="JobStore&amp;#xa;API uniquement pour actions longues" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+        <mxCell id="t04-jobs" value="JobStore&amp;#xa;API + reprises automatiques" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="830" y="510" width="300" height="80" as="geometry" />
         </mxCell>
         <mxCell id="t04-result" value="Texte/JSON, HTTP JSON, audit" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
@@ -613,7 +613,7 @@
         <mxCell id="t08-state" value="FSD &amp;gt; LB &amp;gt; OB &amp;gt; OL &amp;gt; unknown" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="650" y="500" width="260" height="75" as="geometry" />
         </mxCell>
-        <mxCell id="t08-event" value="Polling 5 s transmet l&amp;#x27;état au moniteur d&amp;#x27;automations" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="t08-event" value="Polling configurable transmet l&amp;#x27;état à AutomationManager" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="980" y="500" width="320" height="85" as="geometry" />
         </mxCell>
         <mxCell id="t08-error" value="Timeout/refus/protocole/auth/UPS inconnu → erreur classifiée" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
@@ -669,40 +669,40 @@
         <mxCell id="t09-title" value="T09 — Orchestrateur de retour secteur" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="t09-subtitle" value="Moniteur en mémoire dans le processus API; aucun arrêt contrôlé ni machine d&amp;#x27;états persistée." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+        <mxCell id="t09-subtitle" value="AutomationManager persiste les cycles, revalide NUT et suspend les émissions sur toute condition non sûre." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
           <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
         </mxCell>
         <mxCell id="t09-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="t09-refs" value="RÉFÉRENCES CODE — cmd/wol/api.go: monitorAutomations, isPowerRestore; jobs.go; engine.go — Partiel" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="t09-refs" value="RÉFÉRENCES CODE — cmd/wol/automation.go; nut.go; jobs.go; engine.go; api.go — Implémenté et testé par simulation" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
         </mxCell>
-        <mxCell id="t09-ticker" value="Ticker 5 s" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+        <mxCell id="t09-ticker" value="Ticker + poll_interval par UPS" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
           <mxGeometry x="60" y="300" width="170" height="70" as="geometry" />
         </mxCell>
         <mxCell id="t09-read" value="nutStatus pour chaque UPS" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="300" y="300" width="220" height="75" as="geometry" />
         </mxCell>
-        <mxCell id="t09-maps" value="previous[state] + onlineSince[time]&amp;#xa;en mémoire" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+        <mxCell id="t09-maps" value="PowerCycle persistant&amp;#xa;armed/completed/stableSince" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="590" y="300" width="260" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t09-transition" value="old ∈ {OB,LB,FSD} et current=OL ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+        <mxCell id="t09-transition" value="Cycle observé + OL + batterie ≥ seuil haut ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="920" y="300" width="250" height="100" as="geometry" />
         </mxCell>
         <mxCell id="t09-stable" value="stable_for atteint ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="1240" y="180" width="190" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t09-job" value="JobStore.create automation" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="t09-job" value="JobStore.create/resume automation_restore" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1240" y="430" width="230" height="75" as="geometry" />
         </mxCell>
         <mxCell id="t09-wake" value="Engine.wakeGroup&amp;#xa;dépendances + policies UPS + checks" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="880" y="600" width="320" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t09-clear" value="Supprimer onlineSince pour éviter un redéclenchement immédiat" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="t09-clear" value="Marquer les groupes terminés; conserver le cycle et l&amp;#x27;audit" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="470" y="600" width="330" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t09-gap" value="Partiel: état du moniteur non persisté; pas d&amp;#x27;arrêt, retry ou backoff orchestrateur" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="t09-gap" value="Limite: validation matérielle NUT/ARM64 encore requise; aucune commande d&amp;#x27;arrêt UPS" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="60" y="700" width="620" height="70" as="geometry" />
         </mxCell>
         <mxCell id="t09-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t09-ticker" target="t09-read">
@@ -755,16 +755,16 @@
         <mxCell id="t10-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="t10-refs" value="RÉFÉRENCES CODE — cmd/wol/config.go: Automation; api.go: monitorAutomations/resumeJobs; jobs.go: JobStore — Partiel" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="t10-refs" value="RÉFÉRENCES CODE — cmd/wol/config.go: PowerRestorePolicy; automation.go; api.go; jobs.go — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
         </mxCell>
-        <mxCell id="t10-model" value="Automation {id, enabled, event, ups, group, stable_for}" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+        <mxCell id="t10-model" value="PowerRestorePolicy par groupe + compatibilité Automation V1.1" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="50" y="180" width="310" height="100" as="geometry" />
         </mxCell>
         <mxCell id="t10-trigger" value="Ticker NUT → nut.power_restored" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="440" y="180" width="250" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t10-create" value="JobStore.create(kind=automation,target=id)" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="t10-create" value="JobStore.create(kind=automation_restore,target=UPS)" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="770" y="180" width="300" height="80" as="geometry" />
         </mxCell>
         <mxCell id="t10-state" value="queued → running → completed/failed/cancelled" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
@@ -776,7 +776,7 @@
         <mxCell id="t10-restart" value="Au restart: revalidation_required" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="770" y="430" width="300" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t10-resume" value="automation/discovery non repris automatiquement" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="t10-resume" value="Automation reprise seulement après revalidation NUT complète" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="440" y="430" width="270" height="80" as="geometry" />
         </mxCell>
         <mxCell id="t10-gaps" value="Non implémenté: cron/calendrier, déclencheurs multiples, file externe, retry/backoff, historique distinct" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
@@ -1524,7 +1524,7 @@
         <mxCell id="t18-confirmed" value="IMPLÉMENTÉ&amp;#xa;WoL UDP/relais, config stricte, API tokens, NUT lecture, retour secteur, update signé/rollback" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="50" y="150" width="430" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="t18-partial" value="PARTIEL&amp;#xa;Automatisations = power_restored seulement; orchestration = réveil seulement; jobs sans retry générique; arrêt HTTP non gracieux" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+        <mxCell id="t18-partial" value="PARTIEL&amp;#xa;Automatisations = reprise NUT seulement; validation matérielle NUT/ARM64 requise; arrêt HTTP non gracieux" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="540" y="150" width="450" height="130" as="geometry" />
         </mxCell>
         <mxCell id="t18-absent" value="NON IMPLÉMENTÉ&amp;#xa;Arrêt sur batterie/faible, calendrier/cron, commandes NUT, modification machine via API, reload dynamique config" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">

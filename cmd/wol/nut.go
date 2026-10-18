@@ -16,12 +16,14 @@ import (
 )
 
 type UPSStatus struct {
-	ID        string  `json:"id"`
-	State     string  `json:"state"`
-	RawStatus string  `json:"raw_status,omitempty"`
-	Battery   float64 `json:"battery_percent,omitempty"`
-	Runtime   int     `json:"runtime_seconds,omitempty"`
-	Error     string  `json:"error,omitempty"`
+	ID           string  `json:"id"`
+	State        string  `json:"state"`
+	RawStatus    string  `json:"raw_status,omitempty"`
+	Battery      float64 `json:"battery_percent,omitempty"`
+	Runtime      int     `json:"runtime_seconds,omitempty"`
+	BatteryKnown bool    `json:"battery_known"`
+	RuntimeKnown bool    `json:"runtime_known"`
+	Error        string  `json:"error,omitempty"`
 }
 
 type NUTDevice struct {
@@ -232,8 +234,14 @@ func applyNUTVars(r *UPSStatus, vars map[string]string) {
 	case strings.Contains(r.RawStatus, "OL"):
 		r.State = "OL"
 	}
-	r.Battery, _ = strconv.ParseFloat(vars["battery.charge"], 64)
-	r.Runtime, _ = strconv.Atoi(vars["battery.runtime"])
+	if battery, err := strconv.ParseFloat(vars["battery.charge"], 64); err == nil && battery >= 0 && battery <= 100 {
+		r.Battery = battery
+		r.BatteryKnown = true
+	}
+	if runtime, err := strconv.Atoi(vars["battery.runtime"]); err == nil && runtime >= 0 {
+		r.Runtime = runtime
+		r.RuntimeKnown = true
+	}
 }
 
 func readSecret(path string) (string, error) {
@@ -264,8 +272,14 @@ func checkUPSPolicy(ctx context.Context, c *Config, id string) error {
 	if p.RequireOnline && s.State != "OL" {
 		return fmt.Errorf("politique UPS: secteur requis, état %s", s.State)
 	}
+	if p.MinBattery > 0 && !s.BatteryKnown {
+		return errors.New("politique UPS: mesure battery.charge absente ou invalide")
+	}
 	if p.MinBattery > 0 && s.Battery < float64(p.MinBattery) {
 		return fmt.Errorf("politique UPS: batterie %.0f%% < %d%%", s.Battery, p.MinBattery)
+	}
+	if p.MinRuntime > 0 && !s.RuntimeKnown {
+		return errors.New("politique UPS: mesure battery.runtime absente ou invalide")
 	}
 	if p.MinRuntime > 0 && s.Runtime < p.MinRuntime {
 		return fmt.Errorf("politique UPS: autonomie %ds < %ds", s.Runtime, p.MinRuntime)

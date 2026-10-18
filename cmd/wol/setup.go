@@ -338,6 +338,7 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		}
 	}
 	s.Checks = promptChecks(reader, output, s.Checks)
+	s.CheckLogic = promptCheckLogic(reader, output, s.CheckLogic)
 	verification, err := promptVerification(reader, output, s.Verification)
 	if err != nil {
 		fmt.Fprintf(output, "Délais de vérification refusés: %v\n", err)
@@ -421,6 +422,7 @@ func addOrEditGroup(reader *bufio.Reader, output io.Writer, cfg *Config, id stri
 	g.Priority = value
 	g.Servers = promptKnownIDs(reader, output, "Machines du groupe (virgules, facultatif)", g.Servers, cfg.Servers)
 	g.Dependencies = promptKnownIDs(reader, output, "Dépendances machines (virgules, facultatif)", g.Dependencies, cfg.Servers)
+	g.PowerRestore = promptPowerRestore(reader, output, cfg, g)
 	cfg.Groups[id] = g
 	if err := cfg.Validate(); err != nil {
 		if editing {
@@ -599,7 +601,7 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check) []Che
 		currentText = current[0].Type
 	}
 	fmt.Fprintf(output, "Vérification après réveil actuelle: %s\n", currentText)
-	fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune\n[Entrée] Conserver")
+	fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune\n[5] Plusieurs contrôles\n[Entrée] Conserver")
 	switch prompt(reader, output, "> ") {
 	case "1":
 		return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}
@@ -614,10 +616,150 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check) []Che
 		return []Check{{Type: "arp", Timeout: Duration(3 * time.Second)}}
 	case "4":
 		return nil
+	case "5":
+		value := prompt(reader, output, "Contrôles (ex. icmp,tcp:22,tcp:443,arp): ")
+		checks, err := parseChecks(value)
+		if err != nil {
+			fmt.Fprintln(output, "Contrôles invalides; configuration précédente conservée:", err)
+			return current
+		}
+		return checks
 	default:
 		return current
 	}
 }
+
+func parseChecks(value string) ([]Check, error) {
+	var checks []Check
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(strings.ToLower(item))
+		switch {
+		case item == "icmp":
+			checks = append(checks, Check{Type: "icmp", Timeout: Duration(3 * time.Second)})
+		case item == "arp":
+			checks = append(checks, Check{Type: "arp", Timeout: Duration(3 * time.Second)})
+		case strings.HasPrefix(item, "tcp:"):
+			port, err := strconv.Atoi(strings.TrimPrefix(item, "tcp:"))
+			if err != nil || port < 1 || port > 65535 {
+				return nil, fmt.Errorf("port TCP invalide %q", item)
+			}
+			checks = append(checks, Check{Type: "tcp", Port: port, Timeout: Duration(3 * time.Second)})
+		default:
+			return nil, fmt.Errorf("contrôle inconnu %q", item)
+		}
+	}
+	if len(checks) == 0 {
+		return nil, errors.New("aucun contrôle")
+	}
+	return checks, nil
+}
+
+func promptCheckLogic(reader *bufio.Reader, output io.Writer, current string) string {
+	if current == "" {
+		current = "any"
+	}
+	value := strings.ToLower(promptDefault(reader, output, "Logique des contrôles (any=OU, all=ET)", current))
+	if value != "any" && value != "all" {
+		fmt.Fprintln(output, "Logique invalide; valeur précédente conservée.")
+		return current
+	}
+	return value
+}
+
+func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, group Group) *PowerRestorePolicy {
+	if len(cfg.UPS) == 0 {
+		fmt.Fprintln(output, "Reprise automatique indisponible: aucun UPS NUT configuré.")
+		return group.PowerRestore
+	}
+	enabled := group.PowerRestore != nil && group.PowerRestore.Enabled
+	if !promptBool(reader, output, "Activer la reprise automatique NUT pour ce groupe ?", enabled) {
+		return nil
+	}
+	policy := PowerRestorePolicy{Enabled: true, Mode: "sequential", FailurePolicy: "stop"}
+	if group.PowerRestore != nil {
+		policy = *group.PowerRestore
+		policy.Enabled = true
+	}
+	fmt.Fprintln(output, "UPS disponibles:", strings.Join(sortedKeys(cfg.UPS), ", "))
+	policy.UPS = promptDefault(reader, output, "UPS", policy.UPS)
+	if _, ok := cfg.UPS[policy.UPS]; !ok {
+		fmt.Fprintln(output, "UPS inconnu; politique précédente conservée.")
+		return group.PowerRestore
+	}
+	fmt.Fprintln(output, "Seuils batterie: [1] 40/70 %  [2] 20/80 %  [3] personnalisés")
+	low, high := 40, 70
+	if policy.LowBattery != nil && policy.HighBattery != nil {
+		low, high = *policy.LowBattery, *policy.HighBattery
+	}
+	switch prompt(reader, output, "> ") {
+	case "2":
+		low, high = 20, 80
+	case "3":
+		var err error
+		low, err = strconv.Atoi(promptDefault(reader, output, "Seuil bas (%)", strconv.Itoa(low)))
+		if err != nil {
+			fmt.Fprintln(output, "Seuil bas invalide; politique précédente conservée.")
+			return group.PowerRestore
+		}
+		high, err = strconv.Atoi(promptDefault(reader, output, "Seuil haut (%)", strconv.Itoa(high)))
+		if err != nil {
+			fmt.Fprintln(output, "Seuil haut invalide; politique précédente conservée.")
+			return group.PowerRestore
+		}
+	}
+	policy.LowBattery, policy.HighBattery = intPointer(low), intPointer(high)
+	fmt.Fprintln(output, "Stabilité secteur: [1] 30s  [2] 1m  [3] 5m  [4] personnalisée")
+	stableFor, err := chooseDuration(reader, output, []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute}, policy.StableFor.Value(30*time.Second), true)
+	if err != nil {
+		fmt.Fprintf(output, "Stabilité refusée: %v; politique précédente conservée.\n", err)
+		return group.PowerRestore
+	}
+	policy.StableFor = stableFor
+	fmt.Fprintln(output, "Fréquence NUT: [1] 5s  [2] 10s  [3] 30s  [4] personnalisée")
+	pollInterval, err := chooseDuration(reader, output, []time.Duration{5 * time.Second, 10 * time.Second, 30 * time.Second}, policy.PollInterval.Value(5*time.Second), false)
+	if err != nil {
+		fmt.Fprintf(output, "Fréquence refusée: %v; politique précédente conservée.\n", err)
+		return group.PowerRestore
+	}
+	policy.PollInterval = pollInterval
+	policy.Mode = strings.ToLower(promptDefault(reader, output, "Mode (sequential/parallel)", defaultString(policy.Mode, "sequential")))
+	if policy.Mode == "sequential" {
+		policy.Order = promptKnownIDs(reader, output, "Ordre de démarrage (virgules, facultatif)", policy.Order, cfg.Servers)
+	}
+	policy.FailurePolicy = strings.ToLower(promptDefault(reader, output, "Échec (stop/continue/retry/continue_retry)", defaultString(policy.FailurePolicy, "stop")))
+	if policy.FailurePolicy == "retry" || policy.FailurePolicy == "continue_retry" {
+		limit, err := strconv.Atoi(promptDefault(reader, output, "Nombre maximal de nouvelles tentatives", strconv.Itoa(policy.RetryLimit)))
+		if err != nil || limit < 0 || limit > 100 {
+			fmt.Fprintln(output, "Nombre de tentatives invalide; politique précédente conservée.")
+			return group.PowerRestore
+		}
+		policy.RetryLimit = limit
+		value, err := time.ParseDuration(promptDefault(reader, output, "Intervalle entre tentatives", policy.RetryInterval.Value(10*time.Second).String()))
+		if err != nil || value <= 0 || value > 24*time.Hour {
+			fmt.Fprintln(output, "Intervalle de tentative invalide; politique précédente conservée.")
+			return group.PowerRestore
+		}
+		policy.RetryInterval = Duration(value)
+	}
+	return &policy
+}
+
+func chooseDuration(reader *bufio.Reader, output io.Writer, presets []time.Duration, current time.Duration, allowZero bool) (Duration, error) {
+	choice := prompt(reader, output, "> ")
+	if index, err := strconv.Atoi(choice); err == nil && index >= 1 && index <= len(presets) {
+		return Duration(presets[index-1]), nil
+	}
+	if choice == strconv.Itoa(len(presets)+1) {
+		value, err := time.ParseDuration(promptDefault(reader, output, "Durée", current.String()))
+		if err != nil || value < 0 || !allowZero && value == 0 || value > 24*time.Hour {
+			return 0, errors.New("durée invalide")
+		}
+		return Duration(value), nil
+	}
+	return Duration(current), nil
+}
+
+func intPointer(value int) *int { return &value }
 
 func configureGlobalVerification(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	value, err := promptVerification(reader, output, cfg.Global.Verification)
@@ -625,10 +767,12 @@ func configureGlobalVerification(reader *bufio.Reader, output io.Writer, cfg *Co
 		fmt.Fprintf(output, "Délais de vérification refusés: %v\n", err)
 		return false
 	}
-	if sameVerification(value, cfg.Global.Verification) {
+	logic := promptCheckLogic(reader, output, cfg.Global.CheckLogic)
+	if sameVerification(value, cfg.Global.Verification) && logic == cfg.Global.CheckLogic {
 		return false
 	}
 	cfg.Global.Verification = value
+	cfg.Global.CheckLogic = logic
 	fmt.Fprintln(output, "Délais globaux de vérification prêts.")
 	return true
 }
@@ -642,6 +786,12 @@ func promptVerification(reader *bufio.Reader, output io.Writer, current Verifica
 		return current, err
 	}
 	if current.Interval, err = promptDurationOverride(reader, output, "Intervalle entre deux vérifications", current.Interval, false); err != nil {
+		return current, err
+	}
+	if current.Attempts, err = promptIntOverride(reader, output, "Nombre maximal de vérifications (0 = limité seulement par timeout)", current.Attempts); err != nil {
+		return current, err
+	}
+	if current.PacketRetries, err = promptIntOverride(reader, output, "Nouveaux Magic Packets après échec", current.PacketRetries); err != nil {
 		return current, err
 	}
 	return current, nil
@@ -668,11 +818,32 @@ func promptDurationOverride(reader *bufio.Reader, output io.Writer, label string
 }
 
 func sameVerification(a, b VerificationConfig) bool {
-	return sameDuration(a.InitialDelay, b.InitialDelay) && sameDuration(a.Timeout, b.Timeout) && sameDuration(a.Interval, b.Interval)
+	return sameDuration(a.InitialDelay, b.InitialDelay) && sameDuration(a.Timeout, b.Timeout) && sameDuration(a.Interval, b.Interval) && sameInt(a.Attempts, b.Attempts) && sameInt(a.PacketRetries, b.PacketRetries)
 }
 
 func sameDuration(a, b *Duration) bool {
 	return a == nil && b == nil || a != nil && b != nil && *a == *b
+}
+
+func sameInt(a, b *int) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
+
+func promptIntOverride(reader *bufio.Reader, output io.Writer, label string, current *int) (*int, error) {
+	shown := "hérité"
+	if current != nil {
+		shown = strconv.Itoa(*current)
+	}
+	value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
+	if value == "" {
+		return current, nil
+	}
+	if value == "-" {
+		return nil, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 || parsed > 100 {
+		return current, fmt.Errorf("nombre %q invalide", value)
+	}
+	return intPointer(parsed), nil
 }
 
 func serverDeleteBlocker(cfg *Config, id string) string {
@@ -926,6 +1097,9 @@ func writeManagedConfig(path string, base []byte, cfg *Config, backup bool) erro
 	if err := replaceGlobalVerification(root, cfg.Global.Verification); err != nil {
 		return err
 	}
+	if err := replaceGlobalCheckLogic(root, cfg.Global.CheckLogic); err != nil {
+		return err
+	}
 	for _, section := range []struct {
 		name  string
 		value any
@@ -1067,6 +1241,34 @@ func replaceGlobalVerification(root *yaml.Node, value VerificationConfig) error 
 		return err
 	}
 	global.Content = append(global.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "verification"}, node)
+	return nil
+}
+
+func replaceGlobalCheckLogic(root *yaml.Node, value string) error {
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != "global" || root.Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		global := root.Content[i+1]
+		for j := 0; j+1 < len(global.Content); j += 2 {
+			if global.Content[j].Value != "check_logic" {
+				continue
+			}
+			if value == "" {
+				global.Content = append(global.Content[:j], global.Content[j+2:]...)
+			} else {
+				global.Content[j+1] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
+			}
+			return nil
+		}
+		if value != "" {
+			global.Content = append(global.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "check_logic"}, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
+		}
+		return nil
+	}
+	if value != "" {
+		return errors.New("section global YAML absente")
+	}
 	return nil
 }
 

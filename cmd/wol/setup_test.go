@@ -123,7 +123,7 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 		"1", "1", // réseaux: ajouter
 		"lan", "192.168.50.0/24", "", "", "", "", "", "4",
 		"2", "1", // machines: ajouter
-		"test-pc", "Machine test", "02:00:00:00:50:10", "192.168.50.10", "lan", "", "", "1", "90s", "180s", "5s", "4",
+		"test-pc", "Machine test", "02:00:00:00:50:10", "192.168.50.10", "lan", "", "", "1", "", "90s", "180s", "5s", "", "", "4",
 		"5", "y", // valider et enregistrer
 		"y", "test-pc", // simulation WoL
 	}, "\n") + "\n")
@@ -156,7 +156,7 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 
 func TestGuidedGlobalVerification(t *testing.T) {
 	cfg := testConfig(t)
-	input := bufio.NewReader(strings.NewReader("10s\n3m\n5s\n"))
+	input := bufio.NewReader(strings.NewReader("10s\n3m\n5s\n\n\nany\n"))
 	var output strings.Builder
 	if !configureGlobalVerification(input, &output, cfg) {
 		t.Fatalf("configuration globale non modifiée: %s", output.String())

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func testConfig(t *testing.T) *Config {
@@ -57,13 +59,31 @@ func testDir(t *testing.T) string {
 
 func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 	for _, expected := range []string{
-		`compgen -W "setup update list status wake config token network ups jobs menu`,
+		`compgen -W "setup update list status wake config token network ups jobs automation menu`,
 		`config) COMPREPLY=( $(compgen -W "check edit network machine group nut"`,
 		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all"`,
+		`automation) COMPREPLY=( $(compgen -W "status"`,
 		`complete -F _wol wol`,
 	} {
 		if !strings.Contains(bashCompletion, expected) {
 			t.Fatalf("autocomplétion Bash incomplète, fragment absent: %s", expected)
+		}
+	}
+}
+
+func TestOpenAPIDocumentIsValidYAMLAndExposesAutomations(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "api", "openapi.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		t.Fatalf("OpenAPI YAML invalide: %v", err)
+	}
+	text := string(content)
+	for _, expected := range []string{"version: 1.2.0", "/automations:"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("OpenAPI incomplet, fragment absent: %s", expected)
 		}
 	}
 }
@@ -261,6 +281,13 @@ func TestJobPersistenceCancellationAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	x, _ := s2.get(j.ID)
+	if x.State != "running" {
+		t.Fatalf("une simple lecture a modifié la tâche: %s", x.State)
+	}
+	if err := s2.markInterrupted(); err != nil {
+		t.Fatal(err)
+	}
+	x, _ = s2.get(j.ID)
 	if x.State != "revalidation_required" {
 		t.Fatalf("reprise dangereuse: %s", x.State)
 	}
@@ -320,7 +347,9 @@ func TestAPIPermissions(t *testing.T) {
 	store, _ := openJobs(c.Storage.StateFile)
 	plain := "reader-secret"
 	sum := sha256.Sum256([]byte(plain))
-	srv := &APIServer{cfg: c, jobs: store, engine: &Engine{cfg: c, audit: &Auditor{}}, tokens: []TokenRecord{{ID: "reader", Hash: hex.EncodeToString(sum[:]), Permissions: []string{"read"}}}, rates: map[string]rateEntry{}}
+	engine := &Engine{cfg: c, audit: &Auditor{}}
+	manager := newAutomationManager(c, store, engine)
+	srv := &APIServer{cfg: c, jobs: store, engine: engine, tokens: []TokenRecord{{ID: "reader", Hash: hex.EncodeToString(sum[:]), Permissions: []string{"read"}}}, rates: map[string]rateEntry{}, automations: manager}
 	request := func(method, path string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, nil)
 		r.Header.Set("Authorization", "Bearer "+plain)
@@ -330,6 +359,9 @@ func TestAPIPermissions(t *testing.T) {
 	}
 	if w := request("GET", "/api/v1/health"); w.Code != http.StatusOK {
 		t.Fatalf("lecture refusée: %d %s", w.Code, w.Body.String())
+	}
+	if w := request("GET", "/api/v1/automations"); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"cycles"`) {
+		t.Fatalf("état des automatismes indisponible: %d %s", w.Code, w.Body.String())
 	}
 	if w := request("POST", "/api/v1/servers/two/wake"); w.Code != http.StatusForbidden {
 		t.Fatalf("wake sans permission accepté: %d", w.Code)
@@ -346,15 +378,20 @@ func TestAPIPermissions(t *testing.T) {
 }
 
 func TestNUTStates(t *testing.T) {
-	if !isPowerRestore("OB", "OL") || isPowerRestore("unknown", "OL") || isPowerRestore("OL", "OL") {
-		t.Fatal("détection de retour secteur incorrecte")
-	}
 	for raw, want := range map[string]string{"OL": "OL", "OB": "OB", "OB LB": "LB", "FSD OB": "FSD", "": "unknown"} {
 		r := UPSStatus{State: "unknown"}
 		applyNUTVars(&r, map[string]string{"ups.status": raw, "battery.charge": "50", "battery.runtime": "60"})
 		if r.State != want {
 			t.Fatalf("NUT %q: got %s want %s", raw, r.State, want)
 		}
+		if !r.BatteryKnown || !r.RuntimeKnown {
+			t.Fatalf("mesures NUT valides non reconnues pour %q", raw)
+		}
+	}
+	invalid := UPSStatus{State: "unknown"}
+	applyNUTVars(&invalid, map[string]string{"ups.status": "OL", "battery.charge": "inconnue", "battery.runtime": "-1"})
+	if invalid.BatteryKnown || invalid.RuntimeKnown {
+		t.Fatal("mesure NUT invalide interprétée comme fiable")
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

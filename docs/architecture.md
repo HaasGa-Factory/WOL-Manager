@@ -10,7 +10,7 @@ WoL Manager utilise donc Go. La seule dépendance applicative directe est `gopkg
 
 La CLI, le menu, l'API et les automatisations appellent le même moteur. Celui-ci résout les dépendances, revalide la politique UPS, sélectionne un transport autorisé, envoie le paquet puis exécute les vérifications configurées.
 
-Les tâches sont enregistrées dans un fichier JSON remplacé atomiquement. Une tâche qui était active au redémarrage devient `revalidation_required`; un état enregistré ne déclenche jamais seul un paquet WoL.
+Les tâches et cycles électriques observés sont enregistrés dans un fichier JSON remplacé atomiquement. Une tâche qui était active au redémarrage devient `revalidation_required`; un état enregistré ne déclenche jamais seul un paquet WoL.
 
 ## Paquets
 
@@ -18,4 +18,8 @@ Le code reste volontairement regroupé dans `cmd/wol` : une seule application, u
 
 ## Automatisation
 
-Le service observe les transitions NUT. L'état initial `OL` n'est pas un retour secteur. Seule une transition observée depuis un état différent vers `OL`, stable pendant `stable_for`, peut créer une tâche. La tâche revalide encore les politiques et dépendances.
+Le service observe les états NUT par UPS. L'état initial `OL` n'est pas un retour secteur. Un cycle doit d'abord être enregistré pendant `OB`, `LB` ou `FSD`, puis réarmé au seuil bas. Le secteur `OL` doit rester stable pendant `stable_for` et la batterie atteindre le seuil haut. Une valeur absente ou invalide bloque la décision au lieu d'être interprétée comme zéro.
+
+Les groupes éligibles sont ordonnés par priorité puis identifiant. Le mode séquentiel respecte l'ordre configuré ; le mode parallèle conserve les dépendances obligatoires. Un coordinateur partagé évite les doublons lorsqu'une machine appartient à plusieurs groupes. Le verrou de puissance est revérifié immédiatement avant chaque émission.
+
+Une nouvelle coupure bloque l'UPS concerné et annule les tâches automatiques actives. Après redémarrage, les cycles incomplets repassent en attente et doivent reconstruire leur durée de stabilité avant toute reprise.

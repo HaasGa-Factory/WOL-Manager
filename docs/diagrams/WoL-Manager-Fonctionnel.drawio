@@ -8,7 +8,7 @@
         <mxCell id="f01-title" value="F01 : Vue générale fonctionnelle" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="f01-subtitle" value="Sommaire visuel des accès administrateur et des fonctions confirmées dans WoL Manager 1.1.1." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+        <mxCell id="f01-subtitle" value="Sommaire visuel des accès administrateur et des fonctions confirmées dans WoL Manager 1.2.0." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
           <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
         </mxCell>
         <mxCell id="f01-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
@@ -691,28 +691,28 @@
         <mxCell id="f09-title" value="F09 — Orchestration électrique réellement implémentée" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1100" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="f09-subtitle" value="Portée actuelle: retour du secteur uniquement. Arrêt contrôlé, batterie faible et commande NUT ne sont pas implémentés." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
+        <mxCell id="f09-subtitle" value="Reprise persistante après cycle NUT observé; aucune commande d&amp;#x27;arrêt ou de contrôle électrique n&amp;#x27;est envoyée." style="text;html=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#4b5563;align=left;verticalAlign=top;whiteSpace=wrap;" vertex="1" parent="1">
           <mxGeometry x="40" y="65" width="1450" height="55" as="geometry" />
         </mxCell>
         <mxCell id="f09-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="f09-poll" value="Toutes les 5 s: lire chaque UPS" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
+        <mxCell id="f09-poll" value="Selon poll_interval: lire chaque UPS" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
           <mxGeometry x="60" y="280" width="220" height="75" as="geometry" />
         </mxCell>
-        <mxCell id="f09-state" value="État précédent connu ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+        <mxCell id="f09-state" value="Cycle OB/LB/FSD enregistré et groupe réarmé ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="340" y="270" width="190" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="f09-restore" value="Transition OB/LB/FSD → OL ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+        <mxCell id="f09-restore" value="OL et batterie connue ≥ seuil haut ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="590" y="270" width="220" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="f09-stable" value="OL stable pendant stable_for (30 s par défaut) ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
+        <mxCell id="f09-stable" value="OL stable pendant stable_for ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="880" y="270" width="240" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="f09-job" value="Créer tâche automation unique" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="f09-job" value="Créer/reprendre tâche automation_restore unique par UPS" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1190" y="180" width="220" height="75" as="geometry" />
         </mxCell>
-        <mxCell id="f09-wake" value="Réveiller le groupe: dépendances puis machines" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="f09-wake" value="Groupes ordonnés; mode séquentiel/parallèle; dépendances obligatoires" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1190" y="350" width="240" height="85" as="geometry" />
         </mxCell>
         <mxCell id="f09-result" value="Tâche terminée/échouée + audit" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
@@ -795,7 +795,7 @@
         <mxCell id="f10-restart" value="Redémarrage: queued/running → revalidation_required" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="950" y="430" width="300" height="85" as="geometry" />
         </mxCell>
-        <mxCell id="f10-resume" value="Reprise seulement wake/group/all; discovery et automation refusées" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="f10-resume" value="Automation: cycle persisté + revalidation NUT avant reprise" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="1260" y="430" width="240" height="95" as="geometry" />
         </mxCell>
         <mxCell id="f10-gap" value="Pas de calendrier/cron, de retry générique ni d&amp;#x27;historique séparé" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">

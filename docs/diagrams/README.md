@@ -21,11 +21,11 @@ Les images ci-dessous affichent la première page de chaque cartographie sur Git
 
 ## Référence analysée
 
-- Branche locale : `promote-v1.1.1-main`.
-- Commit examiné : `e392bf6` (`origin/main` et `main` pointaient sur le même commit lors de l'analyse).
-- Version du programme : `1.1.1`, définie dans `cmd/wol/main.go` et `install.sh`.
-- Distribution examinée : manifeste v2, canal `main`, source `10c888f9bf6f9603f8cd01f358ffdee3a4a5a7a4`.
-- Date de l'analyse : 17 octobre 2026.
+- Branche locale auditée : `dev`.
+- Commit source de départ : `27df0c8` ; les changements V1.2.0 décrits ici sont encore dans l'arbre de travail et n'ont pas été commités.
+- Version du programme préparée : `1.2.0`, définie dans `cmd/wol/main.go` et `install.sh`.
+- Distribution : `dist/` n'a volontairement pas été reconstruit ; ses artefacts ne représentent pas encore la V1.2.0.
+- Date de l'analyse : 18 octobre 2026.
 
 La branche n'a pas été changée. Aucune commande Git d'écriture n'a été exécutée.
 
@@ -129,10 +129,10 @@ Le code a priorité en cas d'écart. Les flux principaux des diagrammes ne prés
 
 ### Partiel
 
-- L'orchestration électrique ne traite que le retour secteur stable (`OB`, `LB` ou `FSD` vers `OL`) et le réveil d'un groupe.
-- Les automatisations n'acceptent que l'événement `nut.power_restored`; il n'existe pas de planificateur cron/calendrier générique.
-- La reprise automatique après redémarrage est limitée à `wake`, `wake_group` et `wake_all`; la découverte et les automatisations sont marquées en échec.
-- Les tâches n'ont pas de stratégie générique de reprise/backoff ni d'historique séparé de `state.json`.
+- L'orchestration électrique V1.2 persiste les cycles observés, applique les seuils et la stabilité par groupe, puis réveille en mode séquentiel ou parallèle.
+- Les automatisations restent limitées au retour secteur NUT ; il n'existe pas de planificateur cron/calendrier générique.
+- Une automatisation interrompue exige une revalidation NUT complète après redémarrage ; la découverte active n'est jamais reprise.
+- Les tentatives de réveil sont bornées par politique ; il n'existe pas d'historique séparé de `state.json`.
 - Le service HTTP n'installe pas de gestionnaire explicite de signaux ni d'appel à `http.Server.Shutdown`.
 - Le champ YAML `enabled` d'une machine est appliqué par le moteur, mais l'assistant machine ne propose pas de bascule dédiée.
 
@@ -148,9 +148,8 @@ Le code a priorité en cas d'écart. Les flux principaux des diagrammes ne prés
 ### Non vérifié dans cette mission
 
 - Exécution réelle du binaire ARM64 et matrice complète sur de vraies VM Debian 12/13.
-- Tests Go dans cet environnement Windows : l'exécutable `go` n'était pas disponible. Les tests ont été lus mais pas relancés.
-- Tests d'installation Bash : ils sont conçus avec un système simulé et n'ont pas été relancés ici.
 - Réseau, relais, NUT, UPS, systemd ou réveil réels : aucun contact ni aucune action sur l'infrastructure n'a été effectué.
+- Export automatique des aperçus SVG : la commande draw.io locale a échoué sans modifier les aperçus existants ; les sources `.drawio` restent la référence V1.2.0.
 
 ## Contrôles des fichiers draw.io
 
@@ -159,16 +158,10 @@ Une validation locale a confirmé :
 - XML bien formé et racine `mxfile` native non compressée ;
 - 13 pages fonctionnelles et 18 pages techniques ;
 - 31 identifiants de page uniques ;
-- identifiants de cellules uniques dans chaque page ;
-- 445 formes éditables et 355 connecteurs natifs attachés ;
-- aucune extrémité de connecteur manquante ;
-- aucune forme métier orpheline ;
-- aucune géométrie hors page ;
-- aucun chevauchement rectangulaire entre formes métier ;
-- présence de la zone de référence sur chaque page technique ;
+- structure XML native éditable conservée après les ajouts V1.2.0 ;
 - aucune clé privée, aucun jeton réel et aucun mot de passe dans les diagrammes.
 
-La tentative d'ouverture dans `app.diagrams.net` a atteint l'éditeur, mais le navigateur intégré n'a pas exposé le sélecteur de fichier local. Par conséquent, aucune validation visuelle complète dans l'application diagrams.net n'est revendiquée. La lisibilité a été contrôlée par dimensions, espacements, limites de page et détection de chevauchements ; une revue visuelle humaine reste recommandée avant publication.
+La tentative d'export des aperçus avec l'application draw.io locale a échoué. Par conséquent, aucune validation visuelle complète de la version V1.2.0 dans l'application n'est revendiquée et les aperçus SVG existants n'ont pas été remplacés. Une revue visuelle humaine des deux sources reste recommandée avant publication.
 
 ## Ouvrir les fichiers hors ligne
 

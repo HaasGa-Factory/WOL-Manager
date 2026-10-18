@@ -1,6 +1,6 @@
 # WoL Manager
 
-WoL Manager `v1.1.1` est un gestionnaire Wake-on-LAN Linux centralisé pour plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fournit une CLI, un menu, une API REST authentifiée et une orchestration persistante sans Docker ni accès Internet à l'exécution.
+WoL Manager `v1.2.0` est un gestionnaire Wake-on-LAN Linux centralisé pour plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fournit une CLI, un menu, une API REST authentifiée et une reprise persistante après coupure électrique, sans Docker ni accès Internet à l'exécution.
 
 > Beta : testez d'abord avec `--dry-run`. Un paquet WoL émis ne prouve ni sa réception ni le réveil d'une machine.
 
@@ -8,8 +8,9 @@ WoL Manager `v1.1.1` est un gestionnaire Wake-on-LAN Linux centralisé pour plus
 
 - configuration YAML déclarative et strictement validée ;
 - broadcast local, unicast, broadcast dirigé explicitement autorisé et relais mTLS ;
-- dépendances, groupes, politiques UPS et reprise après revalidation ;
-- état ICMP/TCP/ARP avec quatre états distincts ;
+- dépendances, groupes et reprise NUT séquentielle ou parallèle après un cycle de coupure réellement observé ;
+- seuils batterie bas/haut, stabilité secteur, politiques d'échec et reprise prudente après redémarrage ;
+- contrôles ICMP/TCP/ARP multiples avec logique ET/OU et quatre états distincts ;
 - découverte passive et diagnostic actif avec liste blanche, budget, débit, délai et audit ;
 - API `/api/v1` avec jetons hachés, permissions et limitation de débit ;
 - client NUT facultatif ;
@@ -48,6 +49,7 @@ wol update --check --channel dev
 sudo wol update --channel dev
 wol version
 wol ups test
+wol automation status
 ```
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
@@ -85,7 +87,8 @@ Sur ARM64, remplacez `wol-linux-amd64` par `wol-linux-arm64`.
 - L'installateur cible Debian 12 et 13 sur AMD64/ARM64. Ses scénarios sont testés avec un système simulé ; la validation finale sur quatre VM réelles reste obligatoire avant d'annoncer officiellement la compatibilité.
 - Les binaires de distribution sont compilés localement et versionnés dans Git ; GitHub Actions ne compile ni ne publie le logiciel.
 - Le stockage JSON atomique vise un service unique ; il ne convient pas à plusieurs instances partageant les mêmes fichiers.
-- L'automatisation fournie couvre le retour secteur NUT stable, pas un planificateur généraliste.
+- La reprise automatique exige un cycle NUT observé, une batterie connue lorsque des seuils sont configurés et un service WoL Manager actif pendant la surveillance ; ce n'est pas un planificateur généraliste.
+- Une validation matérielle NUT et une exécution ARM64 réelles restent nécessaires avant de qualifier ces chemins pour la production.
 - Le diagnostic ne peut confirmer la réception que si un relais ou une vérification de disponibilité l'observe.
 - Le mode relais conserve ses identifiants anti-rejeu en mémoire pendant 24 heures ; après redémarrage, une revalidation reste nécessaire côté orchestrateur.
 - Le client NUT implémente les variables standard nécessaires à la politique, pas toute la console `upscli`.

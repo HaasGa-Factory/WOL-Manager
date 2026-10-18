@@ -22,6 +22,10 @@ type Engine struct {
 	noWait            bool
 	verificationDelay *time.Duration
 	progress          io.Writer
+	gate              *PowerGate
+	requireVerified   bool
+	automationUPS     string
+	coordinator       *wakeCoordinator
 }
 type WakeResult struct {
 	Server      string        `json:"server"`
@@ -34,6 +38,19 @@ type WakeResult struct {
 }
 
 func (e *Engine) wakeTree(ctx context.Context, id string, done map[string]bool) ([]WakeResult, error) {
+	if e.coordinator != nil {
+		owner, err := e.coordinator.acquire(ctx, id)
+		if !owner {
+			return nil, err
+		}
+		result, runErr := e.wakeTreeCore(ctx, id, done)
+		e.coordinator.complete(id, runErr)
+		return result, runErr
+	}
+	return e.wakeTreeCore(ctx, id, done)
+}
+
+func (e *Engine) wakeTreeCore(ctx context.Context, id string, done map[string]bool) ([]WakeResult, error) {
 	if done[id] {
 		return nil, nil
 	}
@@ -69,6 +86,9 @@ func (e *Engine) wakeTree(ctx context.Context, id string, done map[string]bool) 
 	if err != nil {
 		return out, err
 	}
+	if e.requireVerified && !x.Verified {
+		return out, fmt.Errorf("serveur %s non validé après le réveil", id)
+	}
 	done[id] = true
 	_, _, delay := e.cfg.effectiveTiming(id)
 	if !e.dry && delay > 0 {
@@ -100,14 +120,26 @@ func (e *Engine) wakeOne(ctx context.Context, id string) (WakeResult, error) {
 	mac, _ := net.ParseMAC(e.cfg.Servers[id].MAC)
 	packet := magicPacket(mac)
 	initialDelay, timeout, interval := e.verificationTiming(id)
-	_, retries, _ := e.cfg.effectiveTiming(id)
-	attempts := retries + 1
+	maxChecks, packetRetries := e.cfg.effectiveVerificationAttempts(id)
+	packetAttempts := packetRetries + 1
+	checks := 0
 	var verificationContext context.Context
 	var cancelVerification context.CancelFunc
 	var deadline time.Time
 	verificationStarted := false
 attemptsLoop:
-	for attempt := 1; attempt <= attempts; attempt++ {
+	for attempt := 1; attempt <= packetAttempts; attempt++ {
+		if e.gate != nil {
+			var gateErr error
+			if e.automationUPS != "" {
+				gateErr = e.gate.AllowUPS(e.automationUPS)
+			} else {
+				gateErr = e.gate.AllowServer(e.cfg, id)
+			}
+			if gateErr != nil {
+				return r, gateErr
+			}
+		}
 		if d.Name == "relay" {
 			err = e.sendRelay(ctx, d.Relay, id)
 		} else {
@@ -115,7 +147,7 @@ attemptsLoop:
 			err = sendMagic(d.Destination, sourceForNetwork(n), d.Name != "unicast", packet)
 		}
 		if err != nil {
-			if attempt == attempts {
+			if attempt == packetAttempts {
 				e.audit.write("wake", "engine", id, "failed", err.Error())
 				return r, err
 			}
@@ -137,11 +169,12 @@ attemptsLoop:
 			verificationStarted = true
 		}
 		window := deadline
-		if remaining := attempts - attempt + 1; remaining > 1 {
+		if remaining := packetAttempts - attempt + 1; remaining > 1 {
 			window = time.Now().Add(time.Until(deadline) / time.Duration(remaining))
 		}
 		for {
 			status := checkServer(verificationContext, e.cfg, id)
+			checks++
 			r.Status = &status
 			r.Verified = status.State == "reachable"
 			if r.Verified {
@@ -152,6 +185,9 @@ attemptsLoop:
 			if e.noWait {
 				e.audit.write("wake", "engine", id, "sent", r)
 				return r, nil
+			}
+			if maxChecks > 0 && checks >= maxChecks {
+				break attemptsLoop
 			}
 			if ctx.Err() != nil {
 				return r, ctx.Err()

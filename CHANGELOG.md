@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 - en préparation
+
+- reprise automatique persistante après un cycle de coupure NUT réellement observé ;
+- seuils batterie bas/haut, stabilité secteur et fréquence de surveillance configurables par groupe ;
+- modes séquentiel et parallèle, ordre explicite, dépendances, politiques d'échec et tentatives bornées ;
+- suspension et annulation immédiates des séquences automatiques sur `OB`, `LB`, `FSD`, état inconnu ou erreur NUT ;
+- revalidation obligatoire après redémarrage, sans réveil automatique au seul constat d'un secteur présent ;
+- contrôles multiples ICMP/TCP/ARP avec logique `any` (OU) ou `all` (ET) et ports TCP distincts ;
+- séparation des tentatives de vérification et des nouveaux envois de Magic Packets ;
+- état des automatismes disponible avec `wol automation status` et `GET /api/v1/automations` ;
+- configuration guidée des politiques de reprise, sans édition YAML obligatoire.
+
 ## 1.1.1 - 2026-10-16
 
 - message explicite et sans modification lorsque `wol update --check` consulte un manifeste `main` signé de format 1 depuis une installation `dev` plus récente ;

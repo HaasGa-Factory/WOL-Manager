@@ -28,8 +28,9 @@ Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
 | `wol ups status` | états NUT |
 | `wol ups test` | diagnostic en lecture seule de tous les UPS configurés |
 | `wol jobs` | état persistant des tâches |
+| `wol automation status` | cycles NUT, politiques, progressions et raisons d'attente |
 | `wol menu` | consultation, configuration, simulation et réveil confirmé |
-| `wol api serve` | API et automatisations |
+| `wol api serve` | API et moteur de surveillance/reprise NUT |
 | `wol relay serve` | relais HTTPS mTLS |
 | `wol relay check ID` | disponibilité d'un relais |
 | `wol completion bash` | génère le script d'autocomplétion Bash |

@@ -24,17 +24,19 @@ type Job struct {
 	Result  any       `json:"result,omitempty"`
 }
 type jobFile struct {
-	Jobs map[string]*Job `json:"jobs"`
+	Jobs   map[string]*Job        `json:"jobs"`
+	Cycles map[string]*PowerCycle `json:"power_cycles,omitempty"`
 }
 type JobStore struct {
 	mu     sync.Mutex
 	path   string
 	jobs   map[string]*Job
 	cancel map[string]context.CancelFunc
+	cycles map[string]*PowerCycle
 }
 
 func openJobs(path string) (*JobStore, error) {
-	s := &JobStore{path: path, jobs: map[string]*Job{}, cancel: map[string]context.CancelFunc{}}
+	s := &JobStore{path: path, jobs: map[string]*Job{}, cancel: map[string]context.CancelFunc{}, cycles: map[string]*PowerCycle{}}
 	b, e := os.ReadFile(path)
 	if e != nil && !os.IsNotExist(e) {
 		return nil, e
@@ -45,18 +47,32 @@ func openJobs(path string) (*JobStore, error) {
 			return nil, fmt.Errorf("état des tâches: %w", e)
 		}
 		s.jobs = f.Jobs
-		for _, j := range s.jobs {
-			if j.State == "running" || j.State == "queued" {
-				j.State = "revalidation_required"
-				j.Message = "service redémarré; reprise interdite avant revalidation"
-				j.Updated = time.Now().UTC()
-			}
+		if s.jobs == nil {
+			s.jobs = map[string]*Job{}
 		}
-		if e = s.saveLocked(); e != nil {
-			return nil, e
+		if f.Cycles != nil {
+			s.cycles = f.Cycles
 		}
 	}
 	return s, nil
+}
+
+func (s *JobStore) markInterrupted() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := false
+	for _, job := range s.jobs {
+		if job.State == "running" || job.State == "queued" {
+			job.State = "revalidation_required"
+			job.Message = "service redémarré; reprise interdite avant revalidation"
+			job.Updated = time.Now().UTC()
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return s.saveLocked()
 }
 func newID() (string, error) {
 	b := make([]byte, 16)
@@ -71,7 +87,7 @@ func (s *JobStore) saveLocked() error {
 	if e := os.MkdirAll(filepath.Dir(s.path), 0750); e != nil {
 		return e
 	}
-	b, e := json.MarshalIndent(jobFile{Jobs: s.jobs}, "", "  ")
+	b, e := json.MarshalIndent(jobFile{Jobs: s.jobs, Cycles: s.cycles}, "", "  ")
 	if e != nil {
 		return e
 	}
@@ -195,6 +211,28 @@ func (s *JobStore) list() []Job {
 	}
 	return out
 }
+
+func (s *JobStore) revalidationJob(kind, target string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, job := range s.jobs {
+		if job.Kind == kind && job.Target == target && job.State == "revalidation_required" {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func (s *JobStore) activeJob(kind, target string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, job := range s.jobs {
+		if job.Kind == kind && job.Target == target && (job.State == "queued" || job.State == "running") {
+			return true
+		}
+	}
+	return false
+}
 func (s *JobStore) cancelJob(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -208,4 +246,57 @@ func (s *JobStore) cancelJob(id string) error {
 	}
 	f()
 	return nil
+}
+
+func (s *JobStore) cancelMatching(kind, target string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, job := range s.jobs {
+		if job.Kind == kind && job.Target == target {
+			if cancel := s.cancel[id]; cancel != nil {
+				cancel()
+			}
+		}
+	}
+}
+
+func (s *JobStore) setCycle(cycle PowerCycle) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copy := clonePowerCycle(cycle)
+	s.cycles[cycle.UPS] = &copy
+	return s.saveLocked()
+}
+
+func (s *JobStore) cycle(ups string) (PowerCycle, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cycle, ok := s.cycles[ups]
+	if !ok {
+		return PowerCycle{}, false
+	}
+	return clonePowerCycle(*cycle), true
+}
+
+func (s *JobStore) listCycles() []PowerCycle {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]PowerCycle, 0, len(s.cycles))
+	for _, cycle := range s.cycles {
+		out = append(out, clonePowerCycle(*cycle))
+	}
+	return out
+}
+
+func clonePowerCycle(cycle PowerCycle) PowerCycle {
+	copy := cycle
+	copy.ArmedGroups = map[string]bool{}
+	for id, value := range cycle.ArmedGroups {
+		copy.ArmedGroups[id] = value
+	}
+	copy.CompletedGroups = map[string]bool{}
+	for id, value := range cycle.CompletedGroups {
+		copy.CompletedGroups[id] = value
+	}
+	return copy
 }

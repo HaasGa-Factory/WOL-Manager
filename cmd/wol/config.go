@@ -57,6 +57,7 @@ type Defaults struct {
 	WakeRetries    int                `yaml:"wake_retries"`
 	Delay          Duration           `yaml:"delay"`
 	Verification   VerificationConfig `yaml:"verification,omitempty"`
+	CheckLogic     string             `yaml:"check_logic,omitempty"`
 }
 
 type Network struct {
@@ -76,15 +77,16 @@ type Network struct {
 }
 
 type Group struct {
-	Priority       int        `yaml:"priority"`
-	Servers        []string   `yaml:"servers"`
-	Checks         []Check    `yaml:"checks"`
-	TransportOrder []string   `yaml:"transport_order"`
-	WakeTimeout    Duration   `yaml:"wake_timeout"`
-	WakeRetries    *int       `yaml:"wake_retries"`
-	Dependencies   []string   `yaml:"dependencies"`
-	UPS            *UPSPolicy `yaml:"ups_policy"`
-	Delay          Duration   `yaml:"delay"`
+	Priority       int                 `yaml:"priority"`
+	Servers        []string            `yaml:"servers"`
+	Checks         []Check             `yaml:"checks"`
+	TransportOrder []string            `yaml:"transport_order"`
+	WakeTimeout    Duration            `yaml:"wake_timeout"`
+	WakeRetries    *int                `yaml:"wake_retries"`
+	Dependencies   []string            `yaml:"dependencies"`
+	UPS            *UPSPolicy          `yaml:"ups_policy"`
+	Delay          Duration            `yaml:"delay"`
+	PowerRestore   *PowerRestorePolicy `yaml:"power_restore,omitempty"`
 }
 
 type Server struct {
@@ -100,14 +102,31 @@ type Server struct {
 	WakeRetries  *int               `yaml:"wake_retries" json:"-"`
 	Delay        Duration           `yaml:"delay" json:"-"`
 	Verification VerificationConfig `yaml:"verification,omitempty" json:"-"`
+	CheckLogic   string             `yaml:"check_logic,omitempty" json:"-"`
 	UPS          *UPSPolicy         `yaml:"ups_policy" json:"-"`
 	Enabled      *bool              `yaml:"enabled" json:"enabled,omitempty"`
 }
 
 type VerificationConfig struct {
-	InitialDelay *Duration `yaml:"initial_delay,omitempty"`
-	Timeout      *Duration `yaml:"timeout,omitempty"`
-	Interval     *Duration `yaml:"interval,omitempty"`
+	InitialDelay  *Duration `yaml:"initial_delay,omitempty"`
+	Timeout       *Duration `yaml:"timeout,omitempty"`
+	Interval      *Duration `yaml:"interval,omitempty"`
+	Attempts      *int      `yaml:"attempts,omitempty"`
+	PacketRetries *int      `yaml:"packet_retries,omitempty"`
+}
+
+type PowerRestorePolicy struct {
+	Enabled       bool     `yaml:"enabled"`
+	UPS           string   `yaml:"ups"`
+	LowBattery    *int     `yaml:"low_battery,omitempty"`
+	HighBattery   *int     `yaml:"high_battery,omitempty"`
+	StableFor     Duration `yaml:"stable_for,omitempty"`
+	PollInterval  Duration `yaml:"poll_interval,omitempty"`
+	Mode          string   `yaml:"mode,omitempty"`
+	Order         []string `yaml:"order,omitempty"`
+	FailurePolicy string   `yaml:"failure_policy,omitempty"`
+	RetryLimit    int      `yaml:"retry_limit,omitempty"`
+	RetryInterval Duration `yaml:"retry_interval,omitempty"`
 }
 
 type Check struct {
@@ -287,10 +306,21 @@ func (c *Config) Validate() error {
 				problems = append(problems, where+": "+name+" doit être strictement positif et inférieur ou égal à 24h")
 			}
 		}
+		for name, value := range map[string]*int{"attempts": v.Attempts, "packet_retries": v.PacketRetries} {
+			if value != nil && (*value < 0 || *value > 100) {
+				problems = append(problems, where+": "+name+" doit être compris entre 0 et 100")
+			}
+		}
+	}
+	checkLogic := func(where, logic string) {
+		if logic != "" && logic != "any" && logic != "all" {
+			problems = append(problems, where+": check_logic doit valoir any ou all")
+		}
 	}
 	checkOrder("global.transport_order", c.Global.TransportOrder)
 	checkChecks("global.checks", c.Global.Checks)
 	checkVerification("global.verification", c.Global.Verification)
+	checkLogic("global", c.Global.CheckLogic)
 	for id, n := range c.Networks {
 		if !validID(id) {
 			problems = append(problems, "identifiant réseau invalide "+id)
@@ -363,6 +393,7 @@ func (c *Config) Validate() error {
 		checkOrder("server "+id, s.Transports)
 		checkChecks("server "+id, s.Checks)
 		checkVerification("server "+id+" verification", s.Verification)
+		checkLogic("server "+id, s.CheckLogic)
 		checkPolicy("server "+id, s.UPS)
 		if s.WakeRetries != nil && *s.WakeRetries < 0 {
 			problems = append(problems, "server "+id+": wake_retries négatif")
@@ -397,6 +428,47 @@ func (c *Config) Validate() error {
 		checkPolicy("group "+id, g.UPS)
 		if g.WakeRetries != nil && *g.WakeRetries < 0 {
 			problems = append(problems, "group "+id+": wake_retries négatif")
+		}
+		if p := g.PowerRestore; p != nil {
+			if _, ok := c.UPS[p.UPS]; !ok {
+				problems = append(problems, "group "+id+": power_restore UPS inconnue")
+			}
+			if p.LowBattery == nil || p.HighBattery == nil || *p.LowBattery < 0 || *p.HighBattery > 100 || *p.HighBattery <= *p.LowBattery {
+				problems = append(problems, "group "+id+": seuils power_restore invalides (0 <= bas < haut <= 100 requis)")
+			}
+			if p.StableFor < 0 || p.StableFor > Duration(24*time.Hour) || p.PollInterval < 0 || p.PollInterval > Duration(time.Hour) || p.RetryInterval < 0 || p.RetryInterval > Duration(24*time.Hour) {
+				problems = append(problems, "group "+id+": durées power_restore invalides")
+			}
+			if p.Mode != "" && p.Mode != "sequential" && p.Mode != "parallel" {
+				problems = append(problems, "group "+id+": mode power_restore invalide")
+			}
+			if p.FailurePolicy != "" && p.FailurePolicy != "stop" && p.FailurePolicy != "continue" && p.FailurePolicy != "retry" && p.FailurePolicy != "continue_retry" {
+				problems = append(problems, "group "+id+": failure_policy invalide")
+			}
+			if p.RetryLimit < 0 || p.RetryLimit > 100 {
+				problems = append(problems, "group "+id+": retry_limit doit être compris entre 0 et 100")
+			}
+			if (p.FailurePolicy == "retry" || p.FailurePolicy == "continue_retry") && p.RetryLimit > 0 && p.RetryInterval <= 0 {
+				problems = append(problems, "group "+id+": retry_interval doit être strictement positif lorsque les nouvelles tentatives sont actives")
+			}
+			members := map[string]bool{}
+			for _, serverID := range g.Servers {
+				members[serverID] = true
+			}
+			for serverID, server := range c.Servers {
+				for _, groupID := range server.Groups {
+					if groupID == id {
+						members[serverID] = true
+					}
+				}
+			}
+			seenOrder := map[string]bool{}
+			for _, serverID := range p.Order {
+				if !members[serverID] || seenOrder[serverID] {
+					problems = append(problems, "group "+id+": ordre power_restore invalide "+serverID)
+				}
+				seenOrder[serverID] = true
+			}
 		}
 	}
 	for id, r := range c.Relays {
@@ -542,6 +614,17 @@ func (c *Config) effectiveChecks(id string) []Check {
 	return xs
 }
 
+func (c *Config) effectiveCheckLogic(id string) string {
+	logic := c.Global.CheckLogic
+	if logic == "" {
+		logic = "any"
+	}
+	if c.Servers[id].CheckLogic != "" {
+		logic = c.Servers[id].CheckLogic
+	}
+	return logic
+}
+
 func (c *Config) effectiveTransportOrder(id string) []string {
 	s := c.Servers[id]
 	xs := c.Global.TransportOrder
@@ -619,6 +702,23 @@ func (c *Config) effectiveVerification(id string) (initialDelay, timeout, interv
 		interval = time.Duration(*value)
 	}
 	return initialDelay, timeout, interval
+}
+
+func (c *Config) effectiveVerificationAttempts(id string) (attempts, packetRetries int) {
+	_, packetRetries, _ = c.effectiveTiming(id)
+	if value := c.Global.Verification.Attempts; value != nil {
+		attempts = *value
+	}
+	if value := c.Global.Verification.PacketRetries; value != nil {
+		packetRetries = *value
+	}
+	if value := c.Servers[id].Verification.Attempts; value != nil {
+		attempts = *value
+	}
+	if value := c.Servers[id].Verification.PacketRetries; value != nil {
+		packetRetries = *value
+	}
+	return attempts, packetRetries
 }
 func (c *Config) effectiveUPS(id string) *UPSPolicy {
 	var p *UPSPolicy

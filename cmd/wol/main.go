@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	version        = "1.1.1"
+	version        = "1.2.0"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -162,6 +162,11 @@ func run(args []string) error {
 		return nil
 	case "jobs":
 		return output(true, jobs.list(), "")
+	case "automation":
+		if len(args) != 1 || args[0] != "status" {
+			return errUsage
+		}
+		return output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
 	case "api":
 		if len(args) != 1 || args[0] != "serve" {
 			return errUsage
@@ -203,6 +208,7 @@ Usage: wol [--config FILE] [--json] COMMAND
   network discover [options]    découverte passive ou active
   ups status|test               état/diagnostic en lecture seule des UPS NUT
   jobs                          liste les tâches persistées
+  automation status             état et raisons d'attente des reprises NUT
   menu                          interface interactive
   api serve                     démarre l'API
   relay serve|check             relais distant`)
@@ -225,9 +231,9 @@ Contraintes: MAC et IPv4 valides, réseau existant; suppression refusée tant qu
 Exemple: sudo wol config machine`
 	case "group":
 		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, priorité, machines et dépendances.
+Paramètres demandés: identifiant, priorité, machines, dépendances et politique facultative de reprise NUT.
 Valeurs par défaut: listes vides; priorité demandée par l'assistant.
-Contraintes: références existantes; suppression refusée si le groupe est encore utilisé.
+Contraintes: références existantes; seuil haut strictement supérieur au seuil bas; suppression refusée si le groupe est encore utilisé.
 Exemple: sudo wol config group`
 	case "nut":
 		details = `Actions: détecter localement, ajouter ou modifier un serveur, sélectionner ou supprimer des UPS, tester ou reporter.
@@ -265,7 +271,7 @@ _wol() {
         esac
     done
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs menu api relay version completion --config --json" -- "$cur") )
+        COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs automation menu api relay version completion --config --json" -- "$cur") )
         return
     fi
     case "$cmd" in
@@ -279,6 +285,7 @@ _wol() {
         wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all" -- "$cur") ) ;;
         network) COMPREPLY=( $(compgen -W "test discover" -- "$cur") ) ;;
         ups) COMPREPLY=( $(compgen -W "status test" -- "$cur") ) ;;
+        automation) COMPREPLY=( $(compgen -W "status" -- "$cur") ) ;;
         token) COMPREPLY=( $(compgen -W "create" -- "$cur") ) ;;
         api) COMPREPLY=( $(compgen -W "serve" -- "$cur") ) ;;
         relay) COMPREPLY=( $(compgen -W "serve check" -- "$cur") ) ;;
@@ -462,7 +469,7 @@ func editConfig(path string) error {
 func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  0 Quitter\n> ")
+		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  9 Automatismes  0 Quitter\n> ")
 		x, _ := r.ReadString('\n')
 		switch strings.TrimSpace(x) {
 		case "0":
@@ -521,6 +528,13 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			} else {
 				_ = output(jsonOut, v, "")
 			}
+		case "9":
+			jobs, err := openJobs(c.Storage.StateFile)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			_ = output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
 		default:
 			fmt.Println("Choix invalide.")
 		}

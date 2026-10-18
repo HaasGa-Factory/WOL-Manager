@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: WoL Manager API
-  version: 1.1.1
+  version: 1.2.0
   description: Les émissions WoL sont toujours résolues depuis la configuration du serveur.
 servers:
   - url: https://127.0.0.1:8080/api/v1
@@ -56,6 +56,12 @@ paths:
       summary: États NUT
       responses:
         '200': {description: États UPS, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+  /automations:
+    get:
+      summary: État, progression et raisons d'attente des reprises NUT
+      responses:
+        '200': {description: Cycles, politiques et tâches, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
   /jobs/{id}:
     parameters: [{$ref: '#/components/parameters/Id'}]
     get:

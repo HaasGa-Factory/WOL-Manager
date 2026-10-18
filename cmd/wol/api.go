@@ -43,12 +43,13 @@ type rateEntry struct {
 	count int
 }
 type APIServer struct {
-	cfg    *Config
-	jobs   *JobStore
-	engine *Engine
-	tokens []TokenRecord
-	mu     sync.Mutex
-	rates  map[string]rateEntry
+	cfg         *Config
+	jobs        *JobStore
+	engine      *Engine
+	tokens      []TokenRecord
+	mu          sync.Mutex
+	rates       map[string]rateEntry
+	automations *AutomationManager
 }
 
 func loadTokens(path string) ([]TokenRecord, error) {
@@ -164,6 +165,7 @@ func (s *APIServer) handler() http.Handler {
 	mux.HandleFunc("/api/v1/groups/", s.group)
 	mux.HandleFunc("/api/v1/wake-all", s.wakeAll)
 	mux.HandleFunc("/api/v1/ups", s.ups)
+	mux.HandleFunc("/api/v1/automations", s.automationState)
 	mux.HandleFunc("/api/v1/jobs/", s.job)
 	mux.HandleFunc("/api/v1/networks", s.networks)
 	mux.HandleFunc("/api/v1/networks/diagnostics", s.diagnostics)
@@ -283,6 +285,21 @@ func (s *APIServer) ups(w http.ResponseWriter, r *http.Request) {
 		out[id] = nutStatus(r.Context(), id, u)
 	}
 	writeJSON(w, 200, out)
+}
+
+func (s *APIServer) automationState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		method(w)
+		return
+	}
+	if !need(w, r, "read") {
+		return
+	}
+	if s.automations == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"cycles": []PowerCycle{}, "policies": []restorePlan{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.automations.automationStatus())
 }
 func (s *APIServer) job(w http.ResponseWriter, r *http.Request) {
 	p := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
@@ -449,9 +466,13 @@ func serveAPI(c *Config, j *JobStore, e *Engine) error {
 	if err != nil {
 		return fmt.Errorf("jetons API: %w", err)
 	}
-	s := &APIServer{cfg: c, jobs: j, engine: e, tokens: tokens, rates: map[string]rateEntry{}}
-	resumeJobs(j, e)
-	go monitorAutomations(c, j, e)
+	if err := j.markInterrupted(); err != nil {
+		return fmt.Errorf("revalidation des tâches interrompues: %w", err)
+	}
+	manager := newAutomationManager(c, j, e)
+	s := &APIServer{cfg: c, jobs: j, engine: e, tokens: tokens, rates: map[string]rateEntry{}, automations: manager}
+	resumeJobs(j, e, manager)
+	go manager.monitor(context.Background())
 	srv := http.Server{Addr: c.API.Listen, Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
 	if isLoopbackListen(c.API.Listen) && c.API.TLSCert == "" {
 		return srv.ListenAndServe()
@@ -459,7 +480,7 @@ func serveAPI(c *Config, j *JobStore, e *Engine) error {
 	return srv.ListenAndServeTLS(c.API.TLSCert, c.API.TLSKey)
 }
 
-func resumeJobs(j *JobStore, e *Engine) {
+func resumeJobs(j *JobStore, e *Engine, managers ...*AutomationManager) {
 	for _, job := range j.list() {
 		if job.State != "revalidation_required" {
 			continue
@@ -472,52 +493,16 @@ func resumeJobs(j *JobStore, e *Engine) {
 			_ = j.resume(id, func(ctx context.Context) (any, error) { return e.wakeGroup(ctx, job.Target) })
 		case "wake_all":
 			_ = j.resume(id, func(ctx context.Context) (any, error) { return e.wakeAll(ctx) })
+		case "automation_restore":
+			// Le coordinateur reprendra ce job seulement après une nouvelle
+			// lecture NUT, un nouveau délai de stabilité et une revalidation.
+			if len(managers) == 0 {
+				j.update(id, "failed", "coordinateur d'automatisation indisponible", nil)
+			}
 		default:
 			j.update(id, "failed", "reprise automatique interdite pour ce type de tâche", nil)
 		}
 	}
-}
-
-func monitorAutomations(c *Config, j *JobStore, e *Engine) {
-	previous := map[string]string{}
-	onlineSince := map[string]time.Time{}
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		for id, u := range c.UPS {
-			s := nutStatus(context.Background(), id, u)
-			old, known := previous[id]
-			previous[id] = s.State
-			if known && isPowerRestore(old, s.State) {
-				onlineSince[id] = time.Now()
-			} else if s.State != "OL" {
-				delete(onlineSince, id)
-			}
-		}
-		triggered := map[string]bool{}
-		for _, a := range c.Automations {
-			if !a.Enabled || a.Event != "nut.power_restored" {
-				continue
-			}
-			since, ready := onlineSince[a.UPS]
-			ready = ready && time.Since(since) >= a.StableFor.Value(30*time.Second)
-			if !ready {
-				continue
-			}
-			a := a
-			if _, er := j.create("automation", a.ID, func(ctx context.Context) (any, error) { return e.wakeGroup(ctx, a.Group) }); er == nil {
-				e.audit.write("automation", a.ID, a.Group, "accepted", nil)
-				triggered[a.UPS] = true
-			}
-		}
-		for id := range triggered {
-			delete(onlineSince, id)
-		}
-	}
-}
-
-func isPowerRestore(old, current string) bool {
-	return current == "OL" && (old == "OB" || old == "LB" || old == "FSD")
 }
 
 type relayRequest struct {

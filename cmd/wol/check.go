@@ -89,17 +89,32 @@ func checkServer(ctx context.Context, c *Config, id string) StatusResult {
 			impossible = true
 		}
 	}
-	switch {
-	case reachable:
-		r.State = "reachable"
-	case unreachable:
-		r.State = "unreachable"
-	case unknown:
-		r.State = "unknown"
-	case impossible:
-		r.State = "check_impossible"
-	default:
-		r.State = "check_impossible"
+	if c.effectiveCheckLogic(id) == "all" {
+		switch {
+		case unreachable:
+			r.State = "unreachable"
+		case impossible:
+			r.State = "check_impossible"
+		case unknown:
+			r.State = "unknown"
+		case reachable && len(r.Results) > 0:
+			r.State = "reachable"
+		default:
+			r.State = "check_impossible"
+		}
+	} else {
+		switch {
+		case reachable:
+			r.State = "reachable"
+		case unknown:
+			r.State = "unknown"
+		case impossible:
+			r.State = "check_impossible"
+		case unreachable:
+			r.State = "unreachable"
+		default:
+			r.State = "check_impossible"
+		}
 	}
 	return r
 }
