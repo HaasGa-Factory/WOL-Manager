@@ -12,6 +12,8 @@ fail() { echo "ECHEC: $*" >&2; exit 1; }
 assert_file() { [[ -f "$1" ]] || fail "fichier absent: $1"; }
 assert_contains() { grep -Fq "$2" "$1" || fail "'$2' absent de $1"; }
 assert_not_contains() { ! grep -Fq "$2" "$1" || fail "'$2' présent dans $1"; }
+assert_has_ansi() { LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI absente de $1"; }
+assert_no_ansi() { ! LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI présente dans $1"; }
 
 openssl genpkey -algorithm Ed25519 -out "$PRIVATE_KEY"
 openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY"
@@ -382,6 +384,7 @@ assert_contains "$WORK/current.log" "est à jour"
 echo "[11/16] canal dev temporaire"
 run_update "$ROOT12" dev --yes --non-interactive >"$WORK/dev.log" 2>&1
 assert_contains "$WORK/dev.log" "CANAL DEV/BETA"
+assert_no_ansi "$WORK/dev.log"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.3 ]] || fail "mise à jour dev absente"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
@@ -528,5 +531,20 @@ APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_REMOTE/system
   PATH="$MOCK_BIN:$PATH" "$ROOT_REMOTE/usr/local/lib/wol-manager/install.sh" --uninstall --non-interactive
 [[ ! -e "$ROOT_REMOTE/etc/bash_completion.d/wol-manager" ]] || fail "la complétion WoL Manager n'a pas été supprimée"
 assert_contains "$ROOT_REMOTE/usr/share/bash-completion/completions/wol" "fichier Debian mis à jour"
+
+echo "[présentation] couleurs TTY, redirection, NO_COLOR et journaux"
+command -v script >/dev/null 2>&1 || fail "commande script requise pour tester la sortie TTY"
+COLOR_TMP="$WORK/color-tmp"
+mkdir -p "$COLOR_TMP"
+TERM=xterm WOL_TEST_MODE=1 TMPDIR="$COLOR_TMP" script -qec "'$REPO/install.sh' --version" /dev/null >"$WORK/color-tty.log"
+assert_has_ansi "$WORK/color-tty.log"
+TERM=xterm NO_COLOR=1 WOL_TEST_MODE=1 TMPDIR="$COLOR_TMP" script -qec "'$REPO/install.sh' --version" /dev/null >"$WORK/color-no-color.log"
+assert_no_ansi "$WORK/color-no-color.log"
+TERM=xterm WOL_TEST_MODE=1 TMPDIR="$COLOR_TMP" "$REPO/install.sh" --version >"$WORK/color-redirected.log" 2>&1
+assert_no_ansi "$WORK/color-redirected.log"
+for logfile in "$COLOR_TMP"/wol-manager-check-*.log; do
+  assert_file "$logfile"
+  assert_no_ansi "$logfile"
+done
 
 echo "Tous les tests simulés de l'installateur ont réussi."

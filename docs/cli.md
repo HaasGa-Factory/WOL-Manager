@@ -37,6 +37,8 @@ Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
 
 Codes de sortie : `0` succès, `1` erreur d'exécution/configuration/politique, `2` syntaxe invalide. Les diagnostics actifs affichent toujours un avertissement sur stderr.
 
+Sur un terminal compatible, la CLI met en évidence les erreurs en rouge, les avertissements en jaune, les validations réussies en vert et les informations importantes en cyan. Les couleurs sont automatiquement désactivées pour une redirection, une sortie JSON, un terminal `dumb` ou lorsque la variable standard `NO_COLOR` est définie. Les textes et codes de sortie restent identiques pour les scripts.
+
 L'installateur place automatiquement l'autocomplétion Bash au bon emplacement. Dans un nouveau terminal, `wol m<Tab>` complète `menu` et `wol config m<Tab>` complète `machine`. La commande `wol completion bash` permet aussi d'afficher le script sans l'installer.
 
 `wol --help` affiche l'aide générale sans charger la configuration. Les assistants disposent aussi d'une aide dédiée, par exemple `wol config network --help` ou `wol config machine --help`. Ces aides ne nécessitent ni privilège, ni fichier YAML, ni accès réseau.

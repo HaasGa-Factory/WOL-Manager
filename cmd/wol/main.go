@@ -30,7 +30,7 @@ var errUsage = errors.New("usage invalide")
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "erreur:", err)
+		errorf(os.Stderr, "ERREUR: %v", err)
 		if errors.Is(err, errUsage) {
 			os.Exit(2)
 		}
@@ -384,7 +384,7 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 		if !c.Discovery.ActiveEnabled {
 			return errors.New("découverte active désactivée dans la configuration")
 		}
-		fmt.Fprintln(os.Stderr, "AVERTISSEMENT: diagnostic réseau actif limité aux sous-réseaux explicitement autorisés")
+		warningf(os.Stderr, "AVERTISSEMENT: diagnostic réseau actif limité aux sous-réseaux explicitement autorisés")
 		if !*allow {
 			info, statErr := os.Stdin.Stat()
 			if statErr != nil || info.Mode()&os.ModeCharDevice == 0 {
@@ -446,7 +446,7 @@ func output(asJSON bool, v any, text string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(v)
 	}
-	fmt.Println(text)
+	successf(os.Stdout, "%s", text)
 	return nil
 }
 func envOr(k, d string) string {

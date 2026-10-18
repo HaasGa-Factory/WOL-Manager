@@ -157,7 +157,7 @@ attemptsLoop:
 		if !verificationStarted {
 			if initialDelay > 0 {
 				if e.progress != nil {
-					fmt.Fprintf(e.progress, "Paquet envoyé, vérification dans %s…\n", frenchDuration(initialDelay))
+					infof(e.progress, "Paquet envoyé, vérification dans %s…", frenchDuration(initialDelay))
 				}
 				if err := waitContext(ctx, initialDelay); err != nil {
 					return r, err

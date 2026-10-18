@@ -96,14 +96,41 @@ else
 fi
 : >"$LOG_FILE"
 
-log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG_FILE"; }
-warn() { log "AVERTISSEMENT: $*" >&2; }
-die() { log "ERREUR: $*" >&2; exit 1; }
+color_enabled() {
+  [ "${NO_COLOR+x}" != x ] && [ -n "${TERM:-}" ] && [ "$TERM" != dumb ] && [ -t "$1" ]
+}
+emit() {
+  level=$1 fd=$2
+  shift 2
+  line="$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
+  printf '%s\n' "$line" >>"$LOG_FILE"
+  code=
+  case "$level" in
+    warning) code='1;33' ;;
+    error) code='1;31' ;;
+    success) code='1;32' ;;
+    info) code='1;36' ;;
+  esac
+  if [ -n "$code" ] && color_enabled "$fd"; then
+    line=$(printf '\033[%sm%s\033[0m' "$code" "$line")
+  fi
+  if [ "$fd" -eq 2 ]; then printf '%s\n' "$line" >&2; else printf '%s\n' "$line"; fi
+}
+log() { emit plain 1 "$*"; }
+info() { emit info 1 "$*"; }
+success() { emit success 1 "$*"; }
+warn() { emit warning 2 "AVERTISSEMENT: $*"; }
+die() { emit error 2 "ERREUR: $*"; exit 1; }
 run() { log "+ $*"; "$@" >>"$LOG_FILE" 2>&1; }
 confirm() {
   [ "$ASSUME_YES" -eq 1 ] && return 0
   [ "$NON_INTERACTIVE" -eq 0 ] || return 1
-  printf '%s [y/N] ' "$1" >/dev/tty
+  prompt="$1 [y/N]"
+  if color_enabled 1; then
+    printf '\033[1;36m%s\033[0m ' "$prompt" >/dev/tty
+  else
+    printf '%s ' "$prompt" >/dev/tty
+  fi
   read answer </dev/tty || return 1
   case "$answer" in y|Y|yes|YES|oui|OUI|o|O) return 0 ;; *) return 1 ;; esac
 }
@@ -111,8 +138,8 @@ cleanup() {
   status=$?
   if [ "$status" -ne 0 ] && [ "$ROLLBACK_READY" -eq 1 ]; then rollback || true; fi
   [ -z "$TMP_WORK" ] || rm -rf -- "$TMP_WORK"
-  if [ "$status" -eq 0 ]; then log "Résultat final: succès"; else log "Résultat final: échec ($status)"; fi
-  log "Journal: $LOG_FILE"
+  if [ "$status" -eq 0 ]; then success "Résultat final: succès"; else emit error 2 "ERREUR: Résultat final: échec ($status)"; fi
+  info "Journal: $LOG_FILE"
   exit "$status"
 }
 trap cleanup EXIT
@@ -153,7 +180,7 @@ detect_system() {
   if command -v systemctl >/dev/null 2>&1; then SYSTEMD=yes; else SYSTEMD=no; fi
   free_kb=$(df -Pk "${ROOT:-/}" 2>/dev/null | awk 'NR==2 {print $4}')
   [ -z "$free_kb" ] || [ "$free_kb" -ge 102400 ] || die "100 Mio d'espace libre sont requis"
-  log "Système: Debian $VERSION_ID, linux/$ARCH, systemd $SYSTEMD"
+  info "Système: Debian $VERSION_ID, linux/$ARCH, systemd $SYSTEMD"
 }
 
 add_missing() {
@@ -184,8 +211,8 @@ detect_dependencies() {
   MISSING=$(printf '%s' "$MISSING" | sed 's/^ *//')
 }
 install_dependencies() {
-  [ -z "$MISSING" ] && { log "Dépendances d'exécution: toutes présentes"; return; }
-  log "Dépendances manquantes: $MISSING"
+  [ -z "$MISSING" ] && { success "Dépendances d'exécution: toutes présentes"; return; }
+  info "Dépendances manquantes: $MISSING"
   printf '%b\n' "$REASONS" | tee -a "$LOG_FILE"
   [ "$CHECK_ONLY" -eq 0 ] || die "Installez les dépendances manquantes avant de revérifier"
   confirm "Installer uniquement ces paquets avec APT ?" || die "Installation des dépendances non autorisée"
@@ -249,7 +276,7 @@ verify_manifest() {
   [ "$CANDIDATE_NAME" = "wol-linux-$ARCH" ] || die "Nom de binaire inattendu: $CANDIDATE_NAME"
   [ "$INSTALLER_NAME" = install.sh ] || die "Nom d'installateur inattendu: $INSTALLER_NAME"
   printf '%s\n' "$MANIFEST_VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.+-]*$' || die "Version invalide dans le manifeste"
-  log "Manifeste signé vérifié ($KEY_ID)"
+  success "Manifeste signé vérifié ($KEY_ID)"
 }
 verify_installer_candidate() {
   actual=$(sha256sum "$INSTALLER_CANDIDATE" | awk '{print $1}')
@@ -266,7 +293,7 @@ verify_candidate() {
   [ "$CANDIDATE_VERSION" = "$MANIFEST_VERSION" ] || die "Version du binaire différente du manifeste"
   [ "$CANDIDATE_REVISION" = "$SOURCE_REVISION" ] || die "Révision du binaire différente du manifeste"
   [ "$CANDIDATE_CHANNEL" = "$CHANNEL" ] || die "Canal du binaire différent du canal demandé"
-  log "Binaire vérifié: $CANDIDATE_VERSION, source $CANDIDATE_REVISION, linux/$ARCH"
+  success "Binaire vérifié: $CANDIDATE_VERSION, source $CANDIDATE_REVISION, linux/$ARCH"
 }
 resolve_publication() {
   download "$GITHUB_API/repos/$REPOSITORY/commits/$CHANNEL" "$TMP_WORK/commit.json" || die "Impossible de résoudre la branche $CHANNEL sur GitHub"
@@ -305,22 +332,22 @@ version_lt() { [ "$1" = "$2" ] && return 1; [ "$(printf '%s\n%s\n' "$1" "$2" | s
 show_comparison() {
   current=$(installed_version)
   current_revision=$(installed_revision)
-  log "Version installée : $current"
-  log "Révision installée: $current_revision"
-  log "Version disponible: $CANDIDATE_VERSION"
-  log "Révision source   : $CANDIDATE_REVISION"
-  log "Canal             : $CHANNEL"
-  log "Architecture      : linux/$ARCH"
+  info "Version installée : $current"
+  info "Révision installée: $current_revision"
+  info "Version disponible: $CANDIDATE_VERSION"
+  info "Révision source   : $CANDIDATE_REVISION"
+  info "Canal             : $CHANNEL"
+  info "Architecture      : linux/$ARCH"
   [ "$CHANNEL" != dev ] || warn "CANAL DEV/BETA: cette version peut être instable; le canal par défaut reste main"
   if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
     UPDATE_NEEDED=0
-    log "WoL Manager est à jour"
+    success "WoL Manager est à jour"
   else
     UPDATE_NEEDED=1
     if [ "$current" = "$CANDIDATE_VERSION" ]; then
-      log "Mise à jour disponible: même version, révision source différente (elle n'est pas présentée comme une version supérieure)"
+      info "Mise à jour disponible: même version, révision source différente (elle n'est pas présentée comme une version supérieure)"
     else
-      log "Mise à jour disponible"
+      info "Mise à jour disponible"
     fi
   fi
 }
@@ -437,7 +464,7 @@ install_candidate() {
     fi
     [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le service ne fonctionne pas après mise à jour"
   fi
-  log "Installation atomique terminée: $CANDIDATE_VERSION ($CANDIDATE_REVISION)"
+  success "Installation atomique terminée: $CANDIDATE_VERSION ($CANDIDATE_REVISION)"
 }
 run_setup_if_requested() {
   run_setup=0

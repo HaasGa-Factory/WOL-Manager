@@ -14,6 +14,8 @@ wol update --check
 
 La vérification ne modifie rien et ne demande pas de privilèges administrateur.
 
+Dans un terminal interactif, l'installateur colore les avertissements DEV/BETA, les erreurs, les vérifications réussies, la comparaison des versions et la confirmation avant installation. Les fichiers de journal restent toujours en texte brut. Définissez `NO_COLOR=1` pour désactiver les couleurs ; elles sont également désactivées automatiquement lorsque la sortie est redirigée.
+
 ## Canal de développement
 
 ```sh

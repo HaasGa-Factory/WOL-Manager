@@ -11,6 +11,7 @@
 - séparation des tentatives de vérification et des nouveaux envois de Magic Packets ;
 - état des automatismes disponible avec `wol automation status` et `GET /api/v1/automations` ;
 - configuration guidée des politiques de reprise, sans édition YAML obligatoire.
+- messages interactifs colorés avec désactivation automatique pour les journaux, JSON, redirections, `NO_COLOR` et terminaux incompatibles.
 
 ## 1.1.1 - 2026-10-16
 
