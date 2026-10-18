@@ -72,7 +72,7 @@ fi
 }
 
 mkdir -p "$DIST"
-work=$(mktemp -d "$DIST/.build.XXXXXX")
+work=$(mktemp -d /tmp/wol-manager-build.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT
 
 openssl pkey -in "$SIGNING_KEY" -pubout -outform DER -out "$work/derived-public.der" >/dev/null 2>&1
