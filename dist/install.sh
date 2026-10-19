@@ -12,6 +12,7 @@ VERSION="1.2.1"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
+CHANNEL_EXPLICIT=0
 SERVICE_MODE=""
 RUN_SETUP=0
 NON_INTERACTIVE=0
@@ -49,11 +50,33 @@ LOG_DIR=$(path /var/log/wol-manager)
 
 usage() {
   cat <<EOF
-WoL Manager $VERSION
+WoL Manager installateur $VERSION
+Usage: sudo ./install.sh [OPTIONS]
+
+Canaux:
+  main  version stable par défaut
+  dev   version de développement/BETA, choisie uniquement pour cette commande
+Un paquet local signé est détecté automatiquement. Son canal et sa version sont vérifiés
+avant installation; un --channel explicite doit correspondre au manifeste signé.
+
+Options:
+  --channel main|dev      choisir le canal (main par défaut)
+  --service enable        installer et activer immédiatement le service systemd
+  --service install       installer le service sans l'activer
+  --service cli           ne pas installer le service
+  --setup                 lancer l'assistant après l'installation
+  --yes                   accepter les confirmations prévues
+  --non-interactive       ne poser aucune question
+  --allow-downgrade       autoriser explicitement une version plus ancienne (confirmation requise)
+  --check                 vérifier sans installer
+  --version               afficher la version de l'installateur
+  --uninstall             désinstaller le programme (les données restent protégées)
+  -h, --help              afficher cette aide
+
 Première installation : sudo ./install.sh
-Mise à jour          : sudo wol update
-Vérification         : wol update --check
-Canal DEV            : sudo wol update --channel dev
+Mise à jour            : sudo wol update
+Vérification           : wol update --check
+Canal DEV              : sudo ./install.sh --channel dev
 EOF
 }
 
@@ -61,7 +84,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --update) ACTION=update ;;
     --check) CHECK_ONLY=1 ;;
-    --channel) [ "$#" -ge 2 ] || { echo "--channel exige main ou dev" >&2; exit 2; }; CHANNEL=$2; shift ;;
+    --channel) [ "$#" -ge 2 ] || { echo "--channel exige main ou dev" >&2; exit 2; }; CHANNEL=$2; CHANNEL_EXPLICIT=1; shift ;;
     --service) [ "$#" -ge 2 ] || { echo "--service exige enable, install ou cli" >&2; exit 2; }; SERVICE_MODE=$2; shift ;;
     --setup) RUN_SETUP=1 ;;
     --non-interactive) NON_INTERACTIVE=1 ;;
@@ -247,9 +270,17 @@ download() {
 }
 verify_manifest() {
   manifest=$1 signature=$2
+	verify_manifest_signature "$manifest" "$signature"
+	validate_manifest "$manifest"
+}
+verify_manifest_signature() {
+	manifest=$1 signature=$2
   [ -r "$PUBLIC_KEY" ] || die "Clé publique approuvée absente: $PUBLIC_KEY"
   openssl base64 -d -A -in "$signature" -out "$TMP_WORK/manifest.sig.bin" >>"$LOG_FILE" 2>&1 || die "Signature du manifeste illisible"
   openssl pkeyutl -verify -rawin -pubin -inkey "$PUBLIC_KEY" -in "$manifest" -sigfile "$TMP_WORK/manifest.sig.bin" >>"$LOG_FILE" 2>&1 || die "Authenticité du manifeste non vérifiée"
+}
+validate_manifest() {
+	manifest=$1
   manifest_format=$(manifest_number manifest_version "$manifest")
   if [ "$manifest_format" != 2 ]; then
     if [ "$manifest_format" = 1 ] && [ "$ACTION" = update ] && [ "$CHECK_ONLY" -eq 1 ] && [ "$CHANNEL" = main ] && [ "$(installed_channel)" = dev ]; then
@@ -294,6 +325,9 @@ verify_candidate() {
   [ "$CANDIDATE_REVISION" = "$SOURCE_REVISION" ] || die "Révision du binaire différente du manifeste"
   [ "$CANDIDATE_CHANNEL" = "$CHANNEL" ] || die "Canal du binaire différent du canal demandé"
   success "Binaire vérifié: $CANDIDATE_VERSION, source $CANDIDATE_REVISION, linux/$ARCH"
+  if [ "${PUBLICATION_COMMIT:-}" = local ] && [ "$CANDIDATE_VERSION" != "$VERSION" ]; then
+    warn "Le dossier local contient WoL Manager $CANDIDATE_VERSION ($CHANNEL), mais son installateur annonce $VERSION. Vérifiez que le dossier téléchargé est complet et actuel."
+  fi
 }
 resolve_publication() {
   download "$GITHUB_API/repos/$REPOSITORY/commits/$CHANNEL" "$TMP_WORK/commit.json" || die "Impossible de résoudre la branche $CHANNEL sur GitHub"
@@ -309,7 +343,15 @@ prepare_candidate() {
     CANDIDATE="$SCRIPT_DIR/dist/wol-linux-$ARCH"
     INSTALLER_CANDIDATE="$SCRIPT_DIR/dist/install.sh"
     PUBLICATION_COMMIT=local
+	verify_manifest_signature "$manifest" "$signature"
+	local_channel=$(manifest_value channel "$manifest")
+	case "$local_channel" in main|dev) ;; *) die "Canal local invalide dans le manifeste signé" ;; esac
+	if [ "$CHANNEL_EXPLICIT" -eq 0 ]; then
+	  CHANNEL=$local_channel
+	  info "Paquet local signé détecté: canal $CHANNEL (la version sera vérifiée avant installation)"
+	fi
     verify_manifest "$manifest" "$signature"
+    info "Paquet local signé vérifié: version $MANIFEST_VERSION, canal $MANIFEST_CHANNEL"
     log "Distribution locale sélectionnée"
   else
     resolve_publication
