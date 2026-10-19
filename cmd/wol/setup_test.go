@@ -183,6 +183,107 @@ func TestGuidedGlobalVerification(t *testing.T) {
 	}
 }
 
+func TestQuestionMarkNeverChangesInteractiveDefaults(t *testing.T) {
+	var output strings.Builder
+	if got := promptDefault(bufio.NewReader(strings.NewReader("?\n\n")), &output, "Identifiant du réseau", "lan"); got != "lan" {
+		t.Fatalf("texte modifié par ?: %q", got)
+	}
+	if got := promptBool(bufio.NewReader(strings.NewReader("?\n\n")), &output, "Autoriser le broadcast local", true); !got {
+		t.Fatal("booléen modifié par ?")
+	}
+	d := Duration(30 * time.Second)
+	if got, err := promptDurationOverride(bufio.NewReader(strings.NewReader("?\n\n")), &output, "Durée maximale", &d, false); err != nil || got == nil || *got != d {
+		t.Fatalf("durée modifiée par ?: %v %v", got, err)
+	}
+	n := 4
+	if got, err := promptIntOverride(bufio.NewReader(strings.NewReader("?\n\n")), &output, "Nombre maximal", &n); err != nil || got == nil || *got != n {
+		t.Fatalf("nombre modifié par ?: %v %v", got, err)
+	}
+	if got := promptKnownIDs(bufio.NewReader(strings.NewReader("?\n\n")), &output, "Machines", []string{"nas"}, map[string]bool{"nas": true}); len(got) != 1 || got[0] != "nas" {
+		t.Fatalf("sélection modifiée par ?: %v", got)
+	}
+	if got, err := chooseDuration(bufio.NewReader(strings.NewReader("?\n1\n")), &output, []time.Duration{30 * time.Second}, time.Minute, false); err != nil || got != Duration(30*time.Second) {
+		t.Fatalf("choix après ?: %v %v", got, err)
+	}
+	checks := []Check{{Type: "icmp", Timeout: Duration(time.Second)}}
+	if got := promptChecks(bufio.NewReader(strings.NewReader("?\n\n")), &output, checks); len(got) != 1 || got[0].Type != "icmp" {
+		t.Fatalf("sélection de contrôle modifiée par ?: %#v", got)
+	}
+	if strings.Count(output.String(), "Aide:") < 5 {
+		t.Fatalf("aides de champ absentes:\n%s", output.String())
+	}
+}
+
+func TestGuidedDiscoveryExplainsAndConfiguresBothLocks(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Discovery.AllowedSubnets = []string{"192.168.10.0/24"}
+	input := bufio.NewReader(strings.NewReader("?\no\n?\no\n\n\n\n\n?\no\n"))
+	var output strings.Builder
+	if !configureDiscovery(input, &output, cfg) {
+		t.Fatalf("découverte non modifiée:\n%s", output.String())
+	}
+	if !cfg.Discovery.PassiveEnabled || !cfg.Discovery.ActiveEnabled || !cfg.API.ActiveDiscovery || !cfg.Discovery.Safeguards.RequireConfirmation {
+		t.Fatalf("verrous incomplets: %#v %#v", cfg.Discovery, cfg.API)
+	}
+	if !strings.Contains(output.String(), "deux verrous") || !strings.Contains(output.String(), "Aide:") {
+		t.Fatalf("explication novice absente: %s", output.String())
+	}
+}
+
+func TestInvalidDurationRepromptsWithoutLosingPreviousValue(t *testing.T) {
+	old := Duration(45 * time.Second)
+	var output strings.Builder
+	got, err := promptDurationOverride(bufio.NewReader(strings.NewReader("30\n2m\n")), &output, "Durée maximale", &old, false)
+	if err != nil || got == nil || time.Duration(*got) != 2*time.Minute {
+		t.Fatalf("nouvelle saisie non retenue: %v %v", got, err)
+	}
+	if !strings.Contains(output.String(), "Essayez 30s") {
+		t.Fatalf("conseil de format absent: %s", output.String())
+	}
+}
+
+func TestSingleIPv4InterfaceProvidesNetworkDefaults(t *testing.T) {
+	previous := detectIPv4Interfaces
+	detectIPv4Interfaces = func() []ipv4Interface {
+		return []ipv4Interface{{Name: "eth0", Address: "192.168.10.2", CIDR: "192.168.10.0/24"}}
+	}
+	t.Cleanup(func() { detectIPv4Interfaces = previous })
+	cfg := &Config{Version: 1, Networks: map[string]Network{}, Servers: map[string]Server{}, Groups: map[string]Group{}, UPS: map[string]UPSConfig{}, Relays: map[string]RelayConfig{}}
+	cfg.defaults()
+	var output strings.Builder
+	if !addOrEditNetwork(bufio.NewReader(strings.NewReader("maison\n\n\n\n\n\n\n")), &output, cfg, "") {
+		t.Fatalf("réseau non créé:\n%s", output.String())
+	}
+	network := cfg.Networks["maison"]
+	if network.CIDR != "192.168.10.0/24" || network.Interface != "eth0" || network.SourceIP != "192.168.10.2" {
+		t.Fatalf("détection non proposée: %#v", network)
+	}
+}
+
+func TestReadinessRejectsEnabledMachineWithoutTransport(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8"}
+	issues := readinessIssues(cfg)
+	if len(issues) == 0 || !strings.Contains(issues[0], "aucun transport") {
+		t.Fatalf("absence de transport non détectée: %v", issues)
+	}
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowUnicast: true}
+	if issues := readinessIssues(cfg); len(issues) != 0 {
+		t.Fatalf("unicast utilisable refusé: %v", issues)
+	}
+}
+
+func TestDetailedSummaryContainsOperationalSettings(t *testing.T) {
+	cfg := testConfig(t)
+	var output strings.Builder
+	showConfigSummary(&output, cfg)
+	for _, expected := range []string{"source=", "transports=", "destination=", "contrôles=", "logique=", "délais(initial=", "dépendances=", "active="} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("résumé incomplet (%s):\n%s", expected, output.String())
+		}
+	}
+}
+
 func TestWriteGlobalVerificationPreservesOtherGlobalSettings(t *testing.T) {
 	directory := testDir(t)
 	path := filepath.Join(directory, "wol.yaml")

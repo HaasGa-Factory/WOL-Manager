@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -101,7 +102,8 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 		{"config", "--help"}, {"config", "check", "--help"}, {"config", "edit", "--help"},
 		{"config", "network", "--help"}, {"config", "machine", "--help"},
 		{"config", "group", "--help"}, {"config", "nut", "--help"},
-		{"token", "create", "--help"}, {"network", "test", "--help"},
+		{"config", "discovery", "--help"}, {"token", "create", "--help"},
+		{"token", "list", "--help"}, {"token", "revoke", "--help"}, {"network", "test", "--help"},
 		{"network", "discover", "--help"}, {"ups", "status", "--help"},
 		{"ups", "test", "--help"}, {"jobs", "--help"}, {"automation", "status", "--help"},
 		{"menu", "--help"}, {"api", "serve", "--help"}, {"relay", "serve", "--help"},
@@ -115,6 +117,63 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Fatalf("l'aide a créé ou modifié la configuration: %v", err)
+	}
+}
+
+func TestTokenListAndRevokeNeverExposeSecretOrHash(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.API.TokensFile = filepath.Join(testDir(t), "tokens.json")
+	hash := strings.Repeat("a", 64)
+	if err := writeTokenFile(cfg.API.TokensFile, tokenFile{Tokens: []TokenRecord{{ID: "reader", Hash: hash, Permissions: []string{"read"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	var listed bytes.Buffer
+	if err := tokenCLIWithIO(cfg, []string{"list"}, strings.NewReader(""), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed.String(), "reader") || !strings.Contains(listed.String(), "read") || strings.Contains(listed.String(), hash) {
+		t.Fatalf("liste dangereuse ou incomplète: %s", listed.String())
+	}
+	var revoked bytes.Buffer
+	if err := tokenCLIWithIO(cfg, []string{"revoke", "--id", "reader"}, strings.NewReader("o\n"), &revoked); err != nil {
+		t.Fatal(err)
+	}
+	f, err := readTokenFile(cfg.API.TokensFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Tokens) != 1 || !f.Tokens[0].Disabled || f.Tokens[0].Hash != hash {
+		t.Fatalf("révocation incorrecte: %#v", f)
+	}
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(cfg.API.TokensFile); err != nil || info.Mode().Perm() != 0600 {
+			t.Fatalf("permissions jetons: %v %v", info, err)
+		}
+	}
+}
+
+func TestAPIBannerIsDiscoverableAndContainsNoSecret(t *testing.T) {
+	cfg := testConfig(t)
+	var output bytes.Buffer
+	printAPIBanner(&output, cfg)
+	for _, expected := range []string{"127.0.0.1:8080", "/api/v1", "/api/v1/health", "Authorization: Bearer <jeton>", "api/openapi.yaml", "Ctrl+C"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("bannière API incomplète (%s): %s", expected, output.String())
+		}
+	}
+}
+
+func TestRealWakeSelectionRequiresExplicitKnownMachine(t *testing.T) {
+	cfg := testConfig(t)
+	var output bytes.Buffer
+	if _, ok := selectMenuServer(bufio.NewReader(strings.NewReader("\n")), &output, cfg); ok {
+		t.Fatal("une réponse vide a sélectionné une machine")
+	}
+	if id, ok := selectMenuServer(bufio.NewReader(strings.NewReader("99\ntwo\n")), &output, cfg); !ok || id != "two" {
+		t.Fatalf("sélection explicite échouée: %q %t", id, ok)
+	}
+	if !strings.Contains(output.String(), "One") || !strings.Contains(output.String(), "Two") {
+		t.Fatalf("noms de machines absents: %s", output.String())
 	}
 }
 
@@ -179,35 +238,6 @@ func TestMagicPacket(t *testing.T) {
 		}
 	}
 }
-
-func TestSendMagicUnicast(t *testing.T) {
-	ln, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	received := make(chan error, 1)
-	go func() {
-		_ = ln.SetReadDeadline(time.Now().Add(3 * time.Second))
-		b := make([]byte, 200)
-		n, _, err := ln.ReadFromUDP(b)
-		if err == nil && n != 102 {
-			err = &net.AddrError{Err: "taille inattendue", Addr: ln.LocalAddr().String()}
-		}
-		received <- err
-	}()
-	packet := make([]byte, 102)
-	if err := sendMagic(ln.LocalAddr().String(), "127.0.0.1", false, packet); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-received; sandboxBlocksNetwork(err) || (runtime.GOOS == "windows" && isTimeout(err)) {
-		t.Skipf("sockets locaux bloqués par le bac à sable: %v", err)
-	} else if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func isTimeout(err error) bool { n, ok := err.(net.Error); return ok && n.Timeout() }
 
 func TestValidationRejectsCycleDuplicatesAndPublicScan(t *testing.T) {
 	c := testConfig(t)

@@ -474,10 +474,22 @@ func serveAPI(c *Config, j *JobStore, e *Engine) error {
 	resumeJobs(j, e, manager)
 	go manager.monitor(context.Background())
 	srv := http.Server{Addr: c.API.Listen, Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
+	printAPIBanner(os.Stdout, c)
 	if isLoopbackListen(c.API.Listen) && c.API.TLSCert == "" {
 		return srv.ListenAndServe()
 	}
 	return srv.ListenAndServeTLS(c.API.TLSCert, c.API.TLSKey)
+}
+
+func printAPIBanner(output io.Writer, c *Config) {
+	scheme := "http"
+	if c.API.TLSCert != "" {
+		scheme = "https"
+	}
+	fmt.Fprintf(output, "WoL Manager API\n- écoute: %s://%s\n- base: /api/v1\n- santé: /api/v1/health\n- authentification: Authorization: Bearer <jeton>\n- spécification OpenAPI: api/openapi.yaml\n- arrêt interactif: Ctrl+C (ou sudo systemctl stop wol-manager)\n", scheme, c.API.Listen)
+	if !isLoopbackListen(c.API.Listen) {
+		fmt.Fprintln(output, "AVERTISSEMENT: l'écoute dépasse loopback; TLS est obligatoire et l'accès réseau doit être filtré.")
+	}
 }
 
 func resumeJobs(j *JobStore, e *Engine, managers ...*AutomationManager) {

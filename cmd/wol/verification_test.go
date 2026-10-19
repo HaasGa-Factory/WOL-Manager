@@ -16,6 +16,8 @@ func durationPointer(value time.Duration) *Duration {
 	return &duration
 }
 
+func discardMagicPacket(string, string, bool, []byte) error { return nil }
+
 func TestVerificationDefaultsAndOverrides(t *testing.T) {
 	cfg := testConfig(t)
 	initialDelay, timeout, interval := cfg.effectiveVerification("two")
@@ -91,7 +93,7 @@ func TestWakeSkipsDelayWhenAlreadyReachable(t *testing.T) {
 	cfg.Servers["two"] = server
 
 	start := time.Now()
-	result, err := (&Engine{cfg: cfg, audit: &Auditor{}}).wakeTree(context.Background(), "two", map[string]bool{})
+	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, sendPacket: discardMagicPacket}).wakeTree(context.Background(), "two", map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +142,7 @@ func TestWakeJobCancellationDuringInitialDelay(t *testing.T) {
 	server.Verification.InitialDelay = durationPointer(5 * time.Second)
 	cfg.Servers["two"] = server
 	progress := &notificationWriter{done: make(chan struct{})}
-	engine := &Engine{cfg: cfg, audit: &Auditor{}, progress: progress}
+	engine := &Engine{cfg: cfg, audit: &Auditor{}, progress: progress, sendPacket: discardMagicPacket}
 	store, err := openJobs(cfg.Storage.StateFile)
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +192,7 @@ func TestWakeVerificationSucceedsAfterSeveralAttempts(t *testing.T) {
 			ready <- listener
 		}
 	}()
-	result, err := (&Engine{cfg: cfg, audit: &Auditor{}}).wakeTree(context.Background(), "two", map[string]bool{})
+	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, sendPacket: discardMagicPacket}).wakeTree(context.Background(), "two", map[string]bool{})
 	select {
 	case listener := <-ready:
 		defer listener.Close()
@@ -214,7 +216,7 @@ func TestWakeVerificationTimeoutReturnsFalse(t *testing.T) {
 	server.Verification.Interval = durationPointer(10 * time.Millisecond)
 	cfg.Servers["two"] = server
 	start := time.Now()
-	result, err := (&Engine{cfg: cfg, audit: &Auditor{}}).wakeTree(context.Background(), "two", map[string]bool{})
+	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, sendPacket: discardMagicPacket}).wakeTree(context.Background(), "two", map[string]bool{})
 	if err != nil {
 		if sandboxBlocksNetwork(err) {
 			t.Skipf("réseau local bloqué: %v", err)

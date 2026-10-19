@@ -1,6 +1,6 @@
 # Configuration
 
-La méthode recommandée est `sudo wol setup`. L'assistant détecte les interfaces IPv4 et permet de gérer les réseaux, machines, groupes, dépendances et UPS sans ouvrir `/etc/wol-manager/wol.yaml`. Les commandes `sudo wol config network`, `machine`, `group` et `nut` ouvrent directement la section correspondante.
+La méthode recommandée est `sudo wol setup`. L'assistant détecte les interfaces IPv4 et permet de gérer les réseaux, machines, groupes, dépendances, découverte et UPS sans ouvrir `/etc/wol-manager/wol.yaml`. Les commandes `sudo wol config network`, `machine`, `group`, `nut` et `discovery` ouvrent directement la section correspondante. Dans chaque champ, `?` affiche l'aide sans avancer ni modifier le défaut ; une saisie invalide est redemandée.
 
 Chaque section accepte `--help` sans charger le YAML. Dans un assistant ouvert, saisissez `?` pour
 afficher une explication du menu courant sans modifier les données préparées.

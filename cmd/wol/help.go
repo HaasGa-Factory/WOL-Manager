@@ -88,6 +88,7 @@ Sous-commandes:
   machine     gestion guidée des machines
   group       gestion guidée des groupes et reprises NUT
   nut         gestion guidée des serveurs NUT et UPS
+  discovery   activation guidée de la découverte réseau
   edit        édition YAML avancée avec $EDITOR
 
 Les alias networks, server, servers, groups et ups restent acceptés.`,
@@ -126,13 +127,28 @@ Actions: détecter localement, ajouter ou modifier un serveur, sélectionner ou 
 Paramètres: adresse IP/DNS, port, STARTTLS éventuel et UPS à surveiller.
 Contraintes: opération strictement en lecture; aucun scan réseau, paquet d'arrêt, FSD, installation,
 modification ou redémarrage de NUT. Les CA privées et fichiers d'identifiants se configurent dans le YAML avancé.`,
-	"token": `Usage: sudo wol token create [--id IDENTIFIANT] [--permissions LISTE]
+	"config discovery": `Usage: sudo wol [--config FILE] config discovery
 
-Crée un jeton API. Le secret en clair est affiché une seule fois; seul son hash est enregistré.`,
+Configure la découverte passive et active, les sous-réseaux CIDR autorisés, la limite de paquets,
+le débit, le timeout et l'autorisation API. Le mode actif exige à la fois cette activation globale
+et l'autorisation ponctuelle --allow-active-scan; cette option seule n'active jamais la fonction.`,
+	"token": `Usage: sudo wol token create [--id IDENTIFIANT] [--permissions LISTE]
+       sudo wol token list
+       sudo wol token revoke --id IDENTIFIANT
+
+Permissions séparées par des virgules: read (consultation), wake (réveil) et admin (administration).
+Accordez le minimum nécessaire. Le secret créé est affiché une seule fois; seul son hash est enregistré.
+"list" n'affiche ni secret ni hash; "revoke" désactive le jeton après confirmation.`,
 	"token create": `Usage: sudo wol token create [--id IDENTIFIANT] [--permissions read,wake,admin]
 
 Valeurs par défaut: id admin; permissions read,wake,admin. Les permissions acceptées sont read,
 wake et admin. Protégez immédiatement le jeton affiché: il ne peut pas être relu ensuite.`,
+	"token list": `Usage: sudo wol token list
+
+Liste les identifiants, permissions et états des jetons. Les secrets et hashes ne sont jamais affichés.`,
+	"token revoke": `Usage: sudo wol token revoke --id IDENTIFIANT
+
+Désactive atomiquement un jeton après confirmation. Cette action ne révèle ni secret ni hash.`,
 	"network": `Usage: wol network test [MACHINE...]
        wol [--json] network discover [--active] [--allow-active-scan] [--dry-run]
 
@@ -179,19 +195,26 @@ Menu interactif de consultation, validation, configuration, simulation et révei
 La gestion détaillée ouvre le même assistant que "wol setup". Saisissez ? pour l'aide contextuelle.`,
 	"api": `Usage: wol api serve
 
-Démarre l'API authentifiée et le moteur permanent de surveillance/reprise NUT.`,
+Démarre l'API authentifiée et le moteur permanent de surveillance/reprise NUT.
+URL locale par défaut: http://127.0.0.1:8080/api/v1. Santé: /api/v1/health.
+Exemple: TOKEN='secret-affiché-une-fois'; curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health`,
 	"api serve": `Usage: wol api serve
 
 Démarre l'API REST, le stockage des jobs et le moniteur de reprise électrique. Une écoute non
-loopback exige TLS. Toutes les routes, y compris /health, exigent un jeton Bearer.`,
+loopback exige TLS. Toutes les routes, y compris /api/v1/health, exigent « Authorization: Bearer <jeton> ».
+La spécification est api/openapi.yaml. Arrêtez au premier plan avec Ctrl+C ou le service avec systemctl.`,
 	"relay": `Usage: wol relay serve --id ID --cert FILE --key FILE --client-ca FILE [--listen ADRESSE]
        wol relay check ID
 
-Serveur ou diagnostic de relais WoL HTTPS avec authentification mutuelle TLS.`,
+Un relais envoie le Magic Packet depuis un autre réseau lorsque le broadcast local ne peut pas l'atteindre.
+Il doit avoir un identifiant déclaré dans relays, une URL HTTPS, une CA et des certificats client/serveur mTLS.
+Les certificats doivent venir de votre PKI ou être créés explicitement; WoL Manager ne génère jamais une PKI de production automatiquement.`,
 	"relay serve": `Usage: wol relay serve --id ID --cert FILE --key FILE --client-ca FILE [--listen 127.0.0.1:9443]
 
 Options obligatoires: identifiant de relais configuré, certificat serveur, clé privée et CA client.
-Le relais n'accepte que des identifiants de machines présents dans sa configuration.`,
+Le relais n'accepte que des identifiants de machines présents dans sa configuration. Déclarez le même
+identifiant sous relays dans la configuration principale puis associez-le au réseau. « relais inconnu »
+signifie que cet identifiant n'existe pas dans cette section.`,
 	"relay check": `Usage: wol relay check ID
 
 Teste la santé HTTPS/mTLS d'un relais configuré sans envoyer de Magic Packet.`,
@@ -203,7 +226,7 @@ affichent la révision Git des sources utilisées pour construire le binaire.`,
 
 func printContextHelp(output io.Writer, topic string) {
 	messages := map[string]string{
-		"setup":   "Les sections peuvent être préparées dans n'importe quel ordre. Rien n'est écrit avant Résumé, validation et enregistrement.",
+		"setup":   "Les sections peuvent être préparées dans n'importe quel ordre. Saisissez ? dans un champ pour son aide sans changer la valeur; « annuler » ou « retour » à la création d'un objet revient au menu. Rien n'est écrit avant Résumé, validation et enregistrement.",
 		"network": "Un réseau relie une machine à une interface et aux transports WoL autorisés. Sa suppression est refusée tant qu'une machine l'utilise.",
 		"machine": "Une machine possède une MAC, une IPv4, un réseau, des dépendances et des contrôles. La simulation n'envoie jamais de paquet.",
 		"group":   "Un groupe ordonne plusieurs machines. Ses dépendances restent obligatoires en mode séquentiel comme en mode parallèle.",

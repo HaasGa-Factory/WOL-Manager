@@ -34,7 +34,7 @@ source <(wol completion bash)
 
 L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose le mode systemd. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
 
-`sudo wol setup` guide ensuite l'ajout des réseaux, machines, groupes, dépendances et serveurs NUT. Un utilisateur normal n'a pas à modifier le YAML. Chaque enregistrement est validé, sauvegardé et écrit atomiquement ; un test WoL en simulation est proposé.
+`sudo wol setup` guide ensuite l'ajout des réseaux, machines, groupes, dépendances, découverte réseau et serveurs NUT. Un utilisateur normal n'a pas à modifier le YAML. Saisissez `?` dans n'importe quel champ pour obtenir une explication sans changer la valeur. Chaque enregistrement est validé, contrôlé pour son aptitude opérationnelle, sauvegardé et écrit atomiquement ; une simulation WoL automatique ne transmet aucun Magic Packet.
 
 Toutes les commandes disposent d'une aide sans charger la configuration, par exemple
 `wol wake --help`, `wol config group --help` ou `wol automation status --help`. Dans les menus
@@ -44,6 +44,8 @@ Si vous activez immédiatement le service lors d'une première installation inte
 
 ```sh
 sudo wol token create --id admin --permissions read,wake,admin
+sudo wol token list
+sudo wol token revoke --id admin
 ```
 
 ```sh

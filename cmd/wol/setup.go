@@ -33,6 +33,8 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 		fmt.Fprintf(output, "Configuration existante détectée: %s.\n", path)
 	} else {
 		fmt.Fprintln(output, "Création d'une nouvelle configuration guidée.")
+		fmt.Fprintln(output, "NUT signifie Network UPS Tools. Il permet de lire l'état d'un onduleur; cette fonction est facultative et WoL Manager ne commande jamais l'onduleur.")
+		fmt.Fprintln(output, "Si vous l'activez, préparez l'adresse IP/DNS, le port (3493), le choix TLS/STARTTLS et, seulement si nécessaires, les identifiants stockés dans des fichiers secrets.")
 		fmt.Fprintln(output, "Souhaitez-vous configurer un serveur NUT ?")
 		fmt.Fprintln(output, "[1] Oui\n[2] Non\n[3] Plus tard\n[?] Aide")
 	chooseNUT:
@@ -48,14 +50,14 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 			case "?", "aide", "help":
 				printContextHelp(output, "nut")
 			default:
-				return errors.New("choix invalide; aucune configuration écrite")
+				fmt.Fprintln(output, "Choix invalide. Saisissez 1, 2 ou 3; aucune valeur n'a été modifiée.")
 			}
 		}
 	}
 
 	for {
 		fmt.Fprintln(output, "\nConfiguration WoL Manager :")
-		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier\n[7] Délais globaux de vérification\n[?] Aide")
+		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier\n[7] Délais globaux de vérification\n[8] Découverte réseau\n[?] Aide")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			session.changed = manageNetworks(reader, output, session.cfg) || session.changed
@@ -69,6 +71,19 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 			showConfigSummary(output, session.cfg)
 			if err := session.cfg.Validate(); err != nil {
 				fmt.Fprintf(output, "Configuration invalide :\n%v\n", err)
+				continue
+			}
+			if issues := readinessIssues(session.cfg); len(issues) > 0 {
+				fmt.Fprintln(output, "PRÉPARATION IMPOSSIBLE: la syntaxe est valide, mais la configuration n'est pas opérationnelle:")
+				for _, issue := range issues {
+					fmt.Fprintln(output, "-", issue)
+				}
+				fmt.Fprintln(output, "Ouvrez Réseaux WoL, modifiez le réseau indiqué et activez le broadcast local, l'unicast ou un relais utilisable.")
+				continue
+			}
+			if err := simulateAllMachines(output, session.cfg); err != nil {
+				fmt.Fprintln(output, "Simulation finale échouée:", err)
+				fmt.Fprintln(output, "Retournez dans Réseaux WoL ou Machines pour corriger la valeur indiquée; rien n'a été écrit.")
 				continue
 			}
 			if !confirmPrompt(reader, output, "Enregistrer cette configuration ?") {
@@ -85,6 +100,8 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 			return nil
 		case "7":
 			session.changed = configureGlobalVerification(reader, output, session.cfg) || session.changed
+		case "8":
+			session.changed = configureDiscovery(reader, output, session.cfg) || session.changed
 		case "?", "aide", "help":
 			printContextHelp(output, "setup")
 		default:
@@ -94,6 +111,7 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 }
 
 func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+	fmt.Fprintln(output, "NUT (Network UPS Tools) lit un onduleur sans le commander. OL=secteur présent, OB=sur batterie, LB=batterie faible, FSD=arrêt forcé. L'identifiant du serveur est un nom local WoL Manager; l'identifiant UPS est fourni par NUT.")
 	working := cfg.UPS
 	before, _ := yaml.Marshal(working)
 	if len(working) == 0 {
@@ -234,37 +252,68 @@ func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id string) bool {
 	old, editing := cfg.Networks[id]
 	if id == "" {
-		id = prompt(reader, output, "Identifiant du réseau: ")
-		if !validID(id) {
-			fmt.Fprintln(output, "Identifiant invalide.")
-			return false
-		}
-		if _, exists := cfg.Networks[id]; exists {
-			fmt.Fprintln(output, "Ce réseau existe déjà.")
+		var ok bool
+		id, ok = promptNewID(reader, output, "réseau", cfg.Networks)
+		if !ok {
 			return false
 		}
 	} else if !editing {
 		fmt.Fprintln(output, "Réseau inconnu.")
 		return false
 	}
-	interfaces := ipv4Interfaces()
+	interfaces := detectIPv4Interfaces()
 	if len(interfaces) > 0 {
 		fmt.Fprintln(output, "Interfaces IPv4 détectées :")
 		for _, item := range interfaces {
-			fmt.Fprintf(output, "- %s\n", item)
+			fmt.Fprintf(output, "- %s %s (réseau %s)\n", item.Name, item.Address, item.CIDR)
 		}
 	}
 	n := old
-	n.CIDR = promptDefault(reader, output, "Réseau CIDR", n.CIDR)
-	if _, err := parseIPv4CIDR(n.CIDR); err != nil {
-		fmt.Fprintln(output, err)
-		return false
+	if !editing && len(interfaces) == 1 {
+		if n.CIDR == "" {
+			n.CIDR = interfaces[0].CIDR
+		}
+		if n.Interface == "" {
+			n.Interface = interfaces[0].Name
+		}
+		if n.SourceIP == "" {
+			n.SourceIP = interfaces[0].Address
+		}
+		fmt.Fprintln(output, "Une seule interface IPv4 a été détectée: ses valeurs sont proposées. Appuyez sur Entrée pour les accepter.")
+	}
+	for {
+		n.CIDR = promptDefault(reader, output, "Réseau CIDR", n.CIDR)
+		if _, err := parseIPv4CIDR(n.CIDR); err == nil {
+			break
+		} else {
+			fmt.Fprintln(output, err, "Recommencez.")
+		}
 	}
 	n.Interface = promptDefault(reader, output, "Interface Linux (facultatif)", n.Interface)
-	n.SourceIP = promptDefault(reader, output, "Adresse IPv4 source (facultatif)", n.SourceIP)
+	for {
+		n.SourceIP = promptDefault(reader, output, "Adresse IPv4 source (facultatif)", n.SourceIP)
+		if n.SourceIP == "" || net.ParseIP(n.SourceIP).To4() != nil {
+			break
+		}
+		fmt.Fprintln(output, "Adresse IPv4 invalide. Recommencez.")
+	}
+	fmt.Fprintln(output, "Transports: broadcast local (recommandé sur le même réseau), unicast (direct mais dépend d'ARP), broadcast dirigé (routé et plus risqué), relais (recommandé pour un réseau distant).")
 	n.AllowLocalBroadcast = promptBool(reader, output, "Autoriser le broadcast local", valueOrDefault(n.AllowLocalBroadcast, !editing))
 	n.AllowUnicast = promptBool(reader, output, "Autoriser l'unicast", valueOrDefault(n.AllowUnicast, !editing))
 	n.AllowDirectedBroadcast = promptBool(reader, output, "Autoriser le broadcast dirigé", n.AllowDirectedBroadcast)
+	if len(cfg.Relays) > 0 {
+		fmt.Fprintln(output, "Relais disponibles:", strings.Join(sortedKeys(cfg.Relays), ", "))
+		for {
+			n.Relay = promptDefault(reader, output, "Identifiant du relais (facultatif)", n.Relay)
+			if n.Relay == "" {
+				break
+			}
+			if _, ok := cfg.Relays[n.Relay]; ok {
+				break
+			}
+			fmt.Fprintln(output, "Relais inconnu. Recommencez ou saisissez - pour vider.")
+		}
+	}
 	cfg.Networks[id] = n
 	if err := cfg.Validate(); err != nil {
 		if editing {
@@ -275,7 +324,7 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 		fmt.Fprintf(output, "Réseau refusé: %v\n", err)
 		return false
 	}
-	fmt.Fprintf(output, "Réseau %s prêt.\n", id)
+	fmt.Fprintf(output, "Réseau %s prêt. Transports activés: %s.\n", id, strings.Join(enabledTransports(n), ", "))
 	return true
 }
 
@@ -325,13 +374,9 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 	}
 	old, editing := cfg.Servers[id]
 	if id == "" {
-		id = prompt(reader, output, "Identifiant de la machine: ")
-		if !validID(id) {
-			fmt.Fprintln(output, "Identifiant invalide.")
-			return false
-		}
-		if _, exists := cfg.Servers[id]; exists {
-			fmt.Fprintln(output, "Cette machine existe déjà.")
+		var ok bool
+		id, ok = promptNewID(reader, output, "machine", cfg.Servers)
+		if !ok {
 			return false
 		}
 	} else if !editing {
@@ -340,10 +385,28 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 	}
 	s := old
 	s.Name = promptDefault(reader, output, "Nom", s.Name)
-	s.MAC = promptDefault(reader, output, "Adresse MAC", s.MAC)
-	s.IP = promptDefault(reader, output, "Adresse IPv4", s.IP)
+	for {
+		s.MAC = promptDefault(reader, output, "Adresse MAC", s.MAC)
+		if _, err := net.ParseMAC(s.MAC); err == nil {
+			break
+		}
+		fmt.Fprintln(output, "Adresse MAC invalide (ex. 02:00:00:00:00:01). Recommencez.")
+	}
+	for {
+		s.IP = promptDefault(reader, output, "Adresse IPv4", s.IP)
+		if net.ParseIP(s.IP).To4() != nil {
+			break
+		}
+		fmt.Fprintln(output, "Adresse IPv4 invalide. Recommencez.")
+	}
 	fmt.Fprintln(output, "Réseaux disponibles:", strings.Join(sortedKeys(cfg.Networks), ", "))
-	s.Network = promptDefault(reader, output, "Réseau", s.Network)
+	for {
+		s.Network = promptDefault(reader, output, "Réseau", s.Network)
+		if _, ok := cfg.Networks[s.Network]; ok {
+			break
+		}
+		fmt.Fprintln(output, "Réseau inconnu. Recommencez.")
+	}
 	s.Groups = promptKnownIDs(reader, output, "Groupes (séparés par des virgules, facultatif)", s.Groups, cfg.Groups)
 	s.Dependencies = promptKnownIDs(reader, output, "Dépendances machines (virgules, facultatif)", s.Dependencies, cfg.Servers)
 	for _, dep := range s.Dependencies {
@@ -416,13 +479,9 @@ func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 func addOrEditGroup(reader *bufio.Reader, output io.Writer, cfg *Config, id string) bool {
 	old, editing := cfg.Groups[id]
 	if id == "" {
-		id = prompt(reader, output, "Identifiant du groupe: ")
-		if !validID(id) {
-			fmt.Fprintln(output, "Identifiant invalide.")
-			return false
-		}
-		if _, exists := cfg.Groups[id]; exists {
-			fmt.Fprintln(output, "Ce groupe existe déjà.")
+		var ok bool
+		id, ok = promptNewID(reader, output, "groupe", cfg.Groups)
+		if !ok {
 			return false
 		}
 	} else if !editing {
@@ -430,13 +489,25 @@ func addOrEditGroup(reader *bufio.Reader, output io.Writer, cfg *Config, id stri
 		return false
 	}
 	g := old
-	priority := promptDefault(reader, output, "Priorité", strconv.Itoa(g.Priority))
-	value, err := strconv.Atoi(priority)
-	if err != nil {
-		fmt.Fprintln(output, "Priorité invalide.")
-		return false
+	for {
+		priority := promptDefault(reader, output, "Priorité", strconv.Itoa(g.Priority))
+		value, err := strconv.Atoi(priority)
+		if err == nil && value >= 0 {
+			duplicate := false
+			for otherID, other := range cfg.Groups {
+				if otherID != id && other.Priority == value {
+					duplicate = true
+				}
+			}
+			if !duplicate {
+				g.Priority = value
+				break
+			}
+			fmt.Fprintln(output, "Cette priorité est déjà utilisée. Une valeur plus petite démarre plus tôt.")
+		} else {
+			fmt.Fprintln(output, "Priorité invalide. Saisissez un nombre positif.")
+		}
 	}
-	g.Priority = value
 	g.Servers = promptKnownIDs(reader, output, "Machines du groupe (virgules, facultatif)", g.Servers, cfg.Servers)
 	g.Dependencies = promptKnownIDs(reader, output, "Dépendances machines (virgules, facultatif)", g.Dependencies, cfg.Servers)
 	g.PowerRestore = promptPowerRestore(reader, output, cfg, g)
@@ -470,6 +541,8 @@ func configSection(path, section string, input io.Reader, output io.Writer) erro
 		changed = manageGroups(reader, output, session.cfg)
 	case "nut", "ups":
 		changed = configureNUT(reader, output, session.cfg)
+	case "discovery":
+		changed = configureDiscovery(reader, output, session.cfg)
 	default:
 		return errUsage
 	}
@@ -486,6 +559,72 @@ func configSection(path, section string, input io.Reader, output io.Writer) erro
 		return nil
 	}
 	return writeManagedConfig(path, session.base, session.cfg, session.existing)
+}
+
+func configureDiscovery(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+	old := cfg.Discovery
+	before, _ := yaml.Marshal(old)
+	fmt.Fprintln(output, "La découverte active exige deux verrous: activation globale ici et autorisation ponctuelle --allow-active-scan. Elle reste limitée aux sous-réseaux, au nombre de paquets, au débit et au timeout configurés.")
+	cfg.Discovery.PassiveEnabled = promptBool(reader, output, "Activer la découverte passive", cfg.Discovery.PassiveEnabled)
+	cfg.Discovery.ActiveEnabled = promptBool(reader, output, "Activer la découverte active", cfg.Discovery.ActiveEnabled)
+	if cfg.Discovery.ActiveEnabled {
+		for {
+			value := promptDefault(reader, output, "Sous-réseaux autorisés (CIDR séparés par des virgules)", strings.Join(cfg.Discovery.AllowedSubnets, ","))
+			var subnets []string
+			valid := true
+			for _, item := range strings.Split(value, ",") {
+				item = strings.TrimSpace(item)
+				if item == "" {
+					continue
+				}
+				if _, err := parseIPv4CIDR(item); err != nil {
+					fmt.Fprintln(output, "CIDR invalide:", item)
+					valid = false
+					break
+				}
+				subnets = append(subnets, item)
+			}
+			if valid && len(subnets) > 0 {
+				cfg.Discovery.AllowedSubnets = subnets
+				break
+			}
+			fmt.Fprintln(output, "Au moins un sous-réseau IPv4 autorisé est requis.")
+		}
+		cfg.Discovery.Safeguards.RequireConfirmation = true
+		for {
+			value, err := strconv.Atoi(promptDefault(reader, output, "Limite maximale de paquets", strconv.Itoa(cfg.Discovery.Safeguards.MaxPackets)))
+			if err == nil && value > 0 {
+				cfg.Discovery.Safeguards.MaxPackets = value
+				break
+			}
+			fmt.Fprintln(output, "Nombre invalide; saisissez un entier positif.")
+		}
+		for {
+			value, err := strconv.ParseFloat(promptDefault(reader, output, "Débit maximal (paquets/seconde)", strconv.FormatFloat(cfg.Discovery.Safeguards.RatePPS, 'f', -1, 64)), 64)
+			if err == nil && value > 0 {
+				cfg.Discovery.Safeguards.RatePPS = value
+				break
+			}
+			fmt.Fprintln(output, "Débit invalide; saisissez un nombre positif.")
+		}
+		for {
+			raw := promptDefault(reader, output, "Timeout de découverte", cfg.Discovery.Safeguards.Timeout.Value(30*time.Second).String())
+			value, err := time.ParseDuration(raw)
+			if err == nil && value > 0 && value <= 24*time.Hour {
+				cfg.Discovery.Safeguards.Timeout = Duration(value)
+				break
+			}
+			fmt.Fprintln(output, "Durée invalide. Utilisez 30s, 2m ou 1m30s.")
+		}
+	}
+	cfg.API.ActiveDiscovery = promptBool(reader, output, "Autoriser aussi la découverte active via l'API", cfg.API.ActiveDiscovery)
+	if err := cfg.Validate(); err != nil {
+		cfg.Discovery = old
+		fmt.Fprintln(output, "Configuration de découverte refusée:", err)
+		return false
+	}
+	after, _ := yaml.Marshal(cfg.Discovery)
+	return !bytes.Equal(before, after)
 }
 
 func offerDryRun(reader *bufio.Reader, output io.Writer, cfg *Config) error {
@@ -511,14 +650,36 @@ func offerDryRun(reader *bufio.Reader, output io.Writer, cfg *Config) error {
 func showConfigSummary(output io.Writer, cfg *Config) {
 	fmt.Fprintf(output, "\nRésumé: %d réseau(x), %d machine(s), %d groupe(s), %d UPS.\n", len(cfg.Networks), len(cfg.Servers), len(cfg.Groups), len(cfg.UPS))
 	printNetworks(output, cfg.Networks)
-	printServers(output, cfg.Servers)
+	for _, id := range sortedKeys(cfg.Servers) {
+		s := cfg.Servers[id]
+		initial, timeout, interval := cfg.effectiveVerification(id)
+		attempts, retries := cfg.effectiveVerificationAttempts(id)
+		checks := formatChecks(cfg.effectiveChecks(id))
+		selected, destination := "aucun", "indisponible"
+		if plan, _ := transportPlan(cfg, id); len(plan) > 0 {
+			for _, d := range plan {
+				if d.State == "selected" {
+					selected, destination = d.Name, emptyAs(d.Destination, "relais "+d.Relay)
+				}
+			}
+		}
+		ups := "aucun"
+		if p := cfg.effectiveUPS(id); p != nil {
+			ups = p.UPS
+		}
+		fmt.Fprintf(output, "- machine %s (%s): active=%t ip=%s mac=%s réseau=%s transport=%s destination=%s contrôles=%s logique=%s délais(initial=%s timeout=%s interval=%s tentatives=%d nouveaux_paquets=%d) dépendances=%s UPS=%s\n", id, emptyAs(s.Name, "sans nom"), enabled(s), s.IP, s.MAC, s.Network, selected, destination, checks, cfg.effectiveCheckLogic(id), initial, timeout, interval, attempts, retries, emptyAs(strings.Join(cfg.dependencies(id), ","), "aucune"), ups)
+	}
 	printGroups(output, cfg.Groups)
+	for _, id := range sortedKeys(cfg.UPS) {
+		u := cfg.UPS[id]
+		fmt.Fprintf(output, "- UPS %s: serveur=%s identifiant_NUT=%s TLS=%t\n", id, u.Address, u.Name, u.TLS)
+	}
 }
 
 func printNetworks(output io.Writer, networks map[string]Network) {
 	for _, id := range sortedKeys(networks) {
 		n := networks[id]
-		fmt.Fprintf(output, "- %s: %s interface=%s\n", id, n.CIDR, emptyAs(n.Interface, "auto"))
+		fmt.Fprintf(output, "- réseau %s: %s interface=%s source=%s transports=%s port=%d\n", id, n.CIDR, emptyAs(n.Interface, "auto"), emptyAs(n.SourceIP, "auto"), strings.Join(enabledTransports(n), ","), n.Port)
 	}
 }
 
@@ -532,8 +693,61 @@ func printServers(output io.Writer, servers map[string]Server) {
 func printGroups(output io.Writer, groups map[string]Group) {
 	for _, id := range sortedKeys(groups) {
 		g := groups[id]
-		fmt.Fprintf(output, "- %s: priorité=%d machines=%s\n", id, g.Priority, strings.Join(g.Servers, ","))
+		fmt.Fprintf(output, "- groupe %s: priorité=%d machines=%s dépendances=%s", id, g.Priority, emptyAs(strings.Join(g.Servers, ","), "aucune"), emptyAs(strings.Join(g.Dependencies, ","), "aucune"))
+		if p := g.PowerRestore; p != nil {
+			fmt.Fprintf(output, " reprise_NUT(active=%t UPS=%s seuils=%s/%s stabilité=%s fréquence=%s mode=%s ordre=%s échec=%s retries=%d/%s)", p.Enabled, p.UPS, percent(p.LowBattery), percent(p.HighBattery), p.StableFor.Value(30*time.Second), p.PollInterval.Value(5*time.Second), defaultString(p.Mode, "sequential"), emptyAs(strings.Join(p.Order, ","), "groupe"), defaultString(p.FailurePolicy, "stop"), p.RetryLimit, p.RetryInterval.Value(10*time.Second))
+		}
+		fmt.Fprintln(output)
 	}
+}
+
+func percent(value *int) string {
+	if value == nil {
+		return "hérité"
+	}
+	return fmt.Sprintf("%d%%", *value)
+}
+
+func formatChecks(checks []Check) string {
+	if len(checks) == 0 {
+		return "aucun (envoi sans confirmation)"
+	}
+	items := make([]string, 0, len(checks))
+	for _, check := range checks {
+		item := check.Type
+		if check.Type == "tcp" {
+			item = fmt.Sprintf("tcp:%d", check.Port)
+		}
+		items = append(items, item)
+	}
+	return strings.Join(items, ",")
+}
+
+func readinessIssues(cfg *Config) []string {
+	var issues []string
+	for _, id := range sortedKeys(cfg.Servers) {
+		if !enabled(cfg.Servers[id]) {
+			continue
+		}
+		if _, err := transportPlan(cfg, id); err != nil {
+			issues = append(issues, fmt.Sprintf("machine %s (réseau %s): %v", id, cfg.Servers[id].Network, err))
+		}
+	}
+	return issues
+}
+
+func simulateAllMachines(output io.Writer, cfg *Config) error {
+	engine := &Engine{cfg: cfg, audit: &Auditor{}, dry: true, noWait: true}
+	for _, id := range sortedKeys(cfg.Servers) {
+		if !enabled(cfg.Servers[id]) {
+			continue
+		}
+		if _, err := engine.wakeTree(context.Background(), id, map[string]bool{}); err != nil {
+			return fmt.Errorf("machine %s: %w", id, err)
+		}
+		fmt.Fprintf(output, "Simulation WoL automatique réussie pour %s (aucun paquet envoyé).\n", id)
+	}
+	return nil
 }
 
 func sortedKeys[T any](values map[string]T) []string {
@@ -545,20 +759,72 @@ func sortedKeys[T any](values map[string]T) []string {
 	return keys
 }
 
-func ipv4Interfaces() []string {
-	var result []string
+type ipv4Interface struct{ Name, Address, CIDR string }
+
+var detectIPv4Interfaces = systemIPv4Interfaces
+
+func systemIPv4Interfaces() []ipv4Interface {
+	var result []ipv4Interface
 	interfaces, _ := net.Interfaces()
 	for _, item := range interfaces {
 		addresses, _ := item.Addrs()
 		for _, address := range addresses {
 			ip, network, err := net.ParseCIDR(address.String())
 			if err == nil && ip.To4() != nil && !ip.IsLoopback() {
-				result = append(result, item.Name+" "+address.String()+" (réseau "+network.String()+")")
+				result = append(result, ipv4Interface{Name: item.Name, Address: ip.String(), CIDR: network.String()})
 			}
 		}
 	}
-	sort.Strings(result)
+	sort.Slice(result, func(i, j int) bool { return result[i].Name+result[i].Address < result[j].Name+result[j].Address })
 	return result
+}
+
+func ipv4Interfaces() []string {
+	items := detectIPv4Interfaces()
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		result = append(result, item.Name+" "+item.Address+" (réseau "+item.CIDR+")")
+	}
+	return result
+}
+
+func promptNewID[T any](reader *bufio.Reader, output io.Writer, kind string, existing map[string]T) (string, bool) {
+	fmt.Fprintln(output, "Saisissez « annuler » ou « retour » pour abandonner cet objet sans perdre les autres changements.")
+	for {
+		id := prompt(reader, output, "Identifiant du "+kind+": ")
+		if id == "annuler" || id == "retour" {
+			return "", false
+		}
+		if !validID(id) {
+			fmt.Fprintln(output, "Identifiant invalide: utilisez lettres, chiffres, - ou _, sans espace (ex. truenas, pc-bureau, maison).")
+			continue
+		}
+		if _, exists := existing[id]; exists {
+			fmt.Fprintln(output, "Cet identifiant existe déjà. Recommencez.")
+			continue
+		}
+		return id, true
+	}
+}
+
+func enabledTransports(n Network) []string {
+	var out []string
+	if n.AllowLocalBroadcast {
+		out = append(out, "broadcast local")
+	}
+	if n.AllowUnicast {
+		out = append(out, "unicast")
+	}
+	if n.AllowDirectedBroadcast {
+		out = append(out, "broadcast dirigé")
+	}
+	if n.Relay != "" {
+		out = append(out, "relais "+n.Relay)
+	}
+	if len(out) == 0 {
+		return []string{"aucun"}
+	}
+	return out
 }
 
 func promptDefault(reader *bufio.Reader, output io.Writer, label, current string) string {
@@ -576,40 +842,67 @@ func promptDefault(reader *bufio.Reader, output io.Writer, label, current string
 }
 
 func promptBool(reader *bufio.Reader, output io.Writer, label string, current bool) bool {
-	def := "N"
-	if current {
-		def = "O"
+	for {
+		def := "N"
+		if current {
+			def = "O"
+		}
+		value := strings.ToLower(prompt(reader, output, fmt.Sprintf("%s [o/n, défaut %s]: ", label, def)))
+		switch value {
+		case "":
+			return current
+		case "o", "oui", "y", "yes":
+			return true
+		case "n", "non", "no":
+			return false
+		default:
+			fmt.Fprintln(output, "Réponse invalide: saisissez o ou n. La valeur n'a pas été modifiée.")
+		}
 	}
-	value := strings.ToLower(prompt(reader, output, fmt.Sprintf("%s [o/n, défaut %s]: ", label, def)))
-	if value == "" {
-		return current
-	}
-	return value == "o" || value == "oui" || value == "y" || value == "yes"
 }
 
 func confirmPrompt(reader *bufio.Reader, output io.Writer, label string) bool {
-	value := strings.ToLower(prompt(reader, output, label+" [y/N]: "))
-	return value == "y" || value == "yes" || value == "o" || value == "oui"
+	for {
+		value := strings.ToLower(prompt(reader, output, label+" [o/N]: "))
+		switch value {
+		case "", "n", "non", "no":
+			return false
+		case "o", "oui", "y", "yes":
+			return true
+		default:
+			fmt.Fprintln(output, "Réponse invalide: saisissez o ou n.")
+		}
+	}
 }
 
 func promptKnownIDs[T any](reader *bufio.Reader, output io.Writer, label string, current []string, known map[string]T) []string {
 	if len(known) > 0 {
 		fmt.Fprintln(output, "Valeurs disponibles:", strings.Join(sortedKeys(known), ", "))
 	}
-	value := promptDefault(reader, output, label+" (- pour vider)", strings.Join(current, ","))
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	var result []string
-	seen := map[string]bool{}
-	for _, item := range strings.Split(value, ",") {
-		item = strings.TrimSpace(item)
-		if item != "" && !seen[item] {
+	for {
+		value := promptDefault(reader, output, label+" (- pour vider)", strings.Join(current, ","))
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		var result, unknown []string
+		seen := map[string]bool{}
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" || seen[item] {
+				continue
+			}
+			if _, ok := known[item]; !ok {
+				unknown = append(unknown, item)
+				continue
+			}
 			result = append(result, item)
 			seen[item] = true
 		}
+		if len(unknown) == 0 {
+			return result
+		}
+		fmt.Fprintln(output, "Identifiant(s) inconnu(s):", strings.Join(unknown, ", "), "— recommencez.")
 	}
-	return result
 }
 
 func promptChecks(reader *bufio.Reader, output io.Writer, current []Check) []Check {
@@ -618,31 +911,40 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check) []Che
 		currentText = current[0].Type
 	}
 	fmt.Fprintf(output, "Vérification après réveil actuelle: %s\n", currentText)
-	fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune\n[5] Plusieurs contrôles\n[Entrée] Conserver")
-	switch prompt(reader, output, "> ") {
-	case "1":
-		return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}
-	case "2":
-		port, err := strconv.Atoi(promptDefault(reader, output, "Port TCP", "22"))
-		if err != nil || port < 1 || port > 65535 {
-			fmt.Fprintln(output, "Port invalide; vérification précédente conservée.")
+	fmt.Fprintln(output, "ICMP: ping simple mais parfois bloqué. TCP: vérifie un port ouvert (22/80/443). ARP: présence locale, preuve plus faible. Aucune: paquet envoyé sans confirmation de démarrage.")
+	for {
+		fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune\n[5] Plusieurs contrôles\n[Entrée] Conserver\n[?] Aide")
+		switch prompt(reader, output, "> ") {
+		case "1":
+			return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}
+		case "2":
+			for {
+				port, err := strconv.Atoi(promptDefault(reader, output, "Port TCP (ex. 22, 80, 443)", "22"))
+				if err == nil && port >= 1 && port <= 65535 {
+					return []Check{{Type: "tcp", Port: port, Timeout: Duration(3 * time.Second)}}
+				}
+				fmt.Fprintln(output, "Port invalide (1 à 65535). Recommencez.")
+			}
+		case "3":
+			return []Check{{Type: "arp", Timeout: Duration(3 * time.Second)}}
+		case "4":
+			return nil
+		case "5":
+			for {
+				value := prompt(reader, output, "Contrôles (ex. icmp,tcp:22,tcp:443,arp): ")
+				checks, err := parseChecks(value)
+				if err == nil {
+					return checks
+				}
+				fmt.Fprintln(output, "Contrôles invalides:", err, "Recommencez.")
+			}
+		case "?", "aide", "help":
+			fmt.Fprintln(output, fieldHelp("contrôles"))
+		case "":
 			return current
+		default:
+			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
-		return []Check{{Type: "tcp", Port: port, Timeout: Duration(3 * time.Second)}}
-	case "3":
-		return []Check{{Type: "arp", Timeout: Duration(3 * time.Second)}}
-	case "4":
-		return nil
-	case "5":
-		value := prompt(reader, output, "Contrôles (ex. icmp,tcp:22,tcp:443,arp): ")
-		checks, err := parseChecks(value)
-		if err != nil {
-			fmt.Fprintln(output, "Contrôles invalides; configuration précédente conservée:", err)
-			return current
-		}
-		return checks
-	default:
-		return current
 	}
 }
 
@@ -675,12 +977,13 @@ func promptCheckLogic(reader *bufio.Reader, output io.Writer, current string) st
 	if current == "" {
 		current = "any"
 	}
-	value := strings.ToLower(promptDefault(reader, output, "Logique des contrôles (any=OU, all=ET)", current))
-	if value != "any" && value != "all" {
-		fmt.Fprintln(output, "Logique invalide; valeur précédente conservée.")
-		return current
+	for {
+		value := strings.ToLower(promptDefault(reader, output, "Logique des contrôles (any=OU: un succès suffit; all=ET: tous doivent réussir)", current))
+		if value == "any" || value == "all" {
+			return value
+		}
+		fmt.Fprintln(output, "Logique invalide: saisissez any ou all. Recommencez.")
 	}
-	return value
 }
 
 func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, group Group) *PowerRestorePolicy {
@@ -700,30 +1003,39 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		policy.Enabled = true
 	}
 	fmt.Fprintln(output, "UPS disponibles:", strings.Join(sortedKeys(cfg.UPS), ", "))
-	policy.UPS = promptDefault(reader, output, "UPS", policy.UPS)
-	if _, ok := cfg.UPS[policy.UPS]; !ok {
-		fmt.Fprintln(output, "UPS inconnu; politique précédente conservée.")
-		return group.PowerRestore
+	for {
+		policy.UPS = promptDefault(reader, output, "UPS", policy.UPS)
+		if _, ok := cfg.UPS[policy.UPS]; ok {
+			break
+		}
+		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
 	}
 	fmt.Fprintln(output, "Seuils batterie: [1] 40/70 %  [2] 20/80 %  [3] personnalisés")
 	low, high := 40, 70
 	if policy.LowBattery != nil && policy.HighBattery != nil {
 		low, high = *policy.LowBattery, *policy.HighBattery
 	}
-	switch prompt(reader, output, "> ") {
-	case "2":
-		low, high = 20, 80
-	case "3":
-		var err error
-		low, err = strconv.Atoi(promptDefault(reader, output, "Seuil bas (%)", strconv.Itoa(low)))
-		if err != nil {
-			fmt.Fprintln(output, "Seuil bas invalide; politique précédente conservée.")
-			return group.PowerRestore
-		}
-		high, err = strconv.Atoi(promptDefault(reader, output, "Seuil haut (%)", strconv.Itoa(high)))
-		if err != nil {
-			fmt.Fprintln(output, "Seuil haut invalide; politique précédente conservée.")
-			return group.PowerRestore
+	thresholdsReady := false
+	for !thresholdsReady {
+		switch prompt(reader, output, "> ") {
+		case "", "1":
+			thresholdsReady = true
+		case "2":
+			low, high, thresholdsReady = 20, 80, true
+		case "3":
+			for {
+				low = promptIntRange(reader, output, "Seuil bas (%)", low, 0, 99)
+				high = promptIntRange(reader, output, "Seuil haut (%)", high, 1, 100)
+				if high > low {
+					break
+				}
+				fmt.Fprintln(output, "Le seuil haut doit être strictement supérieur au seuil bas. Recommencez.")
+			}
+			thresholdsReady = true
+		case "?":
+			fmt.Fprintln(output, "Aide: le seuil bas réarme la surveillance; le seuil haut, strictement supérieur, autorise le démarrage lorsque le secteur est stable.")
+		default:
+			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
 	}
 	policy.LowBattery, policy.HighBattery = intPointer(low), intPointer(high)
@@ -741,41 +1053,73 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		return group.PowerRestore
 	}
 	policy.PollInterval = pollInterval
-	policy.Mode = strings.ToLower(promptDefault(reader, output, "Mode (sequential/parallel)", defaultString(policy.Mode, "sequential")))
+	policy.Mode = promptEnum(reader, output, "Mode (sequential=un par un / parallel=indépendants en parallèle)", defaultString(policy.Mode, "sequential"), "sequential", "parallel")
 	if policy.Mode == "sequential" {
 		policy.Order = promptKnownIDs(reader, output, "Ordre de démarrage (virgules, facultatif)", policy.Order, cfg.Servers)
 	}
-	policy.FailurePolicy = strings.ToLower(promptDefault(reader, output, "Échec (stop/continue/retry/continue_retry)", defaultString(policy.FailurePolicy, "stop")))
+	policy.FailurePolicy = promptEnum(reader, output, "Échec (stop=bloquer / continue=indépendants / retry=retenter / continue_retry=les deux)", defaultString(policy.FailurePolicy, "stop"), "stop", "continue", "retry", "continue_retry")
 	if policy.FailurePolicy == "retry" || policy.FailurePolicy == "continue_retry" {
-		limit, err := strconv.Atoi(promptDefault(reader, output, "Nombre maximal de nouvelles tentatives", strconv.Itoa(policy.RetryLimit)))
-		if err != nil || limit < 0 || limit > 100 {
-			fmt.Fprintln(output, "Nombre de tentatives invalide; politique précédente conservée.")
-			return group.PowerRestore
+		policy.RetryLimit = promptIntRange(reader, output, "Nombre maximal de nouvelles tentatives", policy.RetryLimit, 0, 100)
+		for {
+			raw := promptDefault(reader, output, "Intervalle entre tentatives", policy.RetryInterval.Value(10*time.Second).String())
+			value, err := time.ParseDuration(raw)
+			if err == nil && value > 0 && value <= 24*time.Hour {
+				policy.RetryInterval = Duration(value)
+				break
+			}
+			fmt.Fprintln(output, "Intervalle invalide. Utilisez 30s, 2m ou 1m30s.")
 		}
-		policy.RetryLimit = limit
-		value, err := time.ParseDuration(promptDefault(reader, output, "Intervalle entre tentatives", policy.RetryInterval.Value(10*time.Second).String()))
-		if err != nil || value <= 0 || value > 24*time.Hour {
-			fmt.Fprintln(output, "Intervalle de tentative invalide; politique précédente conservée.")
-			return group.PowerRestore
-		}
-		policy.RetryInterval = Duration(value)
 	}
 	return &policy
 }
 
-func chooseDuration(reader *bufio.Reader, output io.Writer, presets []time.Duration, current time.Duration, allowZero bool) (Duration, error) {
-	choice := prompt(reader, output, "> ")
-	if index, err := strconv.Atoi(choice); err == nil && index >= 1 && index <= len(presets) {
-		return Duration(presets[index-1]), nil
-	}
-	if choice == strconv.Itoa(len(presets)+1) {
-		value, err := time.ParseDuration(promptDefault(reader, output, "Durée", current.String()))
-		if err != nil || value < 0 || !allowZero && value == 0 || value > 24*time.Hour {
-			return 0, errors.New("durée invalide")
+func promptIntRange(reader *bufio.Reader, output io.Writer, label string, current, min, max int) int {
+	for {
+		value, err := strconv.Atoi(promptDefault(reader, output, label, strconv.Itoa(current)))
+		if err == nil && value >= min && value <= max {
+			return value
 		}
-		return Duration(value), nil
+		fmt.Fprintf(output, "Valeur invalide: saisissez un nombre entre %d et %d.\n", min, max)
 	}
-	return Duration(current), nil
+}
+
+func promptEnum(reader *bufio.Reader, output io.Writer, label, current string, allowed ...string) string {
+	for {
+		value := strings.ToLower(promptDefault(reader, output, label, current))
+		for _, candidate := range allowed {
+			if value == candidate {
+				return value
+			}
+		}
+		fmt.Fprintln(output, "Valeur invalide. Choix autorisés:", strings.Join(allowed, ", "))
+	}
+}
+
+func chooseDuration(reader *bufio.Reader, output io.Writer, presets []time.Duration, current time.Duration, allowZero bool) (Duration, error) {
+	for {
+		choice := prompt(reader, output, "> ")
+		if choice == "?" {
+			fmt.Fprintln(output, fieldHelp("durée"))
+			continue
+		}
+		if index, err := strconv.Atoi(choice); err == nil && index >= 1 && index <= len(presets) {
+			return Duration(presets[index-1]), nil
+		}
+		if choice == strconv.Itoa(len(presets)+1) {
+			for {
+				raw := promptDefault(reader, output, "Durée", current.String())
+				value, err := time.ParseDuration(raw)
+				if err == nil && value >= 0 && (allowZero || value > 0) && value <= 24*time.Hour {
+					return Duration(value), nil
+				}
+				fmt.Fprintln(output, "Durée invalide. Utilisez 30s, 2m ou 1m30s.")
+			}
+		}
+		if choice == "" {
+			return Duration(current), nil
+		}
+		fmt.Fprintln(output, "Choix invalide. Recommencez.")
+	}
 }
 
 func intPointer(value int) *int { return &value }
@@ -821,19 +1165,25 @@ func promptDurationOverride(reader *bufio.Reader, output io.Writer, label string
 	if current != nil {
 		shown = time.Duration(*current).String()
 	}
-	value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
-	if value == "" {
-		return current, nil
+	for {
+		value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
+		if value == "" {
+			return current, nil
+		}
+		if value == "-" {
+			return nil, nil
+		}
+		duration, err := time.ParseDuration(value)
+		if err == nil && duration >= 0 && (allowZero || duration > 0) && duration <= maxVerificationDuration {
+			result := Duration(duration)
+			return &result, nil
+		}
+		if _, numberErr := strconv.Atoi(value); numberErr == nil {
+			fmt.Fprintf(output, "Format invalide. Essayez %ss. Formats acceptés: 30s, 2m, 1m30s.\n", value)
+		} else {
+			fmt.Fprintln(output, "Durée invalide. Formats acceptés: 30s, 2m, 1m30s. Recommencez.")
+		}
 	}
-	if value == "-" {
-		return nil, nil
-	}
-	duration, err := time.ParseDuration(value)
-	if err != nil || duration < 0 || (!allowZero && duration == 0) || duration > maxVerificationDuration {
-		return current, fmt.Errorf("durée %q invalide", value)
-	}
-	result := Duration(duration)
-	return &result, nil
 }
 
 func sameVerification(a, b VerificationConfig) bool {
@@ -851,18 +1201,20 @@ func promptIntOverride(reader *bufio.Reader, output io.Writer, label string, cur
 	if current != nil {
 		shown = strconv.Itoa(*current)
 	}
-	value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
-	if value == "" {
-		return current, nil
+	for {
+		value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
+		if value == "" {
+			return current, nil
+		}
+		if value == "-" {
+			return nil, nil
+		}
+		parsed, err := strconv.Atoi(value)
+		if err == nil && parsed >= 0 && parsed <= 100 {
+			return intPointer(parsed), nil
+		}
+		fmt.Fprintln(output, "Nombre invalide (0 à 100). Recommencez; les valeurs précédentes sont conservées.")
 	}
-	if value == "-" {
-		return nil, nil
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed < 0 || parsed > 100 {
-		return current, fmt.Errorf("nombre %q invalide", value)
-	}
-	return intPointer(parsed), nil
 }
 
 func serverDeleteBlocker(cfg *Config, id string) string {
@@ -914,16 +1266,28 @@ func emptyAs(value, fallback string) string {
 }
 
 func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[string]UPSConfig) error {
-	address := prompt(reader, output, "Adresse IP ou DNS: ")
-	if address == "" {
-		return errors.New("adresse vide")
+	var address string
+	for {
+		address = prompt(reader, output, "Adresse IP ou DNS du serveur NUT: ")
+		if address == "annuler" || address == "retour" {
+			return errors.New("configuration reportée")
+		}
+		if address != "" {
+			break
+		}
+		fmt.Fprintln(output, "Adresse requise. Saisissez « annuler » pour reporter.")
 	}
-	port := prompt(reader, output, "Port [3493]: ")
-	if port == "" {
-		port = "3493"
-	}
-	if _, err := strconv.Atoi(port); err != nil {
-		return errors.New("port invalide")
+	var port string
+	for {
+		port = prompt(reader, output, "Port NUT [3493]: ")
+		if port == "" {
+			port = "3493"
+		}
+		value, err := strconv.Atoi(port)
+		if err == nil && value >= 1 && value <= 65535 {
+			break
+		}
+		fmt.Fprintln(output, "Port invalide (1 à 65535). Recommencez.")
 	}
 	if host, _, err := net.SplitHostPort(address); err == nil {
 		address = net.JoinHostPort(host, port)
@@ -931,6 +1295,7 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 		address = net.JoinHostPort(strings.Trim(address, "[]"), port)
 	}
 	server := UPSConfig{Address: address, Timeout: Duration(3 * time.Second)}
+	fmt.Fprintln(output, "STARTTLS chiffre la connexion NUT et vérifie l'identité du serveur lorsqu'une CA est configurée.")
 	if confirmPrompt(reader, output, "Utiliser STARTTLS ?") {
 		server.TLS = true
 		server.ServerName = prompt(reader, output, "Nom TLS du serveur [adresse]: ")
@@ -962,8 +1327,12 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 			continue
 		case "2", "3":
 			return configureRemoteNUT(reader, output, configured)
-		default:
+		case "4":
 			return errors.New("serveur NUT non enregistré")
+		case "?":
+			fmt.Fprintln(output, "Aide: réessayez après une erreur temporaire, modifiez l'adresse/port, choisissez un autre serveur ou reportez sans bloquer l'installation.")
+		default:
+			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
 	}
 }
@@ -977,10 +1346,15 @@ func selectNUTDevices(reader *bufio.Reader, output io.Writer, serverID string, s
 		}
 		fmt.Fprintln(output)
 	}
-	selection := prompt(reader, output, "Sélectionnez un ou plusieurs UPS (ex. 1,2 ou tous): ")
-	indices, err := parseSelection(selection, len(devices))
-	if err != nil {
-		return err
+	var indices []int
+	for {
+		selection := prompt(reader, output, "Sélectionnez un ou plusieurs UPS (ex. 1,2 ou tous): ")
+		var err error
+		indices, err = parseSelection(selection, len(devices))
+		if err == nil {
+			break
+		}
+		fmt.Fprintln(output, err, "Recommencez.")
 	}
 	added := 0
 	for _, index := range indices {
@@ -1304,9 +1678,47 @@ func rejectConfigSymlinks(path string) error {
 }
 
 func prompt(reader *bufio.Reader, output io.Writer, text string) string {
-	fmt.Fprint(output, text)
-	line, _ := reader.ReadString('\n')
-	return strings.TrimSpace(line)
+	for {
+		fmt.Fprint(output, text)
+		line, _ := reader.ReadString('\n')
+		value := strings.TrimSpace(line)
+		if value != "?" || strings.TrimSpace(text) == ">" {
+			return value
+		}
+		fmt.Fprintln(output, fieldHelp(text))
+	}
+}
+
+func fieldHelp(label string) string {
+	key := strings.ToLower(label)
+	switch {
+	case strings.Contains(key, "identifiant"):
+		return "Aide: l'identifiant technique est court, unique et sans espace (lettres, chiffres, - ou _), par exemple truenas, pc-bureau ou maison. Il sera utilisé dans « wol wake IDENTIFIANT ». Le nom lisible peut contenir des espaces."
+	case strings.Contains(key, "cidr"):
+		return "Aide: le CIDR décrit le réseau IPv4, par exemple 192.168.1.0/24. Appuyez sur Entrée pour accepter la valeur détectée."
+	case strings.Contains(key, "interface linux"):
+		return "Aide: nom de l'interface réseau Linux qui enverra le paquet, par exemple enp3s0. Entrée conserve la valeur détectée."
+	case strings.Contains(key, "adresse ipv4 source"):
+		return "Aide: adresse locale utilisée comme source. Entrée conserve l'adresse détectée; utilisez - pour revenir au choix automatique."
+	case strings.Contains(key, "broadcast local"):
+		return "Aide: recommandé sur le même réseau; envoie au broadcast local et reste limité au segment directement connecté."
+	case strings.Contains(key, "unicast"):
+		return "Aide: envoie directement à l'IP de la machine; simple mais dépend de la conservation de l'entrée ARP."
+	case strings.Contains(key, "broadcast dirigé"):
+		return "Aide: traverse un routeur vers un autre sous-réseau; plus risqué et à activer seulement si le routeur est configuré pour cela."
+	case strings.Contains(key, "relais"):
+		return "Aide: un relais WoL authentifié envoie le paquet depuis le réseau distant; recommandé lorsque le broadcast routé est interdit."
+	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "vérification"):
+		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
+	case strings.Contains(key, "durée") || strings.Contains(key, "attente") || strings.Contains(key, "intervalle"):
+		return "Aide: utilisez une durée Go comme 30s, 2m ou 1m30s. « hérité » signifie que la valeur vient du réseau ou des valeurs globales."
+	case strings.Contains(key, "nut") || strings.Contains(key, "ups") || strings.Contains(key, "starttls"):
+		return "Aide: NUT (Network UPS Tools) lit l'état d'un onduleur. OL=secteur présent, OB=sur batterie, LB=batterie faible, FSD=arrêt forcé. STARTTLS chiffre la connexion; WoL Manager ne commande jamais l'onduleur."
+	case strings.Contains(key, "priorité"):
+		return "Aide: les groupes sont traités par priorité croissante: 1 avant 10. Deux groupes ne peuvent pas partager la même priorité."
+	default:
+		return "Aide: saisissez une valeur, appuyez sur Entrée pour conserver le défaut, ou utilisez « annuler » au début d'un objet pour revenir sans l'enregistrer."
+	}
 }
 
 func cloneUPS(source map[string]UPSConfig) map[string]UPSConfig {

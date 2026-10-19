@@ -26,6 +26,7 @@ type Engine struct {
 	requireVerified   bool
 	automationUPS     string
 	coordinator       *wakeCoordinator
+	sendPacket        func(destination, source string, broadcast bool, packet []byte) error
 }
 type WakeResult struct {
 	Server      string        `json:"server"`
@@ -144,7 +145,11 @@ attemptsLoop:
 			err = e.sendRelay(ctx, d.Relay, id)
 		} else {
 			n := e.cfg.Networks[e.cfg.Servers[id].Network]
-			err = sendMagic(d.Destination, sourceForNetwork(n), d.Name != "unicast", packet)
+			if e.sendPacket == nil {
+				err = fmt.Errorf("émetteur Magic Packet non configuré")
+			} else {
+				err = e.sendPacket(d.Destination, sourceForNetwork(n), d.Name != "unicast", packet)
+			}
 		}
 		if err != nil {
 			if attempt == packetAttempts {

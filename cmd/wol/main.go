@@ -15,7 +15,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -95,7 +97,7 @@ func run(args []string) error {
 	}
 	if cmd == "config" && len(args) == 1 {
 		switch args[0] {
-		case "network", "networks", "machine", "server", "servers", "group", "groups", "nut", "ups":
+		case "network", "networks", "machine", "server", "servers", "group", "groups", "nut", "ups", "discovery":
 			return configSection(*configPath, args[0], os.Stdin, os.Stdout)
 		}
 	}
@@ -104,7 +106,14 @@ func run(args []string) error {
 		return err
 	}
 	if cmd == "config" && len(args) > 0 && args[0] == "check" {
-		return output(*jsonOut, map[string]any{"valid": true, "version": c.Version}, "configuration valide")
+		issues := readinessIssues(c)
+		if len(issues) > 0 {
+			if err := output(*jsonOut, map[string]any{"valid": true, "ready": false, "version": c.Version, "issues": issues}, ""); err != nil {
+				return err
+			}
+			return fmt.Errorf("configuration syntaxiquement valide mais non opérationnelle: %s", strings.Join(issues, "; "))
+		}
+		return output(*jsonOut, map[string]any{"valid": true, "ready": true, "version": c.Version}, "configuration syntaxiquement valide et opérationnelle")
 	}
 	if cmd == "token" {
 		return tokenCLI(c, args)
@@ -114,7 +123,7 @@ func run(args []string) error {
 		return err
 	}
 	audit := &Auditor{path: c.Storage.AuditFile}
-	engine := &Engine{cfg: c, audit: audit}
+	engine := &Engine{cfg: c, audit: audit, sendPacket: sendMagic}
 	switch cmd {
 	case "list":
 		ids := make([]string, 0, len(c.Servers))
@@ -207,10 +216,10 @@ Usage: wol [--config FILE] [--json] COMMAND
   wake --group GROUP            réveille un groupe
   wake --all                    réveille tous les serveurs actifs
   config check                  valide la configuration
-  config network|machine|group|nut
+  config network|machine|group|nut|discovery
                                 gestion guidée sans édition YAML
   config edit                   édition avancée manuelle
-  token create                  crée un jeton API affiché une seule fois
+  token create|list|revoke      gestion sûre des jetons API
   network test [SERVER...]      explique les transports
   network discover [options]    découverte passive ou active
   ups status|test               état/diagnostic en lecture seule des UPS NUT
@@ -246,12 +255,12 @@ _wol() {
             else
 				COMPREPLY=( $(compgen -W "--check --channel --help -h" -- "$cur") )
             fi ;;
-		config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h" -- "$cur") ) ;;
+		config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h" -- "$cur") $(compgen -W "discovery" -- "$cur") ) ;;
 		wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h" -- "$cur") ) ;;
 		network) COMPREPLY=( $(compgen -W "test discover --help -h" -- "$cur") ) ;;
 		ups) COMPREPLY=( $(compgen -W "status test --help -h" -- "$cur") ) ;;
 		automation) COMPREPLY=( $(compgen -W "status --help -h" -- "$cur") ) ;;
-		token) COMPREPLY=( $(compgen -W "create --help -h" -- "$cur") ) ;;
+		token) COMPREPLY=( $(compgen -W "create --help -h" -- "$cur") $(compgen -W "list revoke" -- "$cur") ) ;;
 		api) COMPREPLY=( $(compgen -W "serve --help -h" -- "$cur") ) ;;
 		relay) COMPREPLY=( $(compgen -W "serve check --help -h" -- "$cur") ) ;;
 		completion) COMPREPLY=( $(compgen -W "bash --help -h" -- "$cur") ) ;;
@@ -349,7 +358,7 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 			return output(jsonOut, passiveDiscovery(context.Background()), "")
 		}
 		if !c.Discovery.ActiveEnabled {
-			return errors.New("découverte active désactivée dans la configuration")
+			return errors.New("découverte active désactivée: lancez « sudo wol config discovery » pour définir les sous-réseaux, limites, débit et timeout; --allow-active-scan autorise seulement cet appel et n'active pas la fonction globalement")
 		}
 		warningf(os.Stderr, "AVERTISSEMENT: diagnostic réseau actif limité aux sous-réseaux explicitement autorisés")
 		if !*allow {
@@ -482,9 +491,13 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 				_ = output(jsonOut, v, "")
 			}
 		case "8":
-			fmt.Print("Machine: ")
-			id, _ := r.ReadString('\n')
-			id = strings.TrimSpace(id)
+			id, ok := selectMenuServer(r, os.Stdout, c)
+			if !ok {
+				fmt.Println("Réveil annulé: aucune machine sélectionnée.")
+				continue
+			}
+			status := checkServer(context.Background(), c, id)
+			fmt.Printf("État courant de %s: %s\n", id, status.State)
 			if !confirmPrompt(r, os.Stdout, "Envoyer réellement un paquet WoL à "+id+" ?") {
 				fmt.Println("Réveil annulé.")
 				continue
@@ -509,6 +522,31 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 		}
 	}
 }
+
+func selectMenuServer(reader *bufio.Reader, output io.Writer, c *Config) (string, bool) {
+	ids := sortedKeys(c.Servers)
+	if len(ids) == 0 {
+		fmt.Fprintln(output, "Aucune machine configurée.")
+		return "", false
+	}
+	fmt.Fprintln(output, "Machines disponibles:")
+	for i, id := range ids {
+		fmt.Fprintf(output, "[%d] %s — %s\n", i+1, id, emptyAs(c.Servers[id].Name, "sans nom"))
+	}
+	for {
+		value := prompt(reader, output, "Choisissez un numéro ou un identifiant (Entrée=annuler): ")
+		if value == "" || value == "annuler" || value == "retour" {
+			return "", false
+		}
+		if index, err := strconv.Atoi(value); err == nil && index >= 1 && index <= len(ids) {
+			return ids[index-1], true
+		}
+		if _, ok := c.Servers[value]; ok {
+			return value, true
+		}
+		fmt.Fprintln(output, "Sélection inconnue ou ambiguë. Aucun paquet ne sera envoyé; recommencez ou appuyez sur Entrée.")
+	}
+}
 func generateToken() (plain, hash string, err error) {
 	b := make([]byte, 32)
 	if _, err = rand.Read(b); err != nil {
@@ -520,7 +558,61 @@ func generateToken() (plain, hash string, err error) {
 	return plain, hash, nil
 }
 func tokenCLI(c *Config, args []string) error {
-	if len(args) == 0 || args[0] != "create" {
+	return tokenCLIWithIO(c, args, os.Stdin, os.Stdout)
+}
+
+func tokenCLIWithIO(c *Config, args []string, input io.Reader, output io.Writer) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	if args[0] == "list" {
+		if len(args) != 1 {
+			return errUsage
+		}
+		f, err := readTokenFile(c.API.TokensFile)
+		if err != nil {
+			return err
+		}
+		for _, token := range f.Tokens {
+			fmt.Fprintf(output, "%s\tpermissions=%s\tactif=%t\n", token.ID, strings.Join(token.Permissions, ","), !token.Disabled)
+		}
+		return nil
+	}
+	if args[0] == "revoke" {
+		fs := flag.NewFlagSet("token revoke", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		id := fs.String("id", "", "identifiant")
+		if fs.Parse(args[1:]) != nil || *id == "" {
+			return errUsage
+		}
+		f, err := readTokenFile(c.API.TokensFile)
+		if err != nil {
+			return err
+		}
+		index := -1
+		for i := range f.Tokens {
+			if f.Tokens[i].ID == *id {
+				index = i
+			}
+		}
+		if index < 0 {
+			return fmt.Errorf("jeton %q inconnu", *id)
+		}
+		if f.Tokens[index].Disabled {
+			return fmt.Errorf("jeton %q déjà révoqué", *id)
+		}
+		if !confirmPrompt(bufio.NewReader(input), output, "Révoquer le jeton "+*id+" ?") {
+			fmt.Fprintln(output, "Révocation annulée.")
+			return nil
+		}
+		f.Tokens[index].Disabled = true
+		if err := writeTokenFile(c.API.TokensFile, f); err != nil {
+			return err
+		}
+		fmt.Fprintln(output, "Jeton révoqué:", *id)
+		return nil
+	}
+	if args[0] != "create" {
 		return errUsage
 	}
 	fs := flag.NewFlagSet("token create", flag.ContinueOnError)
@@ -538,15 +630,8 @@ func tokenCLI(c *Config, args []string) error {
 		}
 		ps = append(ps, p)
 	}
-	var f tokenFile
-	if b, e := os.ReadFile(c.API.TokensFile); e == nil {
-		if len(bytes.TrimSpace(b)) > 0 {
-			e = json.Unmarshal(b, &f)
-		}
-		if e != nil {
-			return e
-		}
-	} else if !os.IsNotExist(e) {
+	f, e := readTokenFile(c.API.TokensFile)
+	if e != nil {
 		return e
 	}
 	for _, t := range f.Tokens {
@@ -559,16 +644,61 @@ func tokenCLI(c *Config, args []string) error {
 		return tokenErr
 	}
 	f.Tokens = append(f.Tokens, TokenRecord{ID: *id, Hash: hash, Permissions: ps})
-	if e := os.MkdirAll(filepath.Dir(c.API.TokensFile), 0750); e != nil {
+	if e := writeTokenFile(c.API.TokensFile, f); e != nil {
 		return e
 	}
-	b, _ := json.MarshalIndent(f, "", "  ")
-	if e := os.WriteFile(c.API.TokensFile, b, 0600); e != nil {
-		return e
-	}
-	if e := secureTokenFile(c.API.TokensFile); e != nil {
-		return fmt.Errorf("sécurisation du fichier de jetons: %w", e)
-	}
-	fmt.Println("JETON (affiché une seule fois):", plain)
+	fmt.Fprintln(output, "JETON (affiché une seule fois):", plain)
 	return nil
+}
+
+func readTokenFile(path string) (tokenFile, error) {
+	var f tokenFile
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return f, nil
+	}
+	if err != nil {
+		return f, err
+	}
+	if len(bytes.TrimSpace(b)) == 0 {
+		return f, nil
+	}
+	return f, json.Unmarshal(b, &f)
+}
+
+func writeTokenFile(path string, f tokenFile) error {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("fichier de jetons refusé: lien symbolique")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".tokens-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err = temp.Chmod(0600); err == nil {
+		err = json.NewEncoder(temp).Encode(f)
+	}
+	if err == nil {
+		err = temp.Sync()
+	}
+	closeErr := temp.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err = secureTokenFile(tempPath); err != nil {
+		return fmt.Errorf("sécurisation du fichier de jetons: %w", err)
+	}
+	if runtime.GOOS == "windows" {
+		if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return os.Rename(tempPath, path)
 }

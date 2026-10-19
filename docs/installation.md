@@ -16,6 +16,12 @@ Depuis le dossier du projet :
 sudo ./install.sh
 ```
 
+`./install.sh --help` décrit les modes systemd et les canaux. `main` est stable et reste le défaut ;
+`dev` est un canal BETA choisi uniquement pour la commande courante. Lorsqu'un dossier téléchargé
+contient un manifeste local signé, l'installateur vérifie d'abord sa signature puis détecte son canal
+et sa version. Un canal explicitement demandé doit correspondre au manifeste et aucun downgrade
+implicite n'est accepté.
+
 L'installation affiche la version Debian, l'architecture, l'espace libre, les dépendances et les mises à jour Debian connues du cache APT. Elle n'exécute jamais `apt upgrade`, `apt full-upgrade` ou `apt dist-upgrade`. `curl` est contrôlé même lorsqu'un binaire local est disponible, car il est indispensable aux futures vérifications et mises à jour HTTPS.
 
 L'installateur utilise d'abord la distribution locale signée dans `dist/`. Sinon, il résout la branche GitHub `main` vers un commit de publication immuable, puis télécharge depuis ce même commit le manifeste signé, l'installateur et le seul binaire correspondant à l'architecture. Il vérifie la signature Ed25519, les SHA-256, la version, le canal et la révision source intégrés au binaire. L'installateur système se met ensuite à jour atomiquement avec la copie couverte par le manifeste signé.

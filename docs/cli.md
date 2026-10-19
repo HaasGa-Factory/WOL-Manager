@@ -20,8 +20,11 @@ Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
 | `wol config machine` | ajoute, modifie ou supprime une machine avec validation |
 | `wol config group` | ajoute, modifie ou supprime un groupe avec validation |
 | `wol config nut` | configure et teste les serveurs NUT et leurs UPS |
+| `wol config discovery` | configure les verrous et limites de découverte active |
 | `wol config edit` | édition YAML avancée, non requise pour un usage normal |
 | `wol token create` | ajoute un hash et affiche le jeton une fois |
+| `wol token list` | liste les identifiants, permissions et états sans secret ni hash |
+| `wol token revoke --id ID` | révoque un jeton après confirmation |
 | `wol network test [ID]` | explique les transports |
 | `wol network discover` | découverte passive |
 | `wol network discover --active --allow-active-scan` | diagnostic actif |
@@ -47,8 +50,8 @@ wol automation status --help
 wol relay serve --help
 ```
 
-Dans `wol setup`, `wol config network|machine|group|nut` et `wol menu`, saisir `?` affiche l'aide
-du menu courant sans modifier la configuration.
+Dans `wol setup`, `wol config network|machine|group|nut|discovery` et `wol menu`, saisir `?` affiche
+l'aide du menu ou du champ courant, puis réaffiche exactement la même question sans modifier sa valeur.
 
 ## Options importantes
 

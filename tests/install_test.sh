@@ -12,8 +12,8 @@ PUBLICATION_COMMIT=1111111111111111111111111111111111111111
 
 fail() { echo "ECHEC: $*" >&2; exit 1; }
 assert_file() { [[ -f "$1" ]] || fail "fichier absent: $1"; }
-assert_contains() { grep -Fq "$2" "$1" || fail "'$2' absent de $1"; }
-assert_not_contains() { ! grep -Fq "$2" "$1" || fail "'$2' présent dans $1"; }
+assert_contains() { grep -Fq -- "$2" "$1" || fail "'$2' absent de $1"; }
+assert_not_contains() { ! grep -Fq -- "$2" "$1" || fail "'$2' présent dans $1"; }
 assert_has_ansi() { LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI absente de $1"; }
 assert_no_ansi() { ! LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI présente dans $1"; }
 
@@ -218,6 +218,15 @@ REV2=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 REV3=cccccccccccccccccccccccccccccccccccccccc
 PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
+
+"$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.1"
+assert_contains "$WORK/install-help.log" "--service enable"
+assert_contains "$WORK/install-help.log" "--service install"
+assert_contains "$WORK/install-help.log" "--service cli"
+assert_contains "$WORK/install-help.log" "main  version stable"
+assert_contains "$WORK/install-help.log" "dev   version de développement/BETA"
+assert_contains "$WORK/install-help.log" "paquet local signé"
 
 echo "[1/16] Debian 12 AMD64, binaire local, sans Go"
 ROOT12="$WORK/root12"
@@ -445,6 +454,11 @@ assert_contains "$WORK/unknown-format.log" "Format de manifeste non pris en char
 echo "[comparaison versions] protection contre les rétrogradations dev vers main"
 PAYLOAD_DEV="$WORK/payload-dev"
 prepare_payload "$PAYLOAD_DEV" 1.2.0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee dev
+ROOT_AUTO_DEV="$WORK/root-auto-dev"
+prepare_root "$ROOT_AUTO_DEV" 13
+run_installer "$PAYLOAD_DEV" "$ROOT_AUTO_DEV" amd64 --non-interactive --yes --service cli >"$WORK/auto-dev.log"
+assert_contains "$WORK/auto-dev.log" "Paquet local signé détecté: canal dev"
+[[ $("$ROOT_AUTO_DEV/usr/local/bin/wol" version --channel) = dev ]] || fail "le canal dev local signé n'a pas été détecté"
 ROOT_VERSION="$WORK/root-version"
 prepare_root "$ROOT_VERSION" 13
 run_installer "$PAYLOAD_DEV" "$ROOT_VERSION" amd64 --channel dev --non-interactive --yes --service cli
