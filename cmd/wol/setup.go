@@ -34,21 +34,28 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 	} else {
 		fmt.Fprintln(output, "Création d'une nouvelle configuration guidée.")
 		fmt.Fprintln(output, "Souhaitez-vous configurer un serveur NUT ?")
-		fmt.Fprintln(output, "[1] Oui\n[2] Non\n[3] Plus tard")
-		switch prompt(reader, output, "> ") {
-		case "1":
-			if configureNUT(reader, output, session.cfg) {
-				session.changed = true
+		fmt.Fprintln(output, "[1] Oui\n[2] Non\n[3] Plus tard\n[?] Aide")
+	chooseNUT:
+		for {
+			switch prompt(reader, output, "> ") {
+			case "1":
+				if configureNUT(reader, output, session.cfg) {
+					session.changed = true
+				}
+				break chooseNUT
+			case "2", "3":
+				break chooseNUT
+			case "?", "aide", "help":
+				printContextHelp(output, "nut")
+			default:
+				return errors.New("choix invalide; aucune configuration écrite")
 			}
-		case "2", "3":
-		default:
-			return errors.New("choix invalide; aucune configuration écrite")
 		}
 	}
 
 	for {
 		fmt.Fprintln(output, "\nConfiguration WoL Manager :")
-		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier\n[7] Délais globaux de vérification")
+		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier\n[7] Délais globaux de vérification\n[?] Aide")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			session.changed = manageNetworks(reader, output, session.cfg) || session.changed
@@ -78,6 +85,8 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 			return nil
 		case "7":
 			session.changed = configureGlobalVerification(reader, output, session.cfg) || session.changed
+		case "?", "aide", "help":
+			printContextHelp(output, "setup")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
 		}
@@ -105,7 +114,7 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 
 	for {
 		fmt.Fprintln(output, "\nConfiguration NUT :")
-		fmt.Fprintln(output, "[1] Ajouter ou modifier un serveur\n[2] Supprimer un UPS configuré\n[3] Tester les UPS configurés\n[4] Terminer\n[5] Annuler les changements NUT")
+		fmt.Fprintln(output, "[1] Ajouter ou modifier un serveur\n[2] Supprimer un UPS configuré\n[3] Tester les UPS configurés\n[4] Terminer\n[5] Annuler les changements NUT\n[?] Aide")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if err := configureRemoteNUT(reader, output, working); err != nil {
@@ -128,6 +137,8 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 				working[id] = ups
 			}
 			return false
+		case "?", "aide", "help":
+			printContextHelp(output, "nut")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
 		}
@@ -183,7 +194,7 @@ func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	for {
 		fmt.Fprintln(output, "\nRéseaux WoL :")
 		printNetworks(output, cfg.Networks)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour")
+		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if addOrEditNetwork(reader, output, cfg, "") {
@@ -212,6 +223,8 @@ func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			}
 		case "4":
 			return changed
+		case "?", "aide", "help":
+			printContextHelp(output, "network")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
 		}
@@ -271,7 +284,7 @@ func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	for {
 		fmt.Fprintln(output, "\nMachines :")
 		printServers(output, cfg.Servers)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour")
+		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if addOrEditServer(reader, output, cfg, "") {
@@ -297,6 +310,8 @@ func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			}
 		case "4":
 			return changed
+		case "?", "aide", "help":
+			printContextHelp(output, "machine")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
 		}
@@ -364,7 +379,7 @@ func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	for {
 		fmt.Fprintln(output, "\nGroupes :")
 		printGroups(output, cfg.Groups)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour")
+		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if addOrEditGroup(reader, output, cfg, "") {
@@ -390,6 +405,8 @@ func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			}
 		case "4":
 			return changed
+		case "?", "aide", "help":
+			printContextHelp(output, "group")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
 		}
@@ -675,6 +692,8 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 	if !promptBool(reader, output, "Activer la reprise automatique NUT pour ce groupe ?", enabled) {
 		return nil
 	}
+	fmt.Fprintln(output, "Aide: le seuil bas réarme un cycle observé; le seuil haut et la stabilité secteur autorisent le démarrage. Une mesure inconnue ou un état OB/LB/FSD bloque tout nouveau réveil.")
+	fmt.Fprintln(output, "Le mode sequential attend chaque machine et ses dépendances; parallel autorise les machines indépendantes sans contourner leurs prérequis.")
 	policy := PowerRestorePolicy{Enabled: true, Mode: "sequential", FailurePolicy: "stop"}
 	if group.PowerRestore != nil {
 		policy = *group.PowerRestore

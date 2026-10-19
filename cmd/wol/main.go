@@ -53,6 +53,9 @@ func run(args []string) error {
 	if len(args) == 0 {
 		return usage()
 	}
+	if wantsHelp(args) {
+		return printCommandHelp(os.Stdout, args)
+	}
 	cmd := args[0]
 	args = args[1:]
 	if cmd == "version" {
@@ -86,9 +89,6 @@ func run(args []string) error {
 		}
 		fmt.Print(bashCompletion)
 		return nil
-	}
-	if cmd == "config" && len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
-		return printConfigHelp(os.Stdout, args[0])
 	}
 	if cmd == "config" && len(args) > 0 && args[0] == "edit" {
 		return editConfig(*configPath)
@@ -211,59 +211,17 @@ Usage: wol [--config FILE] [--json] COMMAND
                                 gestion guidée sans édition YAML
   config edit                   édition avancée manuelle
   token create                  crée un jeton API affiché une seule fois
-  network test [SERVER]         explique les transports
+  network test [SERVER...]      explique les transports
   network discover [options]    découverte passive ou active
   ups status|test               état/diagnostic en lecture seule des UPS NUT
   jobs                          liste les tâches persistées
   automation status             état et raisons d'attente des reprises NUT
   menu                          interface interactive
   api serve                     démarre l'API
-  relay serve|check             relais distant`)
-}
+  relay serve|check             relais distant
+  version                       version, canal ou révision source
 
-func printConfigHelp(output io.Writer, section string) error {
-	var details string
-	switch section {
-	case "network":
-		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, CIDR IPv4, interface, IP source et transports WoL.
-Valeurs par défaut: interface et IP source automatiques; broadcast local proposé à la création.
-Contraintes: identifiant unique, CIDR IPv4 valide; suppression refusée si une machine utilise le réseau.
-Exemple: sudo wol config network`
-	case "machine":
-		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, nom, MAC, IPv4, réseau, groupes, dépendances, méthode et délais de vérification après réveil.
-Valeurs par défaut: port WoL global; vérification ICMP/TCP/ARP facultative.
-Contraintes: MAC et IPv4 valides, réseau existant; suppression refusée tant que la machine est référencée.
-Exemple: sudo wol config machine`
-	case "group":
-		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, priorité, machines, dépendances et politique facultative de reprise NUT.
-Valeurs par défaut: listes vides; priorité demandée par l'assistant.
-Contraintes: références existantes; seuil haut strictement supérieur au seuil bas; suppression refusée si le groupe est encore utilisé.
-Exemple: sudo wol config group`
-	case "nut":
-		details = `Actions: détecter localement, ajouter ou modifier un serveur, sélectionner ou supprimer des UPS, tester ou reporter.
-Paramètres demandés: adresse IP/DNS, port, TLS éventuel et UPS à surveiller.
-Valeurs par défaut: 127.0.0.1:3493 pour la détection locale; port distant 3493; délai 3 s.
-Contraintes: lecture seule, aucun scan réseau, aucune installation ni modification du serveur NUT.
-Exemple: sudo wol config nut`
-	default:
-		return errUsage
-	}
-	fmt.Fprintf(output, `Usage: wol [--config FILE] config %s [--help]
-
-Gestion guidée interactive de la section %s.
-%s
-
-Options:
-  -h, --help       affiche cette aide et quitte sans charger la configuration
-  --config FILE    option globale à placer avant "config" (défaut: /etc/wol-manager/wol.yaml)
-
-Mode interactif: l'assistant demande les valeurs et une confirmation avant l'écriture atomique.
-Mode non interactif: aucune modification n'est proposée; utilisez "wol config check" pour valider.
-`, section, section, details)
-	return nil
+Utilisez "wol COMMANDE --help" pour l'aide détaillée.`)
 }
 
 const bashCompletion = `# bash completion for WoL Manager
@@ -286,17 +244,19 @@ _wol() {
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--channel" ]]; then
                 COMPREPLY=( $(compgen -W "main dev" -- "$cur") )
             else
-                COMPREPLY=( $(compgen -W "--check --channel" -- "$cur") )
+				COMPREPLY=( $(compgen -W "--check --channel --help -h" -- "$cur") )
             fi ;;
-        config) COMPREPLY=( $(compgen -W "check edit network machine group nut" -- "$cur") ) ;;
-        wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all" -- "$cur") ) ;;
-        network) COMPREPLY=( $(compgen -W "test discover" -- "$cur") ) ;;
-        ups) COMPREPLY=( $(compgen -W "status test" -- "$cur") ) ;;
-        automation) COMPREPLY=( $(compgen -W "status" -- "$cur") ) ;;
-        token) COMPREPLY=( $(compgen -W "create" -- "$cur") ) ;;
-        api) COMPREPLY=( $(compgen -W "serve" -- "$cur") ) ;;
-        relay) COMPREPLY=( $(compgen -W "serve check" -- "$cur") ) ;;
-        completion) COMPREPLY=( $(compgen -W "bash" -- "$cur") ) ;;
+		config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h" -- "$cur") ) ;;
+		wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h" -- "$cur") ) ;;
+		network) COMPREPLY=( $(compgen -W "test discover --help -h" -- "$cur") ) ;;
+		ups) COMPREPLY=( $(compgen -W "status test --help -h" -- "$cur") ) ;;
+		automation) COMPREPLY=( $(compgen -W "status --help -h" -- "$cur") ) ;;
+		token) COMPREPLY=( $(compgen -W "create --help -h" -- "$cur") ) ;;
+		api) COMPREPLY=( $(compgen -W "serve --help -h" -- "$cur") ) ;;
+		relay) COMPREPLY=( $(compgen -W "serve check --help -h" -- "$cur") ) ;;
+		completion) COMPREPLY=( $(compgen -W "bash --help -h" -- "$cur") ) ;;
+		version) COMPREPLY=( $(compgen -W "--channel --source-revision --commit --help -h" -- "$cur") ) ;;
+		*) COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ) ;;
     esac
 }
 complete -F _wol wol
@@ -476,7 +436,7 @@ func editConfig(path string) error {
 func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  9 Automatismes  0 Quitter\n> ")
+		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  9 Automatismes  0 Quitter  ? Aide\n> ")
 		x, _ := r.ReadString('\n')
 		switch strings.TrimSpace(x) {
 		case "0":
@@ -542,6 +502,8 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 				continue
 			}
 			_ = output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
+		case "?", "aide", "help":
+			printContextHelp(os.Stdout, "menu")
 		default:
 			fmt.Println("Choix invalide.")
 		}

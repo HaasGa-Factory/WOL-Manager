@@ -2,6 +2,8 @@
 
 ## 1.2.0 - en préparation
 
+- aide contextuelle complète pour les commandes et sous-commandes, disponible sans charger la configuration ;
+- aide `?` dans les menus guidés, avec explications NUT, groupes, séquences et reprise après coupure ;
 - reprise automatique persistante après un cycle de coupure NUT réellement observé ;
 - seuils batterie bas/haut, stabilité secteur et fréquence de surveillance configurables par groupe ;
 - modes séquentiel et parallèle, ordre explicite, dépendances, politiques d'échec et tentatives bornées ;

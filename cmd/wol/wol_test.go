@@ -61,9 +61,10 @@ func testDir(t *testing.T) string {
 func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 	for _, expected := range []string{
 		`compgen -W "setup update list status wake config token network ups jobs automation menu`,
-		`config) COMPREPLY=( $(compgen -W "check edit network machine group nut"`,
-		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all"`,
-		`automation) COMPREPLY=( $(compgen -W "status"`,
+		`config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h"`,
+		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h"`,
+		`automation) COMPREPLY=( $(compgen -W "status --help -h"`,
+		`version) COMPREPLY=( $(compgen -W "--channel --source-revision --commit --help -h"`,
 		`complete -F _wol wol`,
 	} {
 		if !strings.Contains(bashCompletion, expected) {
@@ -94,9 +95,22 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 	if err := run([]string{"--config", missing, "--help"}); err != nil {
 		t.Fatalf("aide générale: %v", err)
 	}
-	for _, section := range []string{"network", "machine", "group", "nut"} {
-		if err := run([]string{"--config", missing, "config", section, "--help"}); err != nil {
-			t.Fatalf("aide config %s: %v", section, err)
+	commands := [][]string{
+		{"setup", "--help"}, {"update", "--help"}, {"completion", "bash", "--help"},
+		{"list", "--help"}, {"status", "--help"}, {"wake", "--help"},
+		{"config", "--help"}, {"config", "check", "--help"}, {"config", "edit", "--help"},
+		{"config", "network", "--help"}, {"config", "machine", "--help"},
+		{"config", "group", "--help"}, {"config", "nut", "--help"},
+		{"token", "create", "--help"}, {"network", "test", "--help"},
+		{"network", "discover", "--help"}, {"ups", "status", "--help"},
+		{"ups", "test", "--help"}, {"jobs", "--help"}, {"automation", "status", "--help"},
+		{"menu", "--help"}, {"api", "serve", "--help"}, {"relay", "serve", "--help"},
+		{"relay", "check", "--help"}, {"version", "--help"},
+	}
+	for _, command := range commands {
+		args := append([]string{"--config", missing}, command...)
+		if err := run(args); err != nil {
+			t.Fatalf("aide %q: %v", strings.Join(command, " "), err)
 		}
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
@@ -107,13 +121,44 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 func TestConfigHelpContent(t *testing.T) {
 	for _, section := range []string{"network", "machine", "group", "nut"} {
 		var output bytes.Buffer
-		if err := printConfigHelp(&output, section); err != nil {
+		if err := printCommandHelp(&output, []string{"config", section, "--help"}); err != nil {
 			t.Fatal(err)
 		}
-		for _, expected := range []string{"Actions:", "Paramètres", "Valeurs par défaut:", "Contraintes:", "Exemple:", "Mode interactif:", "Mode non interactif:"} {
+		for _, expected := range []string{"Usage:", "Actions:", "Paramètres:", "Contraintes:"} {
 			if !strings.Contains(output.String(), expected) {
 				t.Fatalf("aide %s incomplète: %q absent", section, expected)
 			}
+		}
+	}
+}
+
+func TestContextualHelpCoversV12Functions(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"config", "group", "--help"}, "seuils bas/haut"},
+		{[]string{"config", "nut", "--help"}, "strictement en lecture"},
+		{[]string{"automation", "status", "--help"}, "wol api serve"},
+		{[]string{"wake", "--help"}, "dépendances"},
+		{[]string{"jobs", "--help"}, "revalidation_required"},
+	} {
+		var output bytes.Buffer
+		if err := printCommandHelp(&output, test.args); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), test.want) {
+			t.Fatalf("aide %q incomplète: %q absent", strings.Join(test.args, " "), test.want)
+		}
+	}
+
+	var output bytes.Buffer
+	for _, topic := range []string{"setup", "network", "machine", "group", "nut", "menu"} {
+		printContextHelp(&output, topic)
+	}
+	for _, expected := range []string{"Rien n'est écrit", "transports WoL", "simulation", "séquentiel", "strictement lu", "réveil réel"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("aide interactive incomplète: %q absent", expected)
 		}
 	}
 }

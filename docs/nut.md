@@ -4,6 +4,12 @@ NUT est facultatif. Sans `ups` ni politique UPS, WoL Manager n'ouvre aucune conn
 
 Dans `sudo wol setup`, choisissez la section NUT, ou ouvrez-la directement avec `sudo wol config nut`. L'assistant propose de tester `127.0.0.1:3493`, exécute `LIST UPS`, permet une sélection multiple et exige une lecture valide de `ups.status` avant enregistrement. Un serveur distant peut être ajouté même si le serveur local fonctionne. L'assistant ne scanne jamais le réseau, n'installe pas NUT, ne modifie pas sa configuration et ne redémarre aucun service NUT.
 
+Utilisez `wol config nut --help` avant l'assistant ou saisissez `?` dans son menu pour afficher ces
+limites de sécurité. L'assistant couvre la détection, l'adresse, le port, STARTTLS et la sélection
+des UPS. Les références avancées `ca_cert`, `username_file` et `password_file` restent configurables
+dans le YAML puis contrôlables avec `wol config check`; les secrets eux-mêmes ne doivent jamais être
+placés directement dans le YAML.
+
 ```sh
 wol ups test
 ```
@@ -25,3 +31,16 @@ Chaque groupe choisit un mode `sequential` ou `parallel`, un ordre, une politiqu
 ```sh
 wol automation status
 ```
+
+La surveillance n'est active que dans le processus permanent `wol api serve`, normalement géré par
+systemd. La commande `wol automation status` ne lance pas la surveillance : elle affiche les cycles,
+politiques, jobs, progressions et raisons d'attente déjà persistés.
+
+Dans le mode `sequential`, chaque machine doit être validée avant de libérer ses dépendants. Dans le
+mode `parallel`, seules les machines indépendantes peuvent progresser en parallèle. Une dépendance
+obligatoire n'est jamais contournée. Les politiques d'échec sont :
+
+- `stop` : arrêter la séquence ;
+- `continue` : continuer uniquement avec les machines indépendantes ;
+- `retry` : retenter de manière bornée avant de poursuivre ;
+- `continue_retry` : continuer les éléments indépendants et retenter en parallèle.

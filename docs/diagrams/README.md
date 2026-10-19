@@ -22,10 +22,11 @@ Les images ci-dessous affichent la première page de chaque cartographie sur Git
 ## Référence analysée
 
 - Branche locale auditée : `dev`.
-- Commit source de départ : `27df0c8` ; les changements V1.2.0 décrits ici sont encore dans l'arbre de travail et n'ont pas été commités.
+- Commit `dev` audité avant les corrections d'aide : `6795b7f`.
 - Version du programme préparée : `1.2.0`, définie dans `cmd/wol/main.go` et `install.sh`.
-- Distribution : `dist/` n'a volontairement pas été reconstruit ; ses artefacts ne représentent pas encore la V1.2.0.
-- Date de l'analyse : 18 octobre 2026.
+- Distribution auditée : manifeste `1.2.0`, canal `dev`, révision source `3881a5bfaad797ce60e4a981982f4b7ce47c1f43`.
+- Les corrections d'aide et de documentation postérieures à ce binaire restent dans l'arbre de travail jusqu'au prochain cycle manuel source puis artefacts.
+- Date de l'analyse : 19 octobre 2026.
 
 La branche n'a pas été changée. Aucune commande Git d'écriture n'a été exécutée.
 

@@ -2,9 +2,17 @@
 
 La méthode recommandée est `sudo wol setup`. L'assistant détecte les interfaces IPv4 et permet de gérer les réseaux, machines, groupes, dépendances et UPS sans ouvrir `/etc/wol-manager/wol.yaml`. Les commandes `sudo wol config network`, `machine`, `group` et `nut` ouvrent directement la section correspondante.
 
+Chaque section accepte `--help` sans charger le YAML. Dans un assistant ouvert, saisissez `?` pour
+afficher une explication du menu courant sans modifier les données préparées.
+
 Avant chaque enregistrement, la configuration complète est validée. Une configuration existante reçoit une sauvegarde datée, puis le nouveau fichier est remplacé atomiquement. Les cibles symboliques sont refusées et, sous Debian avec une installation standard, le fichier final est `root:wol-manager` en mode `0640`. Une suppression référencée est refusée au lieu de provoquer une cascade silencieuse.
 
 Le YAML est lu avec rejet des champs inconnus. `wol config check` vérifie notamment les MAC/IP dupliquées, CIDR, références, priorités de groupe, cycles, TLS, réseaux actifs autorisés et transports.
+
+L'assistant couvre les paramètres usuels. Les réglages avancés de réseau et de machine — relais,
+ordre détaillé des transports, politiques UPS historiques, CA NUT privée et fichiers d'identifiants —
+restent disponibles dans le YAML. Cette limite est annoncée dans `wol config ... --help`; elle ne
+change pas la compatibilité des configurations existantes.
 
 Ordre de surcharge : valeurs internes → `global` → réseau → groupes par `priority` croissante → serveur → option CLI sûre. Une option CLI ne peut pas lever une restriction réseau ou UPS.
 
@@ -67,6 +75,10 @@ groups:
 ```
 
 Le seuil bas réarme un groupe pendant le cycle observé ; le seuil haut autorise ensuite son démarrage. La batterie doit être connue et le secteur `OL` stable. Les politiques d'échec sont `stop`, `continue`, `retry` et `continue_retry`. Les dépendances obligatoires restent prioritaires dans tous les modes.
+
+La surveillance est exécutée par le processus permanent `wol api serve`, normalement lancé par
+systemd. `wol automation status` consulte les cycles et raisons d'attente persistés mais ne démarre
+pas la surveillance.
 
 Les secrets ne figurent pas dans le YAML partagé : les jetons sont dans `api.tokens_file`, les identifiants NUT et clés TLS sont référencés par chemin. Utiliser des fichiers `0600`, détenus par l'utilisateur du service.
 

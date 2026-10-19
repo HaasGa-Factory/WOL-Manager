@@ -154,6 +154,22 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 	}
 }
 
+func TestGuidedSetupContextHelpDoesNotWrite(t *testing.T) {
+	path := filepath.Join(testDir(t), "wol.yaml")
+	var output strings.Builder
+	if err := setupWithIO(path, strings.NewReader("?\n3\n?\n6\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"NUT reste facultatif", "Rien n'est écrit", "Configuration existante conservée"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("aide guidée incomplète: %q absent", expected)
+		}
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("l'aide guidée a écrit la configuration: %v", err)
+	}
+}
+
 func TestGuidedGlobalVerification(t *testing.T) {
 	cfg := testConfig(t)
 	input := bufio.NewReader(strings.NewReader("10s\n3m\n5s\n\n\nany\n"))
