@@ -133,7 +133,14 @@ func run(args []string) error {
 		if len(args) != 1 {
 			return errUsage
 		}
-		return output(*jsonOut, checkServer(context.Background(), c, args[0]), "")
+		result := checkServer(context.Background(), c, args[0])
+		if err := output(*jsonOut, result, ""); err != nil {
+			return err
+		}
+		if _, known := c.Servers[args[0]]; !known {
+			return errors.New("serveur inconnu")
+		}
+		return nil
 	case "wake":
 		return wakeCLI(c, engine, args, *jsonOut)
 	case "network":

@@ -84,15 +84,33 @@ func newID() (string, error) {
 	return hex.EncodeToString(b[:4]) + "-" + hex.EncodeToString(b[4:6]) + "-" + hex.EncodeToString(b[6:8]) + "-" + hex.EncodeToString(b[8:10]) + "-" + hex.EncodeToString(b[10:]), nil
 }
 func (s *JobStore) saveLocked() error {
-	if e := os.MkdirAll(filepath.Dir(s.path), 0750); e != nil {
+	dir := filepath.Dir(s.path)
+	if e := os.MkdirAll(dir, 0750); e != nil {
+		return e
+	}
+	if e := secureStateDir(dir); e != nil {
 		return e
 	}
 	b, e := json.MarshalIndent(jobFile{Jobs: s.jobs, Cycles: s.cycles}, "", "  ")
 	if e != nil {
 		return e
 	}
-	tmp := s.path + ".tmp"
-	if e = os.WriteFile(tmp, b, 0640); e != nil {
+	f, e := os.CreateTemp(dir, ".state-*.tmp")
+	if e != nil {
+		return e
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if e = f.Chmod(0640); e == nil {
+		_, e = f.Write(b)
+	}
+	if closeErr := f.Close(); e == nil {
+		e = closeErr
+	}
+	if e != nil {
+		return e
+	}
+	if e = secureStateFile(tmp); e != nil {
 		return e
 	}
 	if e = os.Rename(tmp, s.path); e == nil {
@@ -182,6 +200,9 @@ func (s *JobStore) update(id, state, msg string, result any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if j := s.jobs[id]; j != nil {
+		if terminalJobState(j.State) {
+			return
+		}
 		j.State = state
 		j.Message = msg
 		j.Result = result
@@ -235,28 +256,52 @@ func (s *JobStore) activeJob(kind, target string) bool {
 }
 func (s *JobStore) cancelJob(id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	j := s.jobs[id]
 	if j == nil {
+		s.mu.Unlock()
 		return fmt.Errorf("tâche inconnue")
 	}
 	f := s.cancel[id]
 	if f == nil {
+		s.mu.Unlock()
 		return fmt.Errorf("tâche non annulable dans l'état %s", j.State)
 	}
+	previous := *j
+	j.State = "cancelled"
+	j.Message = "annulation demandée"
+	j.Updated = time.Now().UTC()
+	delete(s.cancel, id)
+	if e := s.saveLocked(); e != nil {
+		*j = previous
+		s.cancel[id] = f
+		s.mu.Unlock()
+		return e
+	}
+	s.mu.Unlock()
 	f()
 	return nil
 }
 
 func (s *JobStore) cancelMatching(kind, target string) {
+	var ids []string
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for id, job := range s.jobs {
-		if job.Kind == kind && job.Target == target {
-			if cancel := s.cancel[id]; cancel != nil {
-				cancel()
-			}
+		if job.Kind == kind && job.Target == target && s.cancel[id] != nil {
+			ids = append(ids, id)
 		}
+	}
+	s.mu.Unlock()
+	for _, id := range ids {
+		_ = s.cancelJob(id)
+	}
+}
+
+func terminalJobState(state string) bool {
+	switch state {
+	case "completed", "failed", "cancelled":
+		return true
+	default:
+		return false
 	}
 }
 

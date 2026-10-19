@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -303,6 +304,151 @@ func TestJobPersistenceCancellationAndRestart(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("tâche non reprise: %s", x.State)
+}
+
+func TestCancellationIsTerminalWhenWorkerReturnsSuccess(t *testing.T) {
+	path := filepath.Join(testDir(t), "state.json")
+	store, err := openJobs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	job, err := store.create("network_discovery", "true", func(ctx context.Context) (any, error) {
+		close(started)
+		<-ctx.Done()
+		return map[string]string{"late": "result"}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := store.cancelJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.cancelJob(job.ID); err == nil {
+		t.Fatal("double annulation acceptée")
+	}
+	time.Sleep(20 * time.Millisecond)
+	current, _ := store.get(job.ID)
+	if current.State != "cancelled" {
+		t.Fatalf("résultat tardif ayant remplacé l'annulation: %#v", current)
+	}
+	reloaded, err := openJobs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, _ := reloaded.get(job.ID)
+	if persisted.State != "cancelled" {
+		t.Fatalf("annulation non persistée: %#v", persisted)
+	}
+}
+
+func TestNaturalCompletionWinsBeforeCancellation(t *testing.T) {
+	store, err := openJobs(filepath.Join(testDir(t), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.create("test", "fast", func(context.Context) (any, error) { return "done", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		current, _ := store.get(job.ID)
+		if current.State == "completed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job non terminé: %#v", current)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := store.cancelJob(job.ID); err == nil {
+		t.Fatal("annulation d'un job terminé acceptée")
+	}
+	store.update(job.ID, "failed", "résultat tardif", nil)
+	current, _ := store.get(job.ID)
+	if current.State != "completed" {
+		t.Fatalf("état terminal remplacé: %#v", current)
+	}
+}
+
+func TestCompletionCancellationRaceHasOneTerminalWinner(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		store, err := openJobs(filepath.Join(testDir(t), "state.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		started := make(chan struct{})
+		release := make(chan struct{})
+		job, err := store.create("race", fmt.Sprint(i), func(context.Context) (any, error) {
+			close(started)
+			<-release
+			return "done", nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-started
+		cancelled := make(chan error, 1)
+		go func() { cancelled <- store.cancelJob(job.ID) }()
+		close(release)
+		cancelErr := <-cancelled
+		deadline := time.Now().Add(time.Second)
+		for {
+			current, _ := store.get(job.ID)
+			if terminalJobState(current.State) {
+				if cancelErr == nil && current.State != "cancelled" {
+					t.Fatalf("annulation acceptée puis remplacée par %s", current.State)
+				}
+				if cancelErr != nil && current.State != "completed" {
+					t.Fatalf("fin naturelle gagnante dans l'état %s: %v", current.State, cancelErr)
+				}
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("course sans état terminal: %#v", current)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+}
+
+func TestAPICancellationOfActiveDiscoveryIsTerminal(t *testing.T) {
+	cfg := testConfig(t)
+	store, err := openJobs(cfg.Storage.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	job, err := store.create("network_discovery", "true", func(ctx context.Context) (any, error) {
+		close(started)
+		<-ctx.Done()
+		return map[string]string{"status": "context canceled"}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	srv := &APIServer{cfg: cfg, jobs: store, rates: map[string]rateEntry{}}
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/"+job.ID+"/cancel", nil)
+	r = r.WithContext(context.WithValue(r.Context(), principalKey, principal{ID: "admin", permissions: map[string]bool{"admin": true}}))
+	w := httptest.NewRecorder()
+	srv.job(w, r)
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), "cancellation_requested") {
+		t.Fatalf("annulation API: %d %s", w.Code, w.Body.String())
+	}
+	time.Sleep(20 * time.Millisecond)
+	current, _ := store.get(job.ID)
+	if current.State != "cancelled" {
+		t.Fatalf("découverte annulée terminée dans l'état %s", current.State)
+	}
+
+	w = httptest.NewRecorder()
+	srv.job(w, r)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("double annulation API: %d %s", w.Code, w.Body.String())
+	}
 }
 
 func TestActiveDiscoveryIsNeverResumed(t *testing.T) {

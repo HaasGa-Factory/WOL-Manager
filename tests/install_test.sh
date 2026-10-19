@@ -4,6 +4,8 @@ set -Eeuo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf -- "$WORK"' EXIT
+export WOL_TEST_CHOWN_LOG="$WORK/chown.log"
+: >"$WOL_TEST_CHOWN_LOG"
 PRIVATE_KEY="$WORK/release-private.pem"
 PUBLIC_KEY="$WORK/release-public.pem"
 PUBLICATION_COMMIT=1111111111111111111111111111111111111111
@@ -368,6 +370,8 @@ mkdir -p "$ROOT12/etc/wol-manager/secrets" "$ROOT12/var/lib/wol-manager" "$ROOT1
 cp "$REPO/configs/wol.example.yaml" "$ROOT12/etc/wol-manager/wol.yaml"
 echo secret >"$ROOT12/etc/wol-manager/secrets/token"
 echo state >"$ROOT12/var/lib/wol-manager/state.keep"
+printf '{"jobs":{"upgrade-job":{"id":"upgrade-job","kind":"test","target":"preserve","state":"completed","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}}}\n' >"$ROOT12/var/lib/wol-manager/state.json"
+chmod 0600 "$ROOT12/var/lib/wol-manager/state.json"
 echo log >"$ROOT12/var/log/wol-manager/audit.keep"
 run_update "$ROOT12" main --yes --non-interactive
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "mise à jour main absente"
@@ -375,6 +379,13 @@ cmp -s "$REMOTE/main/install.sh" "$ROOT12/usr/local/lib/wol-manager/install.sh" 
 assert_file "$ROOT12/etc/wol-manager/secrets/token"
 assert_file "$ROOT12/var/lib/wol-manager/state.keep"
 assert_file "$ROOT12/var/log/wol-manager/audit.keep"
+assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"upgrade-job"'
+assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"target":"preserve"'
+[[ $(stat -c %a "$ROOT12/var/lib/wol-manager") = 750 ]] || fail "mode incorrect pour le répertoire d'état"
+[[ $(stat -c %a "$ROOT12/var/lib/wol-manager/state.json") = 640 ]] || fail "mode incorrect pour state.json"
+assert_contains "$WOL_TEST_CHOWN_LOG" "wol-manager:wol-manager $ROOT12/var/lib/wol-manager/state.json"
+[[ -r "$ROOT12/var/lib/wol-manager/state.json" && -w "$ROOT12/var/lib/wol-manager/state.json" ]] || fail "state.json n'est pas lisible et inscriptible par son propriétaire simulé"
+[[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "les permissions strictes des secrets ont changé"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
 echo "[10/16] absence de mise à jour"
@@ -430,6 +441,46 @@ if run_update_from "$REMOTE_UNKNOWN" "$ROOT12" main --check --non-interactive >"
   fail "un format de manifeste inconnu a été accepté"
 fi
 assert_contains "$WORK/unknown-format.log" "Format de manifeste non pris en charge"
+
+echo "[comparaison versions] protection contre les rétrogradations dev vers main"
+PAYLOAD_DEV="$WORK/payload-dev"
+prepare_payload "$PAYLOAD_DEV" 1.2.0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee dev
+ROOT_VERSION="$WORK/root-version"
+prepare_root "$ROOT_VERSION" 13
+run_installer "$PAYLOAD_DEV" "$ROOT_VERSION" amd64 --channel dev --non-interactive --yes --service cli
+
+REMOTE_VERSIONS="$WORK/remote-versions"
+mkdir -p "$REMOTE_VERSIONS/main" "$REMOTE_VERSIONS/dev"
+make_distribution "$REMOTE_VERSIONS/main" 1.1.1 ffffffffffffffffffffffffffffffffffffffff main
+make_distribution "$REMOTE_VERSIONS/dev" 1.2.0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee dev
+cp -a "$ROOT_VERSION" "$WORK/root-version-before"
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-old-main-check.log"
+assert_contains "$WORK/dev-to-old-main-check.log" 'Version dev installée : 1.2.0. Le canal main propose une version plus ancienne : 1.1.1.'
+assert_not_contains "$WORK/dev-to-old-main-check.log" "Mise à jour disponible"
+diff -r "$WORK/root-version-before" "$ROOT_VERSION" >/dev/null || fail "--check vers un ancien main a modifié l'installation"
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --yes --non-interactive >"$WORK/dev-to-old-main-update.log"
+assert_contains "$WORK/dev-to-old-main-update.log" "Aucun changement n'a été effectué."
+[[ $("$ROOT_VERSION/usr/local/bin/wol" version) = 1.2.0 ]] || fail "la tentative de rétrogradation a remplacé le binaire"
+[[ $("$ROOT_VERSION/usr/local/bin/wol" version --channel) = dev ]] || fail "la tentative de rétrogradation a changé le canal installé"
+
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" dev --channel dev --check --non-interactive >"$WORK/dev-same.log"
+assert_contains "$WORK/dev-same.log" "WoL Manager est à jour"
+make_distribution "$REMOTE_VERSIONS/dev" 1.2.1 1212121212121212121212121212121212121212 dev
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" dev --channel dev --check --non-interactive >"$WORK/dev-newer.log"
+assert_contains "$WORK/dev-newer.log" "Mise à jour disponible"
+
+make_distribution "$REMOTE_VERSIONS/main" 1.2.0 2020202020202020202020202020202020202020 main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-same-main.log"
+assert_contains "$WORK/dev-to-same-main.log" "Mise à jour disponible: même version"
+make_distribution "$REMOTE_VERSIONS/main" 1.3.0 3030303030303030303030303030303030303030 main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-new-main.log"
+assert_contains "$WORK/dev-to-new-main.log" "Mise à jour disponible"
+
+make_binary "$ROOT_VERSION/usr/local/bin/wol" 1.2.0 4040404040404040404040404040404040404040 unknown
+make_distribution "$REMOTE_VERSIONS/main" 1.1.1 ffffffffffffffffffffffffffffffffffffffff main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/unknown-channel-old-main.log"
+assert_contains "$WORK/unknown-channel-old-main.log" "La version proposée (1.1.1) est plus ancienne"
+assert_not_contains "$WORK/unknown-channel-old-main.log" "Mise à jour disponible"
 
 echo "[12/16] manifeste altéré refusé"
 cp -R "$REMOTE/main" "$WORK/tampered"
