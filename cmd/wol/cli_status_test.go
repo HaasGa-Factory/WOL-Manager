@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -33,7 +35,7 @@ func TestStatusCLIProcess(t *testing.T) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "ERREUR: %v\n", err)
-	if err == errUsage {
+	if errors.Is(err, errUsage) {
 		os.Exit(2)
 	}
 	os.Exit(1)
@@ -126,5 +128,75 @@ func TestUnknownServerAPIStillReturns404(t *testing.T) {
 	srv.server(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("API machine inconnue: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWakeSelectorsAreStrictlyMutuallyExclusive(t *testing.T) {
+	config := writeStatusConfig(t, 9)
+	cases := [][]string{
+		{"wake", "one", "--group", "core", "--dry-run"},
+		{"wake", "one", "--all", "--dry-run"},
+		{"wake", "--group", "core", "--all", "--dry-run"},
+		{"wake", "one", "two", "--dry-run"},
+	}
+	for _, args := range cases {
+		full := append([]string{"--config", config}, args...)
+		stdout, stderr, code := runStatusProcess(t, full...)
+		if code != 2 || stdout != "" || !strings.Contains(stderr, "mutuellement exclusifs") {
+			t.Fatalf("sélecteurs %v: code=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+	}
+}
+
+func TestNetworkTestReturnsFailureForUnknownOrPartialSelection(t *testing.T) {
+	config := writeStatusConfig(t, 9)
+	for _, ids := range [][]string{{"does-not-exist"}, {"one", "does-not-exist"}} {
+		args := []string{"--config", config, "--json", "network", "test"}
+		args = append(args, ids...)
+		stdout, stderr, code := runStatusProcess(t, args...)
+		if code != 1 || !strings.Contains(stderr, "plans réseau") {
+			t.Fatalf("sélection %v: code=%d stdout=%q stderr=%q", ids, code, stdout, stderr)
+		}
+		var result map[string]struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("JSON invalide: %v (%q)", err, stdout)
+		}
+		if result["does-not-exist"].Error == "" {
+			t.Fatalf("erreur inconnue absente: %#v", result)
+		}
+	}
+}
+
+func TestRelayErrorsExplainTheNextStep(t *testing.T) {
+	config := writeStatusConfig(t, 9)
+	_, stderr, code := runStatusProcess(t, "--config", config, "relay", "serve")
+	if code != 2 || !strings.Contains(stderr, "wol relay serve --id") || !strings.Contains(stderr, "--help") {
+		t.Fatalf("usage relais incomplète: code=%d stderr=%q", code, stderr)
+	}
+	_, stderr, code = runStatusProcess(t, "--config", config, "relay", "check", "missing")
+	if code != 1 || !strings.Contains(stderr, "déclarez-le") || !strings.Contains(stderr, "wol relay --help") {
+		t.Fatalf("relais inconnu sans aide: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestConfigEditReportsNoModification(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("éditeur exécutable testé sous Linux")
+	}
+	config := writeStatusConfig(t, 9)
+	editor := filepath.Join(testDir(t), "no-change-editor")
+	if err := os.WriteFile(editor, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	oldEditor := os.Getenv("EDITOR")
+	if err := os.Setenv("EDITOR", editor); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("EDITOR", oldEditor) })
+	stdout, stderr, code := runStatusProcess(t, "--config", config, "config", "edit")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "Aucune modification enregistrée") {
+		t.Fatalf("édition inchangée: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }

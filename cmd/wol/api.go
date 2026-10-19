@@ -47,6 +47,7 @@ type APIServer struct {
 	jobs        *JobStore
 	engine      *Engine
 	tokens      []TokenRecord
+	tokenPath   string
 	mu          sync.Mutex
 	rates       map[string]rateEntry
 	automations *AutomationManager
@@ -81,7 +82,15 @@ func (s *APIServer) authenticate(r *http.Request) (principal, bool) {
 		return principal{}, false
 	}
 	sum := sha256.Sum256([]byte(strings.TrimPrefix(h, "Bearer ")))
-	for _, t := range s.tokens {
+	tokens := s.tokens
+	if s.tokenPath != "" {
+		var err error
+		tokens, err = loadTokens(s.tokenPath)
+		if err != nil {
+			return principal{}, false
+		}
+	}
+	for _, t := range tokens {
 		expected, _ := hex.DecodeString(t.Hash)
 		if !t.Disabled && subtle.ConstantTimeCompare(sum[:], expected) == 1 {
 			p := principal{ID: t.ID, permissions: map[string]bool{}}
@@ -470,7 +479,7 @@ func serveAPI(c *Config, j *JobStore, e *Engine) error {
 		return fmt.Errorf("revalidation des tâches interrompues: %w", err)
 	}
 	manager := newAutomationManager(c, j, e)
-	s := &APIServer{cfg: c, jobs: j, engine: e, tokens: tokens, rates: map[string]rateEntry{}, automations: manager}
+	s := &APIServer{cfg: c, jobs: j, engine: e, tokens: tokens, tokenPath: c.API.TokensFile, rates: map[string]rateEntry{}, automations: manager}
 	resumeJobs(j, e, manager)
 	go manager.monitor(context.Background())
 	srv := http.Server{Addr: c.API.Listen, Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}

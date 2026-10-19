@@ -53,6 +53,11 @@ wol relay serve --help
 Dans `wol setup`, `wol config network|machine|group|nut|discovery` et `wol menu`, saisir `?` affiche
 l'aide du menu ou du champ courant, puis réaffiche exactement la même question sans modifier sa valeur.
 
+Après l'installation, l'utilisateur indiqué par `SUDO_USER` rejoint le groupe `wol-manager`. Une
+reconnexion ou `newgrp wol-manager` rend alors disponibles sans `sudo` les commandes de lecture
+(`list`, `status`, `config check`, `network test`) et les simulations. Les modifications de la
+configuration, des jetons et du service restent des opérations administratives avec `sudo`.
+
 ## Options importantes
 
 | Commande | Options |
@@ -65,7 +70,16 @@ l'aide du menu ou du champ courant, puis réaffiche exactement la même question
 | `wol version` | `--channel`, `--source-revision` ou `--commit` |
 
 `wol network test` accepte zéro, un ou plusieurs identifiants. Sans identifiant, il explique le
-plan de transport de toutes les machines. Il n'envoie aucun paquet.
+plan de transport de toutes les machines. Il n'envoie aucun paquet. Si au moins un identifiant demandé
+est inconnu ou qu'aucun plan ne peut être produit, la sortie JSON reste complète mais le code final
+vaut `1`; un succès partiel n'est donc jamais présenté comme un succès global.
+
+Pour `wol wake`, `MACHINE`, `--group` et `--all` sont mutuellement exclusifs. Toute combinaison
+contradictoire retourne `2` avant de calculer un plan, y compris avec `--dry-run`.
+
+Dans `wol menu`, les consultations humaines utilisent des libellés français et des durées lisibles
+(`30s`, `1h36m`). Le JSON brut est réservé à `--json`. La simulation affiche la même liste numérotée
+que le réveil réel, accepte un numéro ou un identifiant, explique `?` et annule sur une entrée vide.
 
 `wol jobs` et `wol automation status` produisent toujours du JSON afin de conserver les états et
 raisons d'attente sans perte d'information. Les états de tâche sont `queued`, `running`,

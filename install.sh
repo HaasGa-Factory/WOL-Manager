@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-VERSION="1.2.1"
+APP_VERSION="1.2.1"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -18,6 +18,7 @@ RUN_SETUP=0
 NON_INTERACTIVE=0
 ASSUME_YES=0
 ALLOW_DOWNGRADE=0
+VERBOSE=0
 REPOSITORY_OVERRIDE=${WOL_GITHUB_REPOSITORY:-}
 REPOSITORY=${REPOSITORY_OVERRIDE:-HaasGa-Factory/WOL-Manager}
 GITHUB_API=${WOL_GITHUB_API:-https://api.github.com}
@@ -50,7 +51,7 @@ LOG_DIR=$(path /var/log/wol-manager)
 
 usage() {
   cat <<EOF
-WoL Manager installateur $VERSION
+WoL Manager installateur $APP_VERSION
 Usage: sudo ./install.sh [OPTIONS]
 
 Canaux:
@@ -68,6 +69,7 @@ Options:
   --yes                   accepter les confirmations prévues
   --non-interactive       ne poser aucune question
   --allow-downgrade       autoriser explicitement une version plus ancienne (confirmation requise)
+  --verbose               afficher notamment la liste détaillée des mises à jour Debian
   --check                 vérifier sans installer
   --version               afficher la version de l'installateur
   --uninstall             désinstaller le programme (les données restent protégées)
@@ -90,6 +92,7 @@ while [ "$#" -gt 0 ]; do
     --non-interactive) NON_INTERACTIVE=1 ;;
     --yes) ASSUME_YES=1 ;;
     --allow-downgrade) ALLOW_DOWNGRADE=1 ;;
+    --verbose) VERBOSE=1 ;;
     --version) ACTION=version ;;
     --uninstall) ACTION=uninstall ;;
     -h|--help) usage; exit 0 ;;
@@ -149,13 +152,27 @@ confirm() {
   [ "$ASSUME_YES" -eq 1 ] && return 0
   [ "$NON_INTERACTIVE" -eq 0 ] || return 1
   prompt="$1 [y/N]"
-  if color_enabled 1; then
-    printf '\033[1;36m%s\033[0m ' "$prompt" >/dev/tty
-  else
-    printf '%s ' "$prompt" >/dev/tty
-  fi
-  read answer </dev/tty || return 1
-  case "$answer" in y|Y|yes|YES|oui|OUI|o|O) return 0 ;; *) return 1 ;; esac
+  while :; do
+    if color_enabled 1; then
+      printf '\033[1;36m%s\033[0m ' "$prompt" >/dev/tty
+    else
+      printf '%s ' "$prompt" >/dev/tty
+    fi
+    read answer </dev/tty || return 1
+    case "$answer" in
+      y|Y|yes|YES|oui|OUI|o|O) return 0 ;;
+      ''|n|N|no|NO|non|NON) return 1 ;;
+      '?')
+        case "$1" in
+          *setup*) info "Aide: wol setup crée ou modifie la configuration guidée. Répondez oui pour le lancer maintenant, non pour le faire plus tard avec sudo wol setup." ;;
+          *mise\ à\ jour*) info "Aide: confirmez seulement après avoir vérifié la version, le canal et la révision affichés." ;;
+          *APT*) info "Aide: seuls les paquets d'exécution listés seront installés; aucune mise à niveau générale de Debian ne sera lancée." ;;
+          *) info "Aide: répondez y/o pour oui, n pour non, ou appuyez sur Entrée pour conserver le choix par défaut non." ;;
+        esac
+        ;;
+      *) warn "Réponse invalide: saisissez y/o, n, ? ou appuyez sur Entrée." ;;
+    esac
+  done
 }
 cleanup() {
   status=$?
@@ -217,6 +234,7 @@ detect_dependencies() {
   command -v ping >/dev/null 2>&1 || add_missing iputils-ping "contrôles ICMP configurés"
   command -v getent >/dev/null 2>&1 || add_missing libc-bin "résolution et compte système"
   command -v useradd >/dev/null 2>&1 || add_missing passwd "création du compte système"
+  command -v usermod >/dev/null 2>&1 || add_missing passwd "accès de l'utilisateur aux commandes WoL Manager"
   command -v sha256sum >/dev/null 2>&1 || add_missing coreutils "contrôle SHA-256"
   command -v openssl >/dev/null 2>&1 || add_missing openssl "signature Ed25519 du manifeste"
   [ -r "$(path /etc/ssl/certs/ca-certificates.crt)" ] || add_missing ca-certificates "validation HTTPS"
@@ -248,7 +266,14 @@ check_debian_updates() {
   updates=$(apt list --upgradable 2>/dev/null | sed '1d' || true)
   count=$(printf '%s\n' "$updates" | sed '/^$/d' | wc -l | tr -d ' ')
   log "Mises à jour Debian disponibles (cache APT actuel): $count"
-  [ "$count" -eq 0 ] || printf '%s\n' "$updates" | sed -n '1,30p' | tee -a "$LOG_FILE"
+  if [ "$count" -ne 0 ]; then
+    if [ "$VERBOSE" -eq 1 ]; then
+      printf '%s\n' "$updates" | tee -a "$LOG_FILE"
+    else
+      printf '%s\n' "$updates" >>"$LOG_FILE"
+      info "Utilisez --verbose pour afficher la liste détaillée."
+    fi
+  fi
   log "Aucune mise à jour Debian n'a été installée"
 }
 
@@ -325,8 +350,8 @@ verify_candidate() {
   [ "$CANDIDATE_REVISION" = "$SOURCE_REVISION" ] || die "Révision du binaire différente du manifeste"
   [ "$CANDIDATE_CHANNEL" = "$CHANNEL" ] || die "Canal du binaire différent du canal demandé"
   success "Binaire vérifié: $CANDIDATE_VERSION, source $CANDIDATE_REVISION, linux/$ARCH"
-  if [ "${PUBLICATION_COMMIT:-}" = local ] && [ "$CANDIDATE_VERSION" != "$VERSION" ]; then
-    warn "Le dossier local contient WoL Manager $CANDIDATE_VERSION ($CHANNEL), mais son installateur annonce $VERSION. Vérifiez que le dossier téléchargé est complet et actuel."
+  if [ "${PUBLICATION_COMMIT:-}" = local ] && [ "$CANDIDATE_VERSION" != "$APP_VERSION" ]; then
+    warn "Le dossier local contient WoL Manager $CANDIDATE_VERSION ($CHANNEL), mais son installateur annonce $APP_VERSION. Vérifiez que le dossier téléchargé est complet et actuel."
   fi
 }
 resolve_publication() {
@@ -415,10 +440,45 @@ choose_service_mode() {
   fi
   if [ "$SYSTEMD" = no ]; then SERVICE_MODE=cli; warn "systemd absent: installation CLI uniquement"; return; fi
   if [ "$NON_INTERACTIVE" -eq 1 ]; then SERVICE_MODE=install; return; fi
-  printf 'Service systemd: 1 activer, 2 installer sans activer, 3 CLI seule [2]: ' >/dev/tty
-  read choice </dev/tty || choice=2
-  case "$choice" in 1) SERVICE_MODE=enable ;; 3) SERVICE_MODE=cli ;; *) SERVICE_MODE=install ;; esac
+  while :; do
+    printf 'Service systemd: 1 activer, 2 installer sans activer, 3 CLI seule [2]: ' >/dev/tty
+    read choice </dev/tty || choice=
+    case "$choice" in
+      1) SERVICE_MODE=enable; return ;;
+      ''|2) SERVICE_MODE=install; return ;;
+      3) SERVICE_MODE=cli; return ;;
+      '?') info "Aide: 1 installe et démarre le service après la configuration et le premier jeton; 2 installe l'unité sans la démarrer; 3 installe seulement la commande wol." ;;
+      *) warn "Choix invalide: saisissez 1, 2, 3, ? ou appuyez sur Entrée pour 2." ;;
+    esac
+  done
 }
+
+grant_client_access() {
+  client_user=${SUDO_USER:-}
+  [ -n "$client_user" ] || return 0
+  [ "$client_user" != root ] || return 0
+  case "$client_user" in *[!A-Za-z0-9._-]*) warn "Utilisateur SUDO_USER invalide; accès de groupe non modifié"; return 0 ;; esac
+  added=0
+  if [ "$TEST_MODE" = 1 ]; then
+    if [ -n "${WOL_TEST_GROUP_LOG:-}" ] && ! grep -Fxq "$client_user" "$WOL_TEST_GROUP_LOG" 2>/dev/null; then
+      printf '%s\n' "$client_user" >>"$WOL_TEST_GROUP_LOG"
+      added=1
+    fi
+  else
+    id "$client_user" >/dev/null 2>&1 || { warn "Utilisateur $client_user introuvable; accès de groupe non modifié"; return 0; }
+    if ! id -nG "$client_user" | tr ' ' '\n' | grep -Fxq wol-manager; then
+      usermod -a -G wol-manager "$client_user"
+      added=1
+    fi
+  fi
+  if [ "$added" -eq 1 ]; then
+    info "Utilisateur $client_user ajouté au groupe wol-manager pour lire la configuration sans sudo."
+    warn "Pour appliquer ce nouveau groupe, reconnectez-vous ou exécutez: newgrp wol-manager"
+  else
+    info "Utilisateur $client_user déjà membre du groupe wol-manager."
+  fi
+}
+
 create_account_and_dirs() {
   if [ "$TEST_MODE" != 1 ]; then
     getent group wol-manager >/dev/null 2>&1 || groupadd --system wol-manager
@@ -433,6 +493,7 @@ create_account_and_dirs() {
   elif [ -n "${WOL_TEST_CHOWN_LOG:-}" ]; then
     printf '%s\n' "wol-manager:wol-manager $STATE_DIR" >>"$WOL_TEST_CHOWN_LOG"
   fi
+  grant_client_access
   [ ! -L "$STATE_DIR/state.json" ] || die "Le fichier d'état ne doit pas être un lien symbolique: $STATE_DIR/state.json"
   [ ! -e "$STATE_DIR/state.json" ] || [ -f "$STATE_DIR/state.json" ] || die "Le chemin d'état n'est pas un fichier régulier: $STATE_DIR/state.json"
   if [ -f "$STATE_DIR/state.json" ]; then
@@ -568,7 +629,7 @@ uninstall() {
   log "Programme et service supprimés; configuration, secrets, données, journaux et sauvegardes conservés"
 }
 
-if [ "$ACTION" = version ]; then log "Installateur $VERSION; version installée: $(installed_version)"; exit 0; fi
+if [ "$ACTION" = version ]; then log "Installateur $APP_VERSION; version installée: $(installed_version)"; exit 0; fi
 detect_system
 check_legacy_completion
 [ "$CHANNEL" != dev ] || warn "CANAL DEV/BETA: ce choix n'est jamais enregistré comme canal par défaut"

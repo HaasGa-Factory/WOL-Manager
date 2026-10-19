@@ -22,7 +22,7 @@ openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY"
 
 MOCK_BIN="$WORK/mock-bin"
 mkdir -p "$MOCK_BIN"
-for command in ip ping getent useradd groupadd dpkg-query; do
+for command in ip ping getent useradd usermod groupadd dpkg-query; do
   cat >"$MOCK_BIN/$command" <<'EOF'
 #!/bin/sh
 exit 0
@@ -31,7 +31,15 @@ EOF
 done
 cat >"$MOCK_BIN/apt" <<'EOF'
 #!/bin/sh
-if [ "${1:-}" = list ]; then echo 'Listing...'; fi
+if [ "${1:-}" = list ]; then
+  echo 'Listing...'
+  count=${WOL_TEST_APT_COUNT:-0}
+  i=1
+  while [ "$i" -le "$count" ]; do
+    printf 'package-%03d/stable 1.0 amd64 [upgradable from: 0.9]\n' "$i"
+    i=$((i + 1))
+  done
+fi
 EOF
 cat >"$MOCK_BIN/apt-get" <<'EOF'
 #!/bin/sh
@@ -267,8 +275,32 @@ assert_contains "$WORK/reinstall.log" "utilisez sudo wol update"
 echo "[4/16] Debian 13 ARM64"
 ROOT13="$WORK/root13"
 prepare_root "$ROOT13" 13
-run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli
+run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
+assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.2.1"
+
+echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
+ROOT_APT="$WORK/root-apt"
+prepare_root "$ROOT_APT" 13
+WOL_TEST_APT_COUNT=206 run_installer "$PAYLOAD" "$ROOT_APT" amd64 --non-interactive --yes --service cli >"$WORK/apt-summary.log" 2>&1
+assert_contains "$WORK/apt-summary.log" "Mises à jour Debian disponibles (cache APT actuel): 206"
+assert_contains "$WORK/apt-summary.log" "Aucune mise à jour Debian n'a été installée"
+assert_not_contains "$WORK/apt-summary.log" "package-001/stable"
+APT_INSTALL_LOG=$(find "$ROOT_APT/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+assert_contains "$APT_INSTALL_LOG" "package-001/stable"
+
+echo "[permissions] ajout idempotent de SUDO_USER au groupe client"
+ROOT_GROUP="$WORK/root-group"
+prepare_root "$ROOT_GROUP" 13
+GROUP_LOG="$WORK/group-members.log"
+: >"$GROUP_LOG"
+SUDO_USER=alice WOL_TEST_GROUP_LOG="$GROUP_LOG" run_installer "$PAYLOAD" "$ROOT_GROUP" amd64 --non-interactive --yes --service cli --setup >"$WORK/group-install.log" 2>&1
+[[ $(grep -Fxc alice "$GROUP_LOG") = 1 ]] || fail "SUDO_USER n'a pas été ajouté exactement une fois"
+assert_contains "$WORK/group-install.log" "reconnectez-vous ou exécutez: newgrp wol-manager"
+[[ $(stat -c %a "$ROOT_GROUP/etc/wol-manager") = 750 ]] || fail "répertoire de configuration trop permissif"
+[[ $(stat -c %a "$ROOT_GROUP/etc/wol-manager/wol.yaml") = 640 ]] || fail "configuration lisible par les autres utilisateurs"
+[[ $(stat -c %a "$ROOT_GROUP/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "secrets élargis par l'ajout au groupe"
 
 echo "[5/16] dépendance manquante avec consentement"
 ROOT_DEP="$WORK/root-dep"
@@ -344,6 +376,10 @@ run_update_from() {
   WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$MOCK_BIN:$PATH" \
   "$root/usr/local/lib/wol-manager/install.sh" --update "$@"
 }
+
+SUDO_USER=alice WOL_TEST_GROUP_LOG="$GROUP_LOG" run_update "$ROOT_GROUP" main --yes --non-interactive >"$WORK/group-update.log" 2>&1
+[[ $(grep -Fxc alice "$GROUP_LOG") = 1 ]] || fail "la mise à jour a dupliqué l'appartenance au groupe"
+assert_contains "$WORK/group-update.log" "déjà membre du groupe wol-manager"
 
 echo "[6/16] vérification de mise à jour sans curl et sans installation APT"
 : >"$WORK/apt.log"
@@ -596,9 +632,43 @@ APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_REMOTE/system
   PATH="$MOCK_BIN:$PATH" "$ROOT_REMOTE/usr/local/lib/wol-manager/install.sh" --uninstall --non-interactive
 [[ ! -e "$ROOT_REMOTE/etc/bash_completion.d/wol-manager" ]] || fail "la complétion WoL Manager n'a pas été supprimée"
 assert_contains "$ROOT_REMOTE/usr/share/bash-completion/completions/wol" "fichier Debian mis à jour"
+assert_file "$ROOT_REMOTE/etc/wol-manager/secrets/tokens.json"
+run_installer "$PAYLOAD" "$ROOT_REMOTE" amd64 --non-interactive --yes --service cli >"$WORK/reinstall-after-uninstall.log" 2>&1
+assert_file "$ROOT_REMOTE/usr/local/bin/wol"
+assert_file "$ROOT_REMOTE/etc/wol-manager/secrets/tokens.json"
+
+echo "[permissions réelles] lecture membre, refus non-membre et écriture refusée"
+if [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
+  PERM_DIR=$(mktemp -d /tmp/wol-permission.XXXXXX)
+  chmod 0755 "$PERM_DIR"
+  install -d -o 0 -g 65534 -m 0750 "$PERM_DIR"
+  printf 'version: 1\n' >"$PERM_DIR/wol.yaml"
+  chown 0:65534 "$PERM_DIR/wol.yaml"
+  chmod 0640 "$PERM_DIR/wol.yaml"
+  setpriv --reuid=65534 --regid=65534 --clear-groups cat "$PERM_DIR/wol.yaml" >/dev/null || fail "un membre du groupe ne peut pas lire la configuration"
+  if setpriv --reuid=65533 --regid=65533 --clear-groups cat "$PERM_DIR/wol.yaml" >/dev/null 2>&1; then
+    fail "un non-membre peut lire la configuration"
+  fi
+  if setpriv --reuid=65534 --regid=65534 --clear-groups sh -c 'echo unsafe >>"$1"' _ "$PERM_DIR/wol.yaml" 2>/dev/null; then
+    fail "un membre non-root peut modifier la configuration"
+  fi
+  rm -rf -- "$PERM_DIR"
+fi
 
 echo "[présentation] couleurs TTY, redirection, NO_COLOR et journaux"
 command -v script >/dev/null 2>&1 || fail "commande script requise pour tester la sortie TTY"
+echo "[interaction] ? affiche l'aide et repose exactement la même question"
+ROOT_PROMPT="$WORK/root-prompt"
+prepare_root "$ROOT_PROMPT" 13
+PROMPT_COMMAND="env APT_LOG='$WORK/apt.log' GO_LOG='$WORK/go.log' SYSTEMD_STATE='$ROOT_PROMPT/systemd-state' WOL_ROOT='$ROOT_PROMPT' WOL_OS_RELEASE='$ROOT_PROMPT/os-release' WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux PATH='$MOCK_BIN:$PATH' '$PAYLOAD/install.sh'"
+printf 'invalide\n?\n3\nautre\n?\nn\n' | script -qec "$PROMPT_COMMAND" /dev/null >"$WORK/prompt-help.log"
+assert_contains "$WORK/prompt-help.log" "Aide: 1 installe et démarre le service"
+assert_contains "$WORK/prompt-help.log" "Aide: wol setup crée ou modifie la configuration guidée"
+assert_contains "$WORK/prompt-help.log" "Choix invalide: saisissez 1, 2, 3"
+assert_contains "$WORK/prompt-help.log" "Réponse invalide: saisissez y/o, n"
+[[ $(grep -Fc "Service systemd:" "$WORK/prompt-help.log") -ge 2 ]] || fail "la question systemd n'a pas été reposée après ?"
+[[ $(grep -Fc "Lancer wol setup maintenant ?" "$WORK/prompt-help.log") -ge 2 ]] || fail "la question setup n'a pas été reposée après ?"
+
 COLOR_TMP="$WORK/color-tmp"
 mkdir -p "$COLOR_TMP"
 TERM=xterm WOL_TEST_MODE=1 TMPDIR="$COLOR_TMP" script -qec "'$REPO/install.sh' --version" /dev/null >"$WORK/color-tty.log"

@@ -152,6 +152,85 @@ func TestTokenListAndRevokeNeverExposeSecretOrHash(t *testing.T) {
 	}
 }
 
+func TestRunningAPIReloadsCreatedAndRevokedTokensImmediately(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.API.TokensFile = filepath.Join(testDir(t), "tokens.json")
+	if err := writeTokenFile(cfg.API.TokensFile, tokenFile{}); err != nil {
+		t.Fatal(err)
+	}
+	store, err := openJobs(cfg.Storage.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &APIServer{cfg: cfg, jobs: store, engine: &Engine{cfg: cfg, audit: &Auditor{}}, tokenPath: cfg.API.TokensFile, rates: map[string]rateEntry{}}
+
+	var created bytes.Buffer
+	if err := tokenCLIWithIO(cfg, []string{"create", "--id", "live", "--permissions", "read"}, strings.NewReader(""), &created); err != nil {
+		t.Fatal(err)
+	}
+	plain := strings.TrimSpace(strings.TrimPrefix(created.String(), "JETON (affiché une seule fois):"))
+	if code := apiHealthCode(server, plain); code != http.StatusOK {
+		t.Fatalf("jeton créé non chargé immédiatement: HTTP %d", code)
+	}
+
+	var other bytes.Buffer
+	if err := tokenCLIWithIO(cfg, []string{"create", "--id", "other", "--permissions", "read"}, strings.NewReader(""), &other); err != nil {
+		t.Fatal(err)
+	}
+	otherPlain := strings.TrimSpace(strings.TrimPrefix(other.String(), "JETON (affiché une seule fois):"))
+
+	var revoked bytes.Buffer
+	if err := tokenCLIWithIO(cfg, []string{"revoke", "--id", "live"}, strings.NewReader("o\n"), &revoked); err != nil {
+		t.Fatal(err)
+	}
+	if code := apiHealthCode(server, plain); code != http.StatusUnauthorized {
+		t.Fatalf("jeton révoqué encore accepté: HTTP %d", code)
+	}
+	if code := apiHealthCode(server, otherPlain); code != http.StatusOK {
+		t.Fatalf("jeton non concerné invalidé: HTTP %d", code)
+	}
+}
+
+func TestTokenRevocationIsAtomicUnderConcurrentRequests(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.API.TokensFile = filepath.Join(testDir(t), "tokens.json")
+	plain, hash, err := generateToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTokenFile(cfg.API.TokensFile, tokenFile{Tokens: []TokenRecord{{ID: "live", Hash: hash, Permissions: []string{"read"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	server := &APIServer{cfg: cfg, tokenPath: cfg.API.TokensFile, rates: map[string]rateEntry{}}
+	done := make(chan int, 32)
+	for i := 0; i < cap(done); i++ {
+		go func() { done <- apiHealthCode(server, plain) }()
+	}
+	var output bytes.Buffer
+	if err := tokenCLIWithIO(cfg, []string{"revoke", "--id", "live"}, strings.NewReader("o\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < cap(done); i++ {
+		code := <-done
+		if code != http.StatusOK && code != http.StatusUnauthorized {
+			t.Fatalf("réponse intermédiaire incohérente: HTTP %d", code)
+		}
+	}
+	for i := 0; i < 10; i++ {
+		if code := apiHealthCode(server, plain); code != http.StatusUnauthorized {
+			t.Fatalf("révocation finale non appliquée: HTTP %d", code)
+		}
+	}
+}
+
+func apiHealthCode(server *APIServer, token string) int {
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	server.handler().ServeHTTP(response, request)
+	return response.Code
+}
+
 func TestAPIBannerIsDiscoverableAndContainsNoSecret(t *testing.T) {
 	cfg := testConfig(t)
 	var output bytes.Buffer
@@ -174,6 +253,44 @@ func TestRealWakeSelectionRequiresExplicitKnownMachine(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "One") || !strings.Contains(output.String(), "Two") {
 		t.Fatalf("noms de machines absents: %s", output.String())
+	}
+}
+
+func TestSimulationSelectionUsesNumberIdentifierAndContextHelp(t *testing.T) {
+	cfg := testConfig(t)
+	var output bytes.Buffer
+	id, ok := selectMenuServer(bufio.NewReader(strings.NewReader("?\n2\n")), &output, cfg)
+	if !ok || id != "two" {
+		t.Fatalf("sélection après aide: %q %t", id, ok)
+	}
+	if !strings.Contains(output.String(), "numéro affiché") || !strings.Contains(output.String(), "One") {
+		t.Fatalf("aide ou liste absente: %s", output.String())
+	}
+}
+
+func TestHumanMenuPresentationAvoidsRawJSONAndNanoseconds(t *testing.T) {
+	cfg := testConfig(t)
+	var output bytes.Buffer
+	printMenuMachines(&output, cfg)
+	printNetworks(&output, cfg.Networks)
+	printGroups(&output, map[string]Group{"restore": {
+		Priority:     1,
+		PowerRestore: &PowerRestorePolicy{Enabled: true, UPS: "main", StableFor: Duration(30 * time.Second), PollInterval: Duration(5 * time.Second), Mode: "sequential", FailurePolicy: "retry", RetryLimit: 3, RetryInterval: Duration(10 * time.Second)},
+	}})
+	printMenuUPS(&output, map[string]UPSStatus{"main": {RawStatus: "OL", Battery: 75, BatteryKnown: true}})
+	printMenuAutomations(&output,
+		[]restorePlan{{Group: "restore", UPS: "main", StableFor: 30 * time.Second, PollInterval: 5 * time.Second, Mode: "sequential", FailurePolicy: "retry", RetryLimit: 3, RetryInterval: 10 * time.Second}},
+		[]PowerCycle{{UPS: "main", State: "waiting", Battery: 75, BatteryKnown: true}},
+		[]Job{{ID: "job-1", Kind: "wake", Target: "two", State: "running"}},
+	)
+	text := output.String()
+	for _, expected := range []string{"délais=", "port=9", "stabilité=30s", "fréquence=5s", "batterie=75%", "état=running"} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("%q absent de la sortie humaine:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "stable_for_ns") || strings.Contains(text, `{"`) {
+		t.Fatalf("sortie technique brute dans le menu:\n%s", text)
 	}
 }
 

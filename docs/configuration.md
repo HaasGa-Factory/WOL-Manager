@@ -7,6 +7,11 @@ afficher une explication du menu courant sans modifier les données préparées.
 
 Avant chaque enregistrement, la configuration complète est validée. Une configuration existante reçoit une sauvegarde datée, puis le nouveau fichier est remplacé atomiquement. Les cibles symboliques sont refusées et, sous Debian avec une installation standard, le fichier final est `root:wol-manager` en mode `0640`. Une suppression référencée est refusée au lieu de provoquer une cascade silencieuse.
 
+`wol config discovery` enregistre ensemble les deux parties de la fonction : `network_discovery`
+(passif, actif, CIDR, budget, débit et timeout) et `api.allow_active_discovery`. Après confirmation,
+la commande affiche explicitement que la configuration a été enregistrée. Une annulation ne remplace
+pas le fichier. Le résumé final présente toutes ces valeurs avant l'écriture.
+
 Le YAML est lu avec rejet des champs inconnus. `wol config check` vérifie notamment les MAC/IP dupliquées, CIDR, références, priorités de groupe, cycles, TLS, réseaux actifs autorisés et transports.
 
 L'assistant couvre les paramètres usuels. Les réglages avancés de réseau et de machine — relais,
@@ -81,5 +86,11 @@ systemd. `wol automation status` consulte les cycles et raisons d'attente persis
 pas la surveillance.
 
 Les secrets ne figurent pas dans le YAML partagé : les jetons sont dans `api.tokens_file`, les identifiants NUT et clés TLS sont référencés par chemin. Utiliser des fichiers `0600`, détenus par l'utilisateur du service.
+
+Les aides `?` sont propres au champ : identifiants de machine, groupe, réseau, serveur NUT et UPS ne
+sont pas confondus. Les dépendances indiquent quelle machine doit réussir en premier. Les cinq notions
+de vérification restent séparées : attente initiale, timeout total, intervalle, nombre de contrôles et
+nouveaux Magic Packets. Une durée sans unité telle que `30` est refusée avec la suggestion `30s`, sans
+perdre l'objet en cours.
 
 Le YAML reste documenté pour les administrateurs avancés dans [`configs/wol.example.yaml`](../configs/wol.example.yaml), mais son édition manuelle n'est pas nécessaire. La découverte active est désactivée par défaut. Les CIDR publics sont refusés dans `allowed_subnets`.

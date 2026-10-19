@@ -8,6 +8,10 @@
 - Broadcast dirigé et découverte active refusés par défaut.
 - Sous-réseaux publics interdits pour la découverte active.
 - Audit sans jetons, mots de passe ni clés.
+- Configuration `root:wol-manager` en `0640`; seuls les membres du groupe peuvent la lire. Les
+  secrets restent détenus par le compte de service en `0600` et ne sont pas ouverts au groupe client.
+- Magasin de jetons relu après chaque remplacement atomique afin qu'une révocation soit effective à
+  la requête suivante sans interrompre les requêtes déjà authentifiées.
 - Commandes système limitées à `ip`, `ping` et l'éditeur local, avec arguments construits par le programme.
 
 Le compte systemd utilise des restrictions de fichiers, processus et privilèges. L'accès à des interfaces particulières peut nécessiter une adaptation locale soigneusement documentée.

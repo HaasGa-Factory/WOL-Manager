@@ -34,6 +34,12 @@ source <(wol completion bash)
 
 L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose le mode systemd. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
 
+L'utilisateur réel ayant lancé `sudo ./install.sh` est ajouté de façon idempotente au groupe
+`wol-manager` afin de lire la configuration protégée sans `sudo`. Root n'est jamais ajouté. Ouvrez
+ensuite une nouvelle session ou exécutez `newgrp wol-manager`. Les écritures administratives
+(`wol setup`, `wol config ...`, jetons et service) continuent à utiliser `sudo`; les fichiers ne sont
+jamais rendus lisibles par tous les utilisateurs.
+
 `sudo wol setup` guide ensuite l'ajout des réseaux, machines, groupes, dépendances, découverte réseau et serveurs NUT. Un utilisateur normal n'a pas à modifier le YAML. Saisissez `?` dans n'importe quel champ pour obtenir une explication sans changer la valeur. Chaque enregistrement est validé, contrôlé pour son aptitude opérationnelle, sauvegardé et écrit atomiquement ; une simulation WoL automatique ne transmet aucun Magic Packet.
 
 Toutes les commandes disposent d'une aide sans charger la configuration, par exemple
@@ -47,6 +53,9 @@ sudo wol token create --id admin --permissions read,wake,admin
 sudo wol token list
 sudo wol token revoke --id admin
 ```
+
+La création et la révocation sont prises en compte par l'API dès la requête suivante, sans redémarrer
+le service. `token list` n'affiche jamais les secrets ni leurs hashes.
 
 ```sh
 wol update --check

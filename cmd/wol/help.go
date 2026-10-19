@@ -64,7 +64,9 @@ automatiquement; cette commande permet de l'inspecter ou de l'installer manuelle
 Génère le script d'autocomplétion Bash sur la sortie standard.`,
 	"list": `Usage: wol [--json] list
 
-Liste les machines configurées. La sortie humaine affiche l'identifiant, l'adresse IPv4 et le nom.`,
+Liste les machines configurées. La sortie humaine affiche l'identifiant, l'adresse IPv4 et le nom.
+Après l'installation, l'utilisateur ayant lancé sudo est ajouté au groupe wol-manager; reconnectez-vous
+ou exécutez "newgrp wol-manager" avant d'utiliser cette commande sans sudo.`,
 	"status": `Usage: wol [--json] status MACHINE
 
 Exécute les contrôles ICMP, TCP ou ARP configurés sans envoyer de Magic Packet.
@@ -79,7 +81,9 @@ Options:
   --group GROUPE               réveille un groupe
   --all                         réveille toutes les machines actives
 
-Les dépendances, politiques UPS, transports et vérifications configurés restent obligatoires.`,
+MACHINE, --group et --all sont strictement mutuellement exclusifs. Une combinaison contradictoire
+retourne le code 2 sans calculer ni exécuter de plan. Les dépendances, politiques UPS, transports
+et vérifications configurés restent obligatoires.`,
 	"config": `Usage: wol [--config FILE] config SOUS-COMMANDE
 
 Sous-commandes:
@@ -95,7 +99,8 @@ Les alias networks, server, servers, groups et ups restent acceptés.`,
 	"config check": `Usage: wol [--config FILE] [--json] config check
 
 Charge et valide strictement le YAML, les références, dépendances, transports, contrôles,
-politiques UPS et reprises automatiques. Aucun fichier n'est modifié.`,
+politiques UPS et reprises automatiques. Aucun fichier n'est modifié. Cette lecture fonctionne sans
+sudo après activation du groupe wol-manager; les modifications de /etc continuent à exiger sudo.`,
 	"config edit": `Usage: sudo wol [--config FILE] config edit
 
 Ouvre le YAML avec $EDITOR (vi par défaut). Réservé aux paramètres avancés non exposés par
@@ -142,13 +147,15 @@ Accordez le minimum nécessaire. Le secret créé est affiché une seule fois; s
 	"token create": `Usage: sudo wol token create [--id IDENTIFIANT] [--permissions read,wake,admin]
 
 Valeurs par défaut: id admin; permissions read,wake,admin. Les permissions acceptées sont read,
-wake et admin. Protégez immédiatement le jeton affiché: il ne peut pas être relu ensuite.`,
+wake et admin. Protégez immédiatement le jeton affiché: il ne peut pas être relu ensuite.
+Un processus API actif prend en compte le nouveau jeton dès la requête suivante, sans redémarrage.`,
 	"token list": `Usage: sudo wol token list
 
 Liste les identifiants, permissions et états des jetons. Les secrets et hashes ne sont jamais affichés.`,
 	"token revoke": `Usage: sudo wol token revoke --id IDENTIFIANT
 
-Désactive atomiquement un jeton après confirmation. Cette action ne révèle ni secret ni hash.`,
+Désactive atomiquement un jeton après confirmation. Cette action ne révèle ni secret ni hash et
+le processus API le refuse dès la requête suivante, sans redémarrage.`,
 	"network": `Usage: wol network test [MACHINE...]
        wol [--json] network discover [--active] [--allow-active-scan] [--dry-run]
 
@@ -157,7 +164,8 @@ réseau; le mode actif exige les garde-fous configurés et une confirmation expl
 	"network test": `Usage: wol network test [MACHINE...]
 
 Affiche en JSON les transports retenus ou refusés. Sans identifiant, toutes les machines sont
-analysées. Aucun paquet WoL ni trafic de découverte n'est envoyé.`,
+analysées. Aucun paquet WoL ni trafic de découverte n'est envoyé. Le code vaut 1 si au moins une
+machine demandée est inconnue ou sans plan, même si les autres résultats sont valides.`,
 	"network discover": `Usage: wol [--json] network discover [--active] [--allow-active-scan] [--dry-run]
 
 Options:
@@ -192,7 +200,8 @@ permanent "wol api serve", normalement lancé par systemd.`,
 	"menu": `Usage: sudo wol [--config FILE] menu
 
 Menu interactif de consultation, validation, configuration, simulation et réveil confirmé.
-La gestion détaillée ouvre le même assistant que "wol setup". Saisissez ? pour l'aide contextuelle.`,
+La sortie humaine utilise des libellés français et des durées lisibles; --json conserve les formats
+structurés. La gestion détaillée ouvre le même assistant que "wol setup". Saisissez ? pour l'aide contextuelle.`,
 	"api": `Usage: wol api serve
 
 Démarre l'API authentifiée et le moteur permanent de surveillance/reprise NUT.

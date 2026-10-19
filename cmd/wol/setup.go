@@ -558,12 +558,21 @@ func configSection(path, section string, input io.Reader, output io.Writer) erro
 		fmt.Fprintln(output, "Aucune modification enregistrée.")
 		return nil
 	}
-	return writeManagedConfig(path, session.base, session.cfg, session.existing)
+	if err := writeManagedConfig(path, session.base, session.cfg, session.existing); err != nil {
+		return err
+	}
+	fmt.Fprintln(output, "Configuration enregistrée et validée.")
+	return nil
 }
 
 func configureDiscovery(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
-	old := cfg.Discovery
-	before, _ := yaml.Marshal(old)
+	oldDiscovery := cfg.Discovery
+	oldDiscovery.AllowedSubnets = append([]string(nil), cfg.Discovery.AllowedSubnets...)
+	oldAPIActive := cfg.API.ActiveDiscovery
+	before, _ := yaml.Marshal(struct {
+		Discovery DiscoveryConfig
+		APIActive bool
+	}{oldDiscovery, oldAPIActive})
 	fmt.Fprintln(output, "La découverte active exige deux verrous: activation globale ici et autorisation ponctuelle --allow-active-scan. Elle reste limitée aux sous-réseaux, au nombre de paquets, au débit et au timeout configurés.")
 	cfg.Discovery.PassiveEnabled = promptBool(reader, output, "Activer la découverte passive", cfg.Discovery.PassiveEnabled)
 	cfg.Discovery.ActiveEnabled = promptBool(reader, output, "Activer la découverte active", cfg.Discovery.ActiveEnabled)
@@ -619,11 +628,15 @@ func configureDiscovery(reader *bufio.Reader, output io.Writer, cfg *Config) boo
 	}
 	cfg.API.ActiveDiscovery = promptBool(reader, output, "Autoriser aussi la découverte active via l'API", cfg.API.ActiveDiscovery)
 	if err := cfg.Validate(); err != nil {
-		cfg.Discovery = old
+		cfg.Discovery = oldDiscovery
+		cfg.API.ActiveDiscovery = oldAPIActive
 		fmt.Fprintln(output, "Configuration de découverte refusée:", err)
 		return false
 	}
-	after, _ := yaml.Marshal(cfg.Discovery)
+	after, _ := yaml.Marshal(struct {
+		Discovery DiscoveryConfig
+		APIActive bool
+	}{cfg.Discovery, cfg.API.ActiveDiscovery})
 	return !bytes.Equal(before, after)
 }
 
@@ -649,6 +662,11 @@ func offerDryRun(reader *bufio.Reader, output io.Writer, cfg *Config) error {
 
 func showConfigSummary(output io.Writer, cfg *Config) {
 	fmt.Fprintf(output, "\nRésumé: %d réseau(x), %d machine(s), %d groupe(s), %d UPS.\n", len(cfg.Networks), len(cfg.Servers), len(cfg.Groups), len(cfg.UPS))
+	fmt.Fprintf(output, "- Découverte réseau: passive=%t active=%t CIDR=%s limite=%d débit=%g/s timeout=%s API_active=%t\n",
+		cfg.Discovery.PassiveEnabled, cfg.Discovery.ActiveEnabled,
+		emptyAs(strings.Join(cfg.Discovery.AllowedSubnets, ","), "aucun"),
+		cfg.Discovery.Safeguards.MaxPackets, cfg.Discovery.Safeguards.RatePPS,
+		cfg.Discovery.Safeguards.Timeout.Value(30*time.Second), cfg.API.ActiveDiscovery)
 	printNetworks(output, cfg.Networks)
 	for _, id := range sortedKeys(cfg.Servers) {
 		s := cfg.Servers[id]
@@ -679,7 +697,12 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 func printNetworks(output io.Writer, networks map[string]Network) {
 	for _, id := range sortedKeys(networks) {
 		n := networks[id]
-		fmt.Fprintf(output, "- réseau %s: %s interface=%s source=%s transports=%s port=%d\n", id, n.CIDR, emptyAs(n.Interface, "auto"), emptyAs(n.SourceIP, "auto"), strings.Join(enabledTransports(n), ","), n.Port)
+		port := n.Port
+		portLabel := strconv.Itoa(port)
+		if port == 0 {
+			portLabel = "9 (valeur par défaut)"
+		}
+		fmt.Fprintf(output, "- réseau %s: %s interface=%s source=%s transports=%s port=%s\n", id, n.CIDR, emptyAs(n.Interface, "auto"), emptyAs(n.SourceIP, "auto"), strings.Join(enabledTransports(n), ","), portLabel)
 	}
 }
 
@@ -790,8 +813,12 @@ func ipv4Interfaces() []string {
 
 func promptNewID[T any](reader *bufio.Reader, output io.Writer, kind string, existing map[string]T) (string, bool) {
 	fmt.Fprintln(output, "Saisissez « annuler » ou « retour » pour abandonner cet objet sans perdre les autres changements.")
+	label := "Identifiant du " + kind
+	if kind == "machine" {
+		label = "Identifiant de la machine"
+	}
 	for {
-		id := prompt(reader, output, "Identifiant du "+kind+": ")
+		id := prompt(reader, output, label+": ")
 		if id == "annuler" || id == "retour" {
 			return "", false
 		}
@@ -1059,7 +1086,11 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 	}
 	policy.FailurePolicy = promptEnum(reader, output, "Échec (stop=bloquer / continue=indépendants / retry=retenter / continue_retry=les deux)", defaultString(policy.FailurePolicy, "stop"), "stop", "continue", "retry", "continue_retry")
 	if policy.FailurePolicy == "retry" || policy.FailurePolicy == "continue_retry" {
-		policy.RetryLimit = promptIntRange(reader, output, "Nombre maximal de nouvelles tentatives", policy.RetryLimit, 0, 100)
+		retryDefault := policy.RetryLimit
+		if retryDefault == 0 {
+			retryDefault = 3
+		}
+		policy.RetryLimit = promptIntRange(reader, output, "Nombre maximal de nouvelles tentatives", retryDefault, 0, 100)
 		for {
 			raw := promptDefault(reader, output, "Intervalle entre tentatives", policy.RetryInterval.Value(10*time.Second).String())
 			value, err := time.ParseDuration(raw)
@@ -1125,7 +1156,7 @@ func chooseDuration(reader *bufio.Reader, output io.Writer, presets []time.Durat
 func intPointer(value int) *int { return &value }
 
 func configureGlobalVerification(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
-	value, err := promptVerification(reader, output, cfg.Global.Verification)
+	value, err := promptVerification(reader, output, cfg.Global.Verification, true)
 	if err != nil {
 		fmt.Fprintf(output, "Délais de vérification refusés: %v\n", err)
 		return false
@@ -1140,33 +1171,47 @@ func configureGlobalVerification(reader *bufio.Reader, output io.Writer, cfg *Co
 	return true
 }
 
-func promptVerification(reader *bufio.Reader, output io.Writer, current VerificationConfig) (VerificationConfig, error) {
+func promptVerification(reader *bufio.Reader, output io.Writer, current VerificationConfig, global ...bool) (VerificationConfig, error) {
+	isGlobal := len(global) > 0 && global[0]
+	initialFallback, timeoutFallback, intervalFallback := "", "", ""
+	attemptsFallback, retriesFallback := "", ""
+	if isGlobal {
+		initialFallback = "0s (valeur intégrée)"
+		timeoutFallback = "45s (valeur intégrée)"
+		intervalFallback = "2s (valeur intégrée)"
+		attemptsFallback = "0 (limité par le timeout)"
+		retriesFallback = "0 (aucun nouvel envoi)"
+	}
 	var err error
-	if current.InitialDelay, err = promptDurationOverride(reader, output, "Attente avant la première vérification", current.InitialDelay, true); err != nil {
+	if current.InitialDelay, err = promptDurationOverride(reader, output, "Attente avant la première vérification", current.InitialDelay, true, initialFallback); err != nil {
 		return current, err
 	}
-	if current.Timeout, err = promptDurationOverride(reader, output, "Durée maximale des vérifications", current.Timeout, false); err != nil {
+	if current.Timeout, err = promptDurationOverride(reader, output, "Durée maximale des vérifications", current.Timeout, false, timeoutFallback); err != nil {
 		return current, err
 	}
-	if current.Interval, err = promptDurationOverride(reader, output, "Intervalle entre deux vérifications", current.Interval, false); err != nil {
+	if current.Interval, err = promptDurationOverride(reader, output, "Intervalle entre deux vérifications", current.Interval, false, intervalFallback); err != nil {
 		return current, err
 	}
-	if current.Attempts, err = promptIntOverride(reader, output, "Nombre maximal de vérifications (0 = limité seulement par timeout)", current.Attempts); err != nil {
+	if current.Attempts, err = promptIntOverride(reader, output, "Nombre maximal de vérifications (0 = limité seulement par timeout)", current.Attempts, attemptsFallback); err != nil {
 		return current, err
 	}
-	if current.PacketRetries, err = promptIntOverride(reader, output, "Nouveaux Magic Packets après échec", current.PacketRetries); err != nil {
+	if current.PacketRetries, err = promptIntOverride(reader, output, "Nouveaux Magic Packets après échec", current.PacketRetries, retriesFallback); err != nil {
 		return current, err
 	}
 	return current, nil
 }
 
-func promptDurationOverride(reader *bufio.Reader, output io.Writer, label string, current *Duration, allowZero bool) (*Duration, error) {
+func promptDurationOverride(reader *bufio.Reader, output io.Writer, label string, current *Duration, allowZero bool, fallback ...string) (*Duration, error) {
 	shown := "hérité"
+	clearLabel := "hériter"
 	if current != nil {
 		shown = time.Duration(*current).String()
+	} else if len(fallback) > 0 && fallback[0] != "" {
+		shown = fallback[0]
+		clearLabel = "utiliser la valeur intégrée"
 	}
 	for {
-		value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
+		value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour %s): ", label, shown, clearLabel))
 		if value == "" {
 			return current, nil
 		}
@@ -1196,13 +1241,17 @@ func sameDuration(a, b *Duration) bool {
 
 func sameInt(a, b *int) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
 
-func promptIntOverride(reader *bufio.Reader, output io.Writer, label string, current *int) (*int, error) {
+func promptIntOverride(reader *bufio.Reader, output io.Writer, label string, current *int, fallback ...string) (*int, error) {
 	shown := "hérité"
+	clearLabel := "hériter"
 	if current != nil {
 		shown = strconv.Itoa(*current)
+	} else if len(fallback) > 0 && fallback[0] != "" {
+		shown = fallback[0]
+		clearLabel = "utiliser la valeur intégrée"
 	}
 	for {
-		value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour hériter): ", label, shown))
+		value := prompt(reader, output, fmt.Sprintf("%s [%s] (- pour %s): ", label, shown, clearLabel))
 		if value == "" {
 			return current, nil
 		}
@@ -1501,10 +1550,14 @@ func writeManagedConfig(path string, base []byte, cfg *Config, backup bool) erro
 		{"groups", cfg.Groups},
 		{"servers", cfg.Servers},
 		{"ups", cfg.UPS},
+		{"network_discovery", cfg.Discovery},
 	} {
 		if err := replaceYAMLSection(root, section.name, section.value); err != nil {
 			return err
 		}
+	}
+	if err := replaceAPIActiveDiscovery(root, cfg.API); err != nil {
+		return err
 	}
 	var encoded bytes.Buffer
 	encoder := yaml.NewEncoder(&encoded)
@@ -1575,6 +1628,35 @@ func writeManagedConfig(path string, base []byte, cfg *Config, backup bool) erro
 	if err := os.Rename(tempPath, path); err != nil {
 		return err
 	}
+	return nil
+}
+
+func replaceAPIActiveDiscovery(root *yaml.Node, config APIConfig) error {
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != "api" {
+			continue
+		}
+		api := root.Content[i+1]
+		if api.Kind != yaml.MappingNode {
+			return errors.New("section api YAML invalide")
+		}
+		for j := 0; j+1 < len(api.Content); j += 2 {
+			if api.Content[j].Value == "allow_active_discovery" {
+				api.Content[j+1] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(config.ActiveDiscovery)}
+				return nil
+			}
+		}
+		api.Content = append(api.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "allow_active_discovery"},
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(config.ActiveDiscovery)},
+		)
+		return nil
+	}
+	node := &yaml.Node{}
+	if err := node.Encode(config); err != nil {
+		return err
+	}
+	root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "api"}, node)
 	return nil
 }
 
@@ -1692,8 +1774,28 @@ func prompt(reader *bufio.Reader, output io.Writer, text string) string {
 func fieldHelp(label string) string {
 	key := strings.ToLower(label)
 	switch {
+	case strings.Contains(key, "identifiant du serveur"):
+		return "Aide: identifiant local du serveur NUT dans WoL Manager, par exemple nut-maison. Il ne s'agit ni du nom NUT de l'UPS ni d'une machine utilisable avec wol wake."
+	case strings.Contains(key, "identifiant du groupe"):
+		return "Aide: identifiant technique unique du groupe, sans espace (lettres, chiffres, - ou _), par exemple maison. Utilisez-le avec « wol wake --group maison »."
+	case strings.Contains(key, "identifiant de la machine") || strings.Contains(key, "identifiant du machine"):
+		return "Aide: identifiant technique unique de la machine, sans espace (lettres, chiffres, - ou _), par exemple truenas ou pc-bureau. Utilisez-le avec « wol wake truenas »."
+	case strings.Contains(key, "identifiant du réseau"):
+		return "Aide: identifiant technique unique du réseau, sans espace (lettres, chiffres, - ou _), par exemple lan ou maison. Les machines utilisent cet identifiant pour choisir leur réseau WoL."
+	case strings.Contains(key, "choisissez un numéro"):
+		return "Aide: choisissez le numéro affiché ou l'identifiant exact de la machine. Entrée annule sans envoyer de paquet."
 	case strings.Contains(key, "identifiant"):
-		return "Aide: l'identifiant technique est court, unique et sans espace (lettres, chiffres, - ou _), par exemple truenas, pc-bureau ou maison. Il sera utilisé dans « wol wake IDENTIFIANT ». Le nom lisible peut contenir des espaces."
+		return "Aide: identifiant technique court et unique, sans espace; utilisez lettres, chiffres, - ou _."
+	case strings.Contains(key, "adresse mac"):
+		return "Aide: adresse matérielle de la machine au format 02:00:00:00:00:01. Elle sert à construire le Magic Packet."
+	case strings.Contains(key, "adresse ipv4") && !strings.Contains(key, "source"):
+		return "Aide: adresse IPv4 actuelle de la machine, par exemple 192.168.1.20. Elle sert à l'unicast et aux contrôles de disponibilité."
+	case strings.Contains(key, "machines du groupe"):
+		return "Aide: machines réveillées par « wol wake --group GROUPE ». Elles peuvent aussi avoir leurs propres dépendances obligatoires."
+	case strings.Contains(key, "groupes"):
+		return "Aide: groupes auxquels appartient cette machine, séparés par des virgules. Un groupe permet « wol wake --group GROUPE » et peut porter une politique de reprise NUT."
+	case strings.Contains(key, "dépendances"):
+		return "Aide: machines prérequises, séparées par des virgules. Elles sont réveillées et vérifiées avant la machine courante; leur échec bloque celle-ci."
 	case strings.Contains(key, "cidr"):
 		return "Aide: le CIDR décrit le réseau IPv4, par exemple 192.168.1.0/24. Appuyez sur Entrée pour accepter la valeur détectée."
 	case strings.Contains(key, "interface linux"):
@@ -1708,10 +1810,54 @@ func fieldHelp(label string) string {
 		return "Aide: traverse un routeur vers un autre sous-réseau; plus risqué et à activer seulement si le routeur est configuré pour cela."
 	case strings.Contains(key, "relais"):
 		return "Aide: un relais WoL authentifié envoie le paquet depuis le réseau distant; recommandé lorsque le broadcast routé est interdit."
-	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "vérification"):
+	case strings.Contains(key, "attente avant"):
+		return "Aide: délai après l'envoi du Magic Packet avant le premier contrôle. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
+	case strings.Contains(key, "durée maximale"):
+		return "Aide: temps total maximal consacré aux contrôles après l'attente initiale. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
+	case strings.Contains(key, "intervalle entre deux vérifications"):
+		return "Aide: pause entre deux contrôles de disponibilité. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
+	case strings.Contains(key, "nombre maximal de vérifications"):
+		return "Aide: limite le nombre de contrôles; 0 laisse le timeout fixer la limite. « hérité » signifie la valeur globale effective."
+	case strings.Contains(key, "nouveaux magic packets"):
+		return "Aide: nombre de nouveaux envois WoL autorisés après un échec complet de vérification. 0 n'envoie aucun nouveau paquet; ce réglage est distinct des nouvelles tentatives de contrôle."
+	case strings.Contains(key, "ordre de démarrage"):
+		return "Aide: ordre explicite des machines en mode séquentiel. Une machine dépendante reste bloquée tant que ses prérequis ne sont pas validés."
+	case strings.Contains(key, "nombre maximal de nouvelles tentatives"):
+		return "Aide: nombre de reprises après un échec de serveur. 0 désactive effectivement retry; une nouvelle politique retry propose 3 par défaut."
+	case strings.Contains(key, "intervalle entre tentatives"):
+		return "Aide: pause entre deux reprises après échec, par exemple 30s, 2m ou 1m30s."
+	case strings.Contains(key, "seuil bas"):
+		return "Aide: niveau de batterie qui réarme la surveillance après une coupure observée; il doit rester inférieur au seuil haut."
+	case strings.Contains(key, "seuil haut"):
+		return "Aide: niveau minimal de batterie autorisant le réveil après retour stable du secteur; il doit dépasser le seuil bas."
+	case strings.Contains(key, "stabilité secteur"):
+		return "Aide: durée pendant laquelle l'état OL doit rester stable avant tout nouveau réveil, par exemple 30s ou 5m."
+	case strings.Contains(key, "fréquence nut"):
+		return "Aide: intervalle entre deux lectures NUT en attente de conditions sûres; une petite valeur réagit plus vite mais interroge davantage le serveur."
+	case strings.Contains(key, "mode ("):
+		return "Aide: sequential réveille dans l'ordre et attend chaque validation; parallel lance seulement les machines indépendantes en parallèle."
+	case strings.Contains(key, "échec ("):
+		return "Aide: stop bloque la séquence; continue poursuit les indépendants; retry retente l'échec; continue_retry combine les deux."
+	case strings.Contains(key, "timeout de découverte"):
+		return "Aide: durée maximale du diagnostic actif, par exemple 30s ou 2m. Elle limite le scan sans modifier le réseau."
+	case strings.Contains(key, "limite maximale de paquets"):
+		return "Aide: plafond de paquets du diagnostic actif pour un appel. Utilisez un entier positif; 20 est un départ prudent."
+	case strings.Contains(key, "débit maximal"):
+		return "Aide: nombre maximal de paquets de diagnostic envoyés par seconde. Une petite valeur comme 2 limite la charge réseau."
+	case strings.Contains(key, "sous-réseaux autorisés"):
+		return "Aide: seuls ces réseaux IPv4 privés peuvent être diagnostiqués, par exemple 192.168.1.0/24. Séparez plusieurs CIDR par des virgules."
+	case strings.Contains(key, "découverte passive"):
+		return "Aide: consulte les informations locales déjà connues sans envoyer de paquet de diagnostic."
+	case strings.Contains(key, "découverte active via l'api"):
+		return "Aide: second verrou autorisant les requêtes API de découverte active; les sous-réseaux, limites et confirmations restent obligatoires."
+	case strings.Contains(key, "découverte active"):
+		return "Aide: autorise un diagnostic borné des seuls CIDR configurés. Chaque appel CLI exige encore --allow-active-scan."
+	case strings.Contains(key, "reprise automatique nut"):
+		return "Aide: après un cycle de coupure réellement observé, WoL Manager attend le retour secteur stable et le seuil batterie avant de réveiller ce groupe. Aucun ordre électrique n'est envoyé à l'UPS."
+	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "logique"):
 		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
-	case strings.Contains(key, "durée") || strings.Contains(key, "attente") || strings.Contains(key, "intervalle"):
-		return "Aide: utilisez une durée Go comme 30s, 2m ou 1m30s. « hérité » signifie que la valeur vient du réseau ou des valeurs globales."
+	case strings.Contains(key, "durée") || strings.Contains(key, "intervalle"):
+		return "Aide: utilisez une durée Go comme 30s, 2m ou 1m30s."
 	case strings.Contains(key, "nut") || strings.Contains(key, "ups") || strings.Contains(key, "starttls"):
 		return "Aide: NUT (Network UPS Tools) lit l'état d'un onduleur. OL=secteur présent, OB=sur batterie, LB=batterie faible, FSD=arrêt forcé. STARTTLS chiffre la connexion; WoL Manager ne commande jamais l'onduleur."
 	case strings.Contains(key, "priorité"):

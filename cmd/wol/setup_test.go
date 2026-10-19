@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"net"
 	"os"
@@ -227,6 +228,124 @@ func TestGuidedDiscoveryExplainsAndConfiguresBothLocks(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "deux verrous") || !strings.Contains(output.String(), "Aide:") {
 		t.Fatalf("explication novice absente: %s", output.String())
+	}
+}
+
+func TestDiscoveryPersistsFromSectionAndReloads(t *testing.T) {
+	path := filepath.Join(testDir(t), "wol.yaml")
+	input := strings.NewReader("o\no\n192.168.1.0/24\n20\n2\n30s\no\no\n")
+	var output strings.Builder
+	if err := configSection(path, "discovery", input, &output); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Discovery.PassiveEnabled || !cfg.Discovery.ActiveEnabled || !cfg.API.ActiveDiscovery ||
+		len(cfg.Discovery.AllowedSubnets) != 1 || cfg.Discovery.AllowedSubnets[0] != "192.168.1.0/24" ||
+		cfg.Discovery.Safeguards.MaxPackets != 20 || cfg.Discovery.Safeguards.RatePPS != 2 ||
+		cfg.Discovery.Safeguards.Timeout != Duration(30*time.Second) {
+		t.Fatalf("découverte non persistée: %#v %#v", cfg.Discovery, cfg.API)
+	}
+	if report := activeDiscovery(context.Background(), cfg, true); !report.Active {
+		t.Fatal("le dry-run actif n'est pas disponible après rechargement")
+	}
+	if !strings.Contains(output.String(), "Configuration enregistrée et validée") || !strings.Contains(output.String(), "Découverte réseau") {
+		t.Fatalf("confirmation ou résumé absent:\n%s", output.String())
+	}
+}
+
+func TestDiscoveryPersistsFromInitialSetup(t *testing.T) {
+	path := filepath.Join(testDir(t), "wol.yaml")
+	input := strings.NewReader(strings.Join([]string{
+		"2",      // NUT: non
+		"8",      // découverte
+		"o", "o", // passive et active
+		"192.168.2.0/24", "12", "1.5", "45s", "n",
+		"5", "o", // résumé puis enregistrement
+	}, "\n") + "\n")
+	var output strings.Builder
+	if err := setupWithIO(path, input, &output); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Discovery.ActiveEnabled || cfg.Discovery.Safeguards.MaxPackets != 12 || cfg.Discovery.Safeguards.RatePPS != 1.5 || cfg.Discovery.Safeguards.Timeout != Duration(45*time.Second) || cfg.API.ActiveDiscovery {
+		t.Fatalf("découverte setup non persistée: %#v %#v", cfg.Discovery, cfg.API)
+	}
+}
+
+func TestDiscoveryCancellationDoesNotModifyFile(t *testing.T) {
+	path := filepath.Join(testDir(t), "wol.yaml")
+	if err := os.WriteFile(path, []byte(minimalConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	input := strings.NewReader("o\no\n192.168.3.0/24\n20\n2\n30s\no\nn\n")
+	var output strings.Builder
+	if err := configSection(path, "discovery", input, &output); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("une réponse négative a modifié le fichier")
+	}
+}
+
+func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
+	cases := map[string][]string{
+		"Attente avant la première vérification": {"délai après", "30s"},
+		"Durée maximale des vérifications":       {"temps total maximal", "2m"},
+		"Nombre maximal de vérifications":        {"nombre de contrôles", "timeout"},
+		"Nouveaux Magic Packets après échec":     {"nouveaux envois", "distinct"},
+		"Identifiant du serveur NUT":             {"serveur NUT", "ni d'une machine"},
+		"Identifiant du groupe":                  {"wol wake --group"},
+		"Adresse MAC":                            {"02:00:00:00:00:01"},
+		"Dépendances machines":                   {"réveillées et vérifiées avant"},
+		"Machines du groupe":                     {"wol wake --group"},
+		"Ordre de démarrage":                     {"ordre explicite", "prérequis"},
+		"Nombre maximal de nouvelles tentatives": {"0 désactive", "3 par défaut"},
+		"Intervalle entre tentatives":            {"pause entre deux reprises", "30s"},
+		"Seuil bas (%)":                          {"réarme"},
+		"Seuil haut (%)":                         {"autorisant le réveil"},
+		"Stabilité secteur":                      {"état OL", "30s"},
+		"Fréquence NUT":                          {"lectures NUT"},
+		"Mode (sequential=un par un)":            {"indépendantes en parallèle"},
+		"Échec (stop/continue/retry)":            {"stop bloque", "continue_retry"},
+		"Limite maximale de paquets":             {"plafond de paquets"},
+		"Activer la reprise automatique NUT":     {"cycle de coupure", "Aucun ordre électrique"},
+	}
+	for label, fragments := range cases {
+		help := fieldHelp(label)
+		for _, fragment := range fragments {
+			if !strings.Contains(help, fragment) {
+				t.Errorf("aide %q sans %q: %s", label, fragment, help)
+			}
+		}
+	}
+}
+
+func TestSummaryUsesEffectiveDefaultPort(t *testing.T) {
+	cfg := testConfig(t)
+	network := cfg.Networks["lan"]
+	network.Port = 0
+	cfg.Networks["lan"] = network
+	var output strings.Builder
+	showConfigSummary(&output, cfg)
+	if !strings.Contains(output.String(), "port=9 (valeur par défaut)") || strings.Contains(output.String(), "port=0") {
+		t.Fatalf("port effectif absent du résumé:\n%s", output.String())
+	}
+}
+
+func TestGlobalVerificationDoesNotClaimToInherit(t *testing.T) {
+	cfg := testConfig(t)
+	var output strings.Builder
+	configureGlobalVerification(bufio.NewReader(strings.NewReader("\n\n\n\n\nany\n")), &output, cfg)
+	if strings.Contains(output.String(), "[hérité]") {
+		t.Fatalf("un réglage global ne doit pas annoncer un parent inexistant:\n%s", output.String())
 	}
 }
 

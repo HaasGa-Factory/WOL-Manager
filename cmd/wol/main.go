@@ -281,6 +281,16 @@ func wakeCLI(c *Config, e *Engine, args []string, jsonOut bool) error {
 	if er := fs.Parse(args); er != nil {
 		return errUsage
 	}
+	selectors := fs.NArg()
+	if *group != "" {
+		selectors++
+	}
+	if *all {
+		selectors++
+	}
+	if selectors != 1 || fs.NArg() > 1 {
+		return fmt.Errorf("%w: MACHINE, --group et --all sont mutuellement exclusifs; consultez « wol wake --help »", errUsage)
+	}
 	if *verificationDelay != "" {
 		delay, er := time.ParseDuration(*verificationDelay)
 		if er != nil || delay < 0 || delay > maxVerificationDuration {
@@ -332,6 +342,7 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 	switch args[0] {
 	case "test":
 		out := map[string]any{}
+		failed := false
 		ids := args[1:]
 		if len(ids) == 0 {
 			for id := range c.Servers {
@@ -341,8 +352,15 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 		for _, id := range ids {
 			p, e := transportPlan(c, id)
 			out[id] = map[string]any{"plan": p, "error": errorString(e)}
+			failed = failed || e != nil || len(p) == 0
 		}
-		return output(true, out, "")
+		if err := output(true, out, ""); err != nil {
+			return err
+		}
+		if failed {
+			return errors.New("un ou plusieurs plans réseau n'ont pas pu être produits")
+		}
+		return nil
 	case "discover":
 		fs := flag.NewFlagSet("discover", flag.ContinueOnError)
 		active := fs.Bool("active", false, "diagnostic actif")
@@ -384,7 +402,7 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 }
 func relayCLI(c *Config, e *Engine, args []string) error {
 	if len(args) == 0 {
-		return errUsage
+		return fmt.Errorf("%w: consultez « wol relay --help »", errUsage)
 	}
 	switch args[0] {
 	case "serve":
@@ -395,7 +413,7 @@ func relayCLI(c *Config, e *Engine, args []string) error {
 		key := fs.String("key", "", "")
 		ca := fs.String("client-ca", "", "")
 		if fs.Parse(args[1:]) != nil || *id == "" || *cert == "" || *key == "" || *ca == "" {
-			return errUsage
+			return fmt.Errorf("%w: wol relay serve --id ID --cert FILE --key FILE --client-ca FILE [--listen ADRESSE]; consultez « wol relay serve --help »", errUsage)
 		}
 		return serveRelay(c, e, *id, *listen, *cert, *key, *ca)
 	case "check":
@@ -404,7 +422,7 @@ func relayCLI(c *Config, e *Engine, args []string) error {
 		}
 		r, ok := c.Relays[args[1]]
 		if !ok {
-			return fmt.Errorf("relais inconnu")
+			return fmt.Errorf("relais %q inconnu; déclarez-le dans la section relays de la configuration ou consultez « wol relay --help »", args[1])
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), r.Timeout.Value(5*time.Second))
 		defer cancel()
@@ -432,6 +450,10 @@ func envOr(k, d string) string {
 	return d
 }
 func editConfig(path string) error {
+	before, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vi"
@@ -440,7 +462,17 @@ func editConfig(path string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(before, after) {
+		fmt.Println("Aucune modification enregistrée.")
+	}
+	return nil
 }
 func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
@@ -451,17 +483,33 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 		case "0":
 			return nil
 		case "1":
-			_ = output(jsonOut, c.Servers, "")
+			if jsonOut {
+				_ = output(true, c.Servers, "")
+			} else {
+				printMenuMachines(os.Stdout, c)
+			}
 		case "2":
-			_ = output(jsonOut, c.Networks, "")
+			if jsonOut {
+				_ = output(true, c.Networks, "")
+			} else {
+				printNetworks(os.Stdout, c.Networks)
+			}
 		case "3":
-			_ = output(jsonOut, c.Groups, "")
+			if jsonOut {
+				_ = output(true, c.Groups, "")
+			} else {
+				printGroups(os.Stdout, c.Groups)
+			}
 		case "4":
 			out := map[string]UPSStatus{}
 			for id, u := range c.UPS {
 				out[id] = nutStatus(context.Background(), id, u)
 			}
-			_ = output(jsonOut, out, "")
+			if jsonOut {
+				_ = output(true, out, "")
+			} else {
+				printMenuUPS(os.Stdout, out)
+			}
 		case "5":
 			if err := c.Validate(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -481,10 +529,13 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			c = updated
 			e.cfg = updated
 		case "7":
-			fmt.Print("Machine: ")
-			id, _ := r.ReadString('\n')
+			id, ok := selectMenuServer(r, os.Stdout, c)
+			if !ok {
+				fmt.Println("Simulation annulée: aucune machine sélectionnée.")
+				continue
+			}
 			dryEngine := &Engine{cfg: c, audit: e.audit, dry: true, noWait: true}
-			v, err := dryEngine.wakeTree(context.Background(), strings.TrimSpace(id), map[string]bool{})
+			v, err := dryEngine.wakeTree(context.Background(), id, map[string]bool{})
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else {
@@ -514,13 +565,68 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 				fmt.Fprintln(os.Stderr, err)
 				continue
 			}
-			_ = output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
+			if jsonOut {
+				_ = output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
+			} else {
+				printMenuAutomations(os.Stdout, c.restorePlans(), jobs.listCycles(), jobs.list())
+			}
 		case "?", "aide", "help":
 			printContextHelp(os.Stdout, "menu")
 		default:
 			fmt.Println("Choix invalide.")
 		}
 	}
+}
+
+func printMenuMachines(output io.Writer, c *Config) {
+	for _, id := range sortedKeys(c.Servers) {
+		s := c.Servers[id]
+		initial, timeout, interval := c.effectiveVerification(id)
+		fmt.Fprintf(output, "- %s — %s: IP=%s MAC=%s réseau=%s actif=%t contrôles=%s délais=%s/%s/%s\n",
+			id, emptyAs(s.Name, "sans nom"), s.IP, s.MAC, s.Network, enabled(s), formatChecks(c.effectiveChecks(id)), initial, timeout, interval)
+	}
+}
+
+func printMenuUPS(output io.Writer, statuses map[string]UPSStatus) {
+	if len(statuses) == 0 {
+		fmt.Fprintln(output, "Aucun UPS NUT configuré.")
+		return
+	}
+	for _, id := range sortedKeys(statuses) {
+		status := statuses[id]
+		if status.Error != "" {
+			fmt.Fprintf(output, "- %s: erreur=%s\n", id, status.Error)
+			continue
+		}
+		battery := "inconnue"
+		if status.BatteryKnown {
+			battery = fmt.Sprintf("%.0f%%", status.Battery)
+		}
+		fmt.Fprintf(output, "- %s: état=%s batterie=%s\n", id, emptyAs(status.RawStatus, "inconnu"), battery)
+	}
+}
+
+func printMenuAutomations(output io.Writer, plans []restorePlan, cycles []PowerCycle, jobs []Job) {
+	if len(plans) == 0 {
+		fmt.Fprintln(output, "Aucune politique de reprise NUT configurée.")
+	}
+	for _, plan := range plans {
+		fmt.Fprintf(output, "- groupe %s: UPS=%s mode=%s stabilité=%s fréquence=%s échec=%s tentatives=%d intervalle=%s\n",
+			plan.Group, plan.UPS, plan.Mode, plan.StableFor, plan.PollInterval, plan.FailurePolicy, plan.RetryLimit, plan.RetryInterval)
+	}
+	for _, cycle := range cycles {
+		fmt.Fprintf(output, "- cycle UPS %s: état=%s raison=%s batterie=%s\n", cycle.UPS, cycle.State, emptyAs(cycle.Reason, "aucune"), formatBattery(cycle))
+	}
+	for _, job := range jobs {
+		fmt.Fprintf(output, "- tâche %s: type=%s cible=%s état=%s\n", job.ID, job.Kind, job.Target, job.State)
+	}
+}
+
+func formatBattery(cycle PowerCycle) string {
+	if !cycle.BatteryKnown {
+		return "inconnue"
+	}
+	return fmt.Sprintf("%.0f%%", cycle.Battery)
 }
 
 func selectMenuServer(reader *bufio.Reader, output io.Writer, c *Config) (string, bool) {
@@ -535,6 +641,10 @@ func selectMenuServer(reader *bufio.Reader, output io.Writer, c *Config) (string
 	}
 	for {
 		value := prompt(reader, output, "Choisissez un numéro ou un identifiant (Entrée=annuler): ")
+		if value == "?" || value == "aide" || value == "help" {
+			fmt.Fprintln(output, "Aide: choisissez le numéro affiché ou l'identifiant exact de la machine. Entrée annule sans envoyer de paquet.")
+			continue
+		}
 		if value == "" || value == "annuler" || value == "retour" {
 			return "", false
 		}
