@@ -23,8 +23,8 @@ Les images ci-dessous affichent la première page de chaque cartographie sur Git
 
 - Branche locale auditée : `dev`.
 - Commit `dev` audité avant les corrections d'aide : `6795b7f`.
-- Version du programme préparée : `1.2.0`, définie dans `cmd/wol/main.go` et `install.sh`.
-- Distribution auditée : manifeste `1.2.0`, canal `dev`, révision source `3881a5bfaad797ce60e4a981982f4b7ce47c1f43`.
+- Version du programme préparée : `1.2.1`, définie dans `cmd/wol/main.go` et `install.sh`.
+- Dernière distribution auditée avant ce changement de version : manifeste `1.2.0`, canal `dev`, révision source `95cd327c6da18194a17f66ff9b2e7f33cf9eec08`.
 - Les corrections d'aide et de documentation postérieures à ce binaire restent dans l'arbre de travail jusqu'au prochain cycle manuel source puis artefacts.
 - Date de l'analyse : 19 octobre 2026.
 
@@ -150,7 +150,7 @@ Le code a priorité en cas d'écart. Les flux principaux des diagrammes ne prés
 
 - Exécution réelle du binaire ARM64 et matrice complète sur de vraies VM Debian 12/13.
 - Réseau, relais, NUT, UPS, systemd ou réveil réels : aucun contact ni aucune action sur l'infrastructure n'a été effectué.
-- Export automatique des aperçus SVG : la commande draw.io locale a échoué sans modifier les aperçus existants ; les sources `.drawio` restent la référence V1.2.0.
+- Export automatique des aperçus SVG : la commande draw.io locale a échoué sans modifier les aperçus existants ; les sources `.drawio` restent la référence V1.2.1.
 
 ## Contrôles des fichiers draw.io
 
@@ -159,10 +159,10 @@ Une validation locale a confirmé :
 - XML bien formé et racine `mxfile` native non compressée ;
 - 13 pages fonctionnelles et 18 pages techniques ;
 - 31 identifiants de page uniques ;
-- structure XML native éditable conservée après les ajouts V1.2.0 ;
+- structure XML native éditable conservée après les ajouts V1.2.1 ;
 - aucune clé privée, aucun jeton réel et aucun mot de passe dans les diagrammes.
 
-La tentative d'export des aperçus avec l'application draw.io locale a échoué. Par conséquent, aucune validation visuelle complète de la version V1.2.0 dans l'application n'est revendiquée et les aperçus SVG existants n'ont pas été remplacés. Une revue visuelle humaine des deux sources reste recommandée avant publication.
+La tentative d'export des aperçus avec l'application draw.io locale a échoué. Par conséquent, aucune validation visuelle complète de la version V1.2.1 dans l'application n'est revendiquée et les aperçus SVG existants n'ont pas été remplacés. Une revue visuelle humaine des deux sources reste recommandée avant publication.
 
 ## Ouvrir les fichiers hors ligne
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0 - en préparation
+## 1.2.1 - en préparation
 
 - aide contextuelle complète pour les commandes et sous-commandes, disponible sans charger la configuration ;
 - aide `?` dans les menus guidés, avec explications NUT, groupes, séquences et reprise après coupure ;
