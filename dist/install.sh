@@ -332,6 +332,7 @@ version_lt() { [ "$1" = "$2" ] && return 1; [ "$(printf '%s\n%s\n' "$1" "$2" | s
 show_comparison() {
   current=$(installed_version)
   current_revision=$(installed_revision)
+  current_channel=$(installed_channel)
   info "Version installée : $current"
   info "Révision installée: $current_revision"
   info "Version disponible: $CANDIDATE_VERSION"
@@ -342,6 +343,18 @@ show_comparison() {
   if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
     UPDATE_NEEDED=0
     success "WoL Manager est à jour"
+  elif [ "$current" != absente ] && [ "$current" != inconnue ] && version_lt "$CANDIDATE_VERSION" "$current"; then
+    if [ "$ALLOW_DOWNGRADE" -eq 1 ] && [ "$CHECK_ONLY" -eq 0 ]; then
+      UPDATE_NEEDED=1
+      warn "Rétrogradation explicitement demandée: $current vers $CANDIDATE_VERSION"
+    else
+      UPDATE_NEEDED=0
+      if [ "$current_channel" = dev ] && [ "$CHANNEL" = main ]; then
+        info "Version dev installée : $current. Le canal main propose une version plus ancienne : $CANDIDATE_VERSION. Utilisez \"wol update --check --channel dev\" ou attendez la publication sur main. Aucun changement n'a été effectué."
+      else
+        info "La version proposée ($CANDIDATE_VERSION) est plus ancienne que la version installée ($current). Aucun changement n'a été effectué."
+      fi
+    fi
   else
     UPDATE_NEEDED=1
     if [ "$current" = "$CANDIDATE_VERSION" ]; then
@@ -375,6 +388,18 @@ create_account_and_dirs() {
   if [ "$TEST_MODE" != 1 ]; then
     chown wol-manager:wol-manager "$STATE_DIR" "$LOG_DIR"
     chown root:wol-manager "$(path /etc/wol-manager)" "$(path /etc/wol-manager/secrets)"
+  elif [ -n "${WOL_TEST_CHOWN_LOG:-}" ]; then
+    printf '%s\n' "wol-manager:wol-manager $STATE_DIR" >>"$WOL_TEST_CHOWN_LOG"
+  fi
+  [ ! -L "$STATE_DIR/state.json" ] || die "Le fichier d'état ne doit pas être un lien symbolique: $STATE_DIR/state.json"
+  [ ! -e "$STATE_DIR/state.json" ] || [ -f "$STATE_DIR/state.json" ] || die "Le chemin d'état n'est pas un fichier régulier: $STATE_DIR/state.json"
+  if [ -f "$STATE_DIR/state.json" ]; then
+    chmod 0640 "$STATE_DIR/state.json"
+    if [ "$TEST_MODE" != 1 ]; then
+      chown wol-manager:wol-manager "$STATE_DIR/state.json"
+    elif [ -n "${WOL_TEST_CHOWN_LOG:-}" ]; then
+      printf '%s\n' "wol-manager:wol-manager $STATE_DIR/state.json" >>"$WOL_TEST_CHOWN_LOG"
+    fi
   fi
   [ ! -L "$TOKENS_FILE" ] || die "Le fichier de jetons ne doit pas être un lien symbolique: $TOKENS_FILE"
   [ ! -e "$TOKENS_FILE" ] || [ -f "$TOKENS_FILE" ] || die "Le chemin des jetons n'est pas un fichier régulier: $TOKENS_FILE"
