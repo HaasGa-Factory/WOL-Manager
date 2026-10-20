@@ -117,6 +117,10 @@ func TestParseNUTSelection(t *testing.T) {
 }
 
 func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
+	previous := detectIPv4Interfaces
+	detectIPv4Interfaces = func() []ipv4Interface { return nil }
+	t.Cleanup(func() { detectIPv4Interfaces = previous })
+
 	directory := testDir(t)
 	path := filepath.Join(directory, "wol.yaml")
 	input := strings.NewReader(strings.Join([]string{

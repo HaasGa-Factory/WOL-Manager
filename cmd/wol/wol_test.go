@@ -294,6 +294,26 @@ func TestHumanMenuPresentationAvoidsRawJSONAndNanoseconds(t *testing.T) {
 	}
 }
 
+func TestHumanWakeResultsAvoidRawJSON(t *testing.T) {
+	var output bytes.Buffer
+	printWakeResults(&output, []WakeResult{{
+		Server:      "two",
+		Transport:   "local_broadcast",
+		Destination: "192.0.2.255:9",
+		Packet:      "dry_run",
+		Note:        "simulation: aucun paquet émis",
+	}})
+	text := output.String()
+	for _, expected := range []string{"two", "simulation, aucun paquet émis", "transport=local_broadcast", "destination=192.0.2.255:9", "vérifié=false"} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("%q absent de la sortie humaine: %s", expected, text)
+		}
+	}
+	if strings.Contains(text, `{"`) || strings.Contains(text, `"server"`) {
+		t.Fatalf("JSON brut dans la sortie humaine: %s", text)
+	}
+}
+
 func TestConfigHelpContent(t *testing.T) {
 	for _, section := range []string{"network", "machine", "group", "nut"} {
 		var output bytes.Buffer

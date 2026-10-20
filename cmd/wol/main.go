@@ -122,7 +122,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	audit := &Auditor{path: c.Storage.AuditFile}
+	audit := &Auditor{path: c.Storage.AuditFile, mirror: cmd == "api"}
 	engine := &Engine{cfg: c, audit: audit, sendPacket: sendMagic}
 	switch cmd {
 	case "list":
@@ -539,7 +539,11 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else {
-				_ = output(jsonOut, v, "")
+				if jsonOut {
+					_ = output(true, v, "")
+				} else {
+					printWakeResults(os.Stdout, v)
+				}
 			}
 		case "8":
 			id, ok := selectMenuServer(r, os.Stdout, c)
@@ -557,7 +561,11 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else {
-				_ = output(jsonOut, v, "")
+				if jsonOut {
+					_ = output(true, v, "")
+				} else {
+					printWakeResults(os.Stdout, v)
+				}
 			}
 		case "9":
 			jobs, err := openJobs(c.Storage.StateFile)
@@ -575,6 +583,32 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 		default:
 			fmt.Println("Choix invalide.")
 		}
+	}
+}
+
+func printWakeResults(output io.Writer, results []WakeResult) {
+	for _, result := range results {
+		packet := result.Packet
+		switch packet {
+		case "dry_run":
+			packet = "simulation, aucun paquet émis"
+		case "sent":
+			packet = "paquet annoncé comme émis"
+		case "not_sent":
+			packet = "aucun paquet émis"
+		}
+		fmt.Fprintf(output, "- %s: %s", result.Server, packet)
+		if result.Transport != "" {
+			fmt.Fprintf(output, "; transport=%s", result.Transport)
+		}
+		if result.Destination != "" {
+			fmt.Fprintf(output, "; destination=%s", result.Destination)
+		}
+		fmt.Fprintf(output, "; vérifié=%t", result.Verified)
+		if result.Note != "" {
+			fmt.Fprintf(output, "; %s", result.Note)
+		}
+		fmt.Fprintln(output)
 	}
 }
 
