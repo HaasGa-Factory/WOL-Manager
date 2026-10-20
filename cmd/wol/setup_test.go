@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -211,8 +212,8 @@ func TestQuestionMarkNeverChangesInteractiveDefaults(t *testing.T) {
 		t.Fatalf("choix après ?: %v %v", got, err)
 	}
 	checks := []Check{{Type: "icmp", Timeout: Duration(time.Second)}}
-	if got := promptChecks(bufio.NewReader(strings.NewReader("?\n\n")), &output, checks); len(got) != 1 || got[0].Type != "icmp" {
-		t.Fatalf("sélection de contrôle modifiée par ?: %#v", got)
+	if got, disabled := promptChecks(bufio.NewReader(strings.NewReader("?\n\n")), &output, checks, false); disabled || len(got) != 1 || got[0].Type != "icmp" {
+		t.Fatalf("sélection de contrôle modifiée par ?: %#v disabled=%t", got, disabled)
 	}
 	if strings.Count(output.String(), "Aide:") < 5 {
 		t.Fatalf("aides de champ absentes:\n%s", output.String())
@@ -301,26 +302,32 @@ func TestDiscoveryCancellationDoesNotModifyFile(t *testing.T) {
 
 func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 	cases := map[string][]string{
-		"Attente avant la première vérification": {"délai après", "30s"},
-		"Durée maximale des vérifications":       {"temps total maximal", "2m"},
-		"Nombre maximal de vérifications":        {"nombre de contrôles", "timeout"},
-		"Nouveaux Magic Packets après échec":     {"nouveaux envois", "distinct"},
-		"Identifiant du serveur NUT":             {"serveur NUT", "ni d'une machine"},
-		"Identifiant du groupe":                  {"wol wake --group"},
-		"Adresse MAC":                            {"02:00:00:00:00:01"},
-		"Dépendances machines":                   {"réveillées et vérifiées avant"},
-		"Machines du groupe":                     {"wol wake --group"},
-		"Ordre de démarrage":                     {"ordre explicite", "prérequis"},
-		"Nombre maximal de nouvelles tentatives": {"0 désactive", "3 par défaut"},
-		"Intervalle entre tentatives":            {"pause entre deux reprises", "30s"},
-		"Seuil bas (%)":                          {"réarme"},
-		"Seuil haut (%)":                         {"autorisant le réveil"},
-		"Stabilité secteur":                      {"état OL", "30s"},
-		"Fréquence NUT":                          {"lectures NUT"},
-		"Mode (sequential=un par un)":            {"indépendantes en parallèle"},
-		"Échec (stop/continue/retry)":            {"stop bloque", "continue_retry"},
-		"Limite maximale de paquets":             {"plafond de paquets"},
-		"Activer la reprise automatique NUT":     {"cycle de coupure", "Aucun ordre électrique"},
+		"Nom":                                    {"nom lisible", "espaces"},
+		"Réseau":                                 {"liste affichée"},
+		"Enregistrer cette configuration ?":      {"sauvegarde", "atomiquement"},
+		"Tester une machine en simulation WoL ?": {"aucun Magic Packet"},
+		"Machine à simuler":                      {"numéro affiché", "Entrée annule"},
+		"Envoyer réellement un paquet WoL à nas ?": {"émission réseau réelle"},
+		"Attente avant la première vérification":   {"délai après", "30s"},
+		"Durée maximale des vérifications":         {"temps total maximal", "2m"},
+		"Nombre maximal de vérifications":          {"nombre de contrôles", "timeout"},
+		"Nouveaux Magic Packets après échec":       {"nouveaux envois", "distinct"},
+		"Identifiant du serveur NUT":               {"serveur NUT", "ni d'une machine"},
+		"Identifiant du groupe":                    {"wol wake --group"},
+		"Adresse MAC":                              {"02:00:00:00:00:01"},
+		"Dépendances machines":                     {"réveillées et vérifiées avant"},
+		"Machines du groupe":                       {"wol wake --group"},
+		"Ordre de démarrage":                       {"ordre explicite", "prérequis"},
+		"Nombre maximal de nouvelles tentatives":   {"0 désactive", "3 par défaut"},
+		"Intervalle entre tentatives":              {"pause entre deux reprises", "30s"},
+		"Seuil bas (%)":                            {"réarme"},
+		"Seuil haut (%)":                           {"autorisant le réveil"},
+		"Stabilité secteur":                        {"état OL", "30s"},
+		"Fréquence NUT":                            {"lectures NUT"},
+		"Mode (sequential=un par un)":              {"indépendantes en parallèle"},
+		"Échec (stop/continue/retry)":              {"stop bloque", "continue_retry"},
+		"Limite maximale de paquets":               {"plafond de paquets"},
+		"Activer la reprise automatique NUT":       {"cycle de coupure", "Aucun ordre électrique"},
 	}
 	for label, fragments := range cases {
 		help := fieldHelp(label)
@@ -329,6 +336,75 @@ func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 				t.Errorf("aide %q sans %q: %s", label, fragment, help)
 			}
 		}
+	}
+}
+
+func TestChecksDisabledPersistsAndInheritanceRemainsDistinct(t *testing.T) {
+	path := filepath.Join(testDir(t), "wol.yaml")
+	cfg := testConfig(t)
+	cfg.Global.Checks = []Check{{Type: "tcp", Port: 22, Timeout: Duration(2 * time.Second)}}
+	server := cfg.Servers["two"]
+	server.ChecksDisabled = true
+	cfg.Servers["two"] = server
+	if err := writeManagedConfig(path, []byte(minimalConfig), cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checks, disabled := reloaded.effectiveCheckPolicy("two"); !disabled || len(checks) != 0 {
+		t.Fatalf("aucune vérification non persistée: %#v disabled=%t", checks, disabled)
+	}
+	server = reloaded.Servers["two"]
+	server.Checks, server.ChecksDisabled = promptChecks(
+		bufio.NewReader(strings.NewReader("6\n")), io.Discard, server.Checks, server.ChecksDisabled,
+	)
+	reloaded.Servers["two"] = server
+	checks, disabled := reloaded.effectiveCheckPolicy("two")
+	if disabled || len(checks) != 1 || checks[0].Type != "tcp" || checks[0].Port != 22 {
+		t.Fatalf("héritage TCP 22 incorrect: %#v disabled=%t", checks, disabled)
+	}
+	var summary strings.Builder
+	showConfigSummary(&summary, reloaded)
+	if !strings.Contains(summary.String(), "contrôles=tcp:22") {
+		t.Fatalf("résumé de l'héritage incorrect:\n%s", summary.String())
+	}
+}
+
+func TestNoChecksSkipsLogicAndVerificationQuestions(t *testing.T) {
+	cfg := testConfig(t)
+	var output strings.Builder
+	input := bufio.NewReader(strings.NewReader("\n\n\n\n\n\n4\n"))
+	if !addOrEditServer(input, &output, cfg, "two") {
+		t.Fatalf("machine refusée:\n%s", output.String())
+	}
+	if !cfg.Servers["two"].ChecksDisabled {
+		t.Fatal("le choix Aucune n'a pas activé checks_disabled")
+	}
+	for _, unexpected := range []string{"Logique des contrôles", "Attente avant la première vérification", "Durée maximale des vérifications"} {
+		if strings.Contains(output.String(), unexpected) {
+			t.Fatalf("question %q posée malgré Aucune:\n%s", unexpected, output.String())
+		}
+	}
+	showConfigSummary(&output, cfg)
+	if !strings.Contains(output.String(), "contrôles=aucun") {
+		t.Fatalf("résumé sans contrôles=aucun:\n%s", output.String())
+	}
+}
+
+func TestOfferDryRunUsesNumberOrIdentifier(t *testing.T) {
+	for name, input := range map[string]string{"number": "o\n2\n", "identifier": "o\ntwo\n"} {
+		t.Run(name, func(t *testing.T) {
+			cfg := testConfig(t)
+			var output strings.Builder
+			if err := offerDryRun(bufio.NewReader(strings.NewReader(input)), &output, cfg); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(output.String(), "[2] two — Two") || !strings.Contains(output.String(), "two:") {
+				t.Fatalf("sélection guidée absente:\n%s", output.String())
+			}
+		})
 	}
 }
 

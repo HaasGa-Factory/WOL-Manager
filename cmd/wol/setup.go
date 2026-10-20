@@ -415,14 +415,16 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 			return false
 		}
 	}
-	s.Checks = promptChecks(reader, output, s.Checks)
-	s.CheckLogic = promptCheckLogic(reader, output, s.CheckLogic)
-	verification, err := promptVerification(reader, output, s.Verification)
-	if err != nil {
-		fmt.Fprintf(output, "Délais de vérification refusés: %v\n", err)
-		return false
+	s.Checks, s.ChecksDisabled = promptChecks(reader, output, s.Checks, s.ChecksDisabled)
+	if !s.ChecksDisabled {
+		s.CheckLogic = promptCheckLogic(reader, output, s.CheckLogic)
+		verification, err := promptVerification(reader, output, s.Verification)
+		if err != nil {
+			fmt.Fprintf(output, "Délais de vérification refusés: %v\n", err)
+			return false
+		}
+		s.Verification = verification
 	}
-	s.Verification = verification
 	cfg.Servers[id] = s
 	if err := cfg.Validate(); err != nil {
 		if editing {
@@ -644,10 +646,10 @@ func offerDryRun(reader *bufio.Reader, output io.Writer, cfg *Config) error {
 	if len(cfg.Servers) == 0 || !confirmPrompt(reader, output, "Tester une machine en simulation WoL ?") {
 		return nil
 	}
-	printServers(output, cfg.Servers)
-	id := prompt(reader, output, "Machine à simuler: ")
-	if _, ok := cfg.Servers[id]; !ok {
-		return fmt.Errorf("machine inconnue %q", id)
+	id, ok := selectMenuServer(reader, output, cfg)
+	if !ok {
+		fmt.Fprintln(output, "Simulation annulée: aucune machine sélectionnée.")
+		return nil
 	}
 	engine := &Engine{cfg: cfg, audit: &Auditor{}, dry: true, noWait: true}
 	result, err := engine.wakeTree(context.Background(), id, map[string]bool{})
@@ -733,7 +735,7 @@ func percent(value *int) string {
 
 func formatChecks(checks []Check) string {
 	if len(checks) == 0 {
-		return "aucun (envoi sans confirmation)"
+		return "aucun"
 	}
 	items := make([]string, 0, len(checks))
 	for _, check := range checks {
@@ -932,43 +934,47 @@ func promptKnownIDs[T any](reader *bufio.Reader, output io.Writer, label string,
 	}
 }
 
-func promptChecks(reader *bufio.Reader, output io.Writer, current []Check) []Check {
-	currentText := "aucune"
-	if len(current) > 0 {
-		currentText = current[0].Type
+func promptChecks(reader *bufio.Reader, output io.Writer, current []Check, currentDisabled bool) ([]Check, bool) {
+	currentText := "hériter"
+	if currentDisabled {
+		currentText = "aucune"
+	} else if len(current) > 0 {
+		currentText = formatChecks(current)
 	}
 	fmt.Fprintf(output, "Vérification après réveil actuelle: %s\n", currentText)
 	fmt.Fprintln(output, "ICMP: ping simple mais parfois bloqué. TCP: vérifie un port ouvert (22/80/443). ARP: présence locale, preuve plus faible. Aucune: paquet envoyé sans confirmation de démarrage.")
 	for {
-		fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune\n[5] Plusieurs contrôles\n[Entrée] Conserver\n[?] Aide")
+		fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune vérification\n[5] Plusieurs contrôles\n[6] Hériter des vérifications globales\n[Entrée] Conserver\n[?] Aide")
 		switch prompt(reader, output, "> ") {
 		case "1":
-			return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}
+			return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}, false
 		case "2":
 			for {
 				port, err := strconv.Atoi(promptDefault(reader, output, "Port TCP (ex. 22, 80, 443)", "22"))
 				if err == nil && port >= 1 && port <= 65535 {
-					return []Check{{Type: "tcp", Port: port, Timeout: Duration(3 * time.Second)}}
+					return []Check{{Type: "tcp", Port: port, Timeout: Duration(3 * time.Second)}}, false
 				}
 				fmt.Fprintln(output, "Port invalide (1 à 65535). Recommencez.")
 			}
 		case "3":
-			return []Check{{Type: "arp", Timeout: Duration(3 * time.Second)}}
+			return []Check{{Type: "arp", Timeout: Duration(3 * time.Second)}}, false
 		case "4":
-			return nil
+			return nil, true
 		case "5":
 			for {
 				value := prompt(reader, output, "Contrôles (ex. icmp,tcp:22,tcp:443,arp): ")
 				checks, err := parseChecks(value)
 				if err == nil {
-					return checks
+					return checks, false
 				}
 				fmt.Fprintln(output, "Contrôles invalides:", err, "Recommencez.")
 			}
+		case "6":
+			return nil, false
 		case "?", "aide", "help":
 			fmt.Fprintln(output, fieldHelp("contrôles"))
 		case "":
-			return current
+			return current, currentDisabled
 		default:
 			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
@@ -1774,6 +1780,18 @@ func prompt(reader *bufio.Reader, output io.Writer, text string) string {
 func fieldHelp(label string) string {
 	key := strings.ToLower(label)
 	switch {
+	case key == "nom" || strings.HasPrefix(key, "nom ["):
+		return "Aide: nom lisible affiché aux utilisateurs; les espaces sont autorisés, par exemple « Serveur TrueNAS » ou « PC du bureau »."
+	case key == "réseau" || strings.HasPrefix(key, "réseau ["):
+		return "Aide: identifiant du réseau WoL de cette machine. Choisissez exactement une valeur dans la liste affichée."
+	case strings.Contains(key, "enregistrer cette configuration") || strings.Contains(key, "enregistrer ces changements"):
+		return "Aide: oui valide toute la configuration, crée une sauvegarde si nécessaire puis remplace le YAML atomiquement; non ne modifie aucun fichier."
+	case strings.Contains(key, "tester une machine en simulation"):
+		return "Aide: prépare un plan WoL et affiche sa destination sans émettre aucun Magic Packet."
+	case strings.Contains(key, "machine à simuler"):
+		return "Aide: choisissez le numéro affiché ou l'identifiant exact de la machine; Entrée annule sans envoyer de paquet."
+	case strings.Contains(key, "envoyer réellement un paquet wol"):
+		return "Aide: cette confirmation autorise une émission réseau réelle du Magic Packet vers la machine sélectionnée."
 	case strings.Contains(key, "identifiant du serveur"):
 		return "Aide: identifiant local du serveur NUT dans WoL Manager, par exemple nut-maison. Il ne s'agit ni du nom NUT de l'UPS ni d'une machine utilisable avec wol wake."
 	case strings.Contains(key, "identifiant du groupe"):

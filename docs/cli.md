@@ -81,6 +81,14 @@ Dans `wol menu`, les consultations humaines utilisent des libellés français et
 (`30s`, `1h36m`). Le JSON brut est réservé à `--json`. La simulation affiche la même liste numérotée
 que le réveil réel, accepte un numéro ou un identifiant, explique `?` et annule sur une entrée vide.
 
+Une machine configurée avec « Aucune vérification » est distinguée d'une machine qui hérite des
+contrôles globaux. Dans ce cas, `wol status ID` retourne immédiatement `unknown` et `wol wake ID`
+n'attend pas une confirmation de disponibilité. Avant le contrôle préalable d'un réveil réel, le menu
+affiche la machine concernée et le délai maximal afin de ne jamais rester silencieux pendant l'attente.
+
+`wol token create --help` rappelle le format `Authorization: Bearer <jeton>` et fournit un exemple
+`curl` utilisant une variable. Le secret n'est affiché qu'une fois lors de la création.
+
 `wol jobs` et `wol automation status` produisent toujours du JSON afin de conserver les états et
 raisons d'attente sans perte d'information. Les états de tâche sont `queued`, `running`,
 `revalidation_required`, `completed`, `failed` et `cancelled`.

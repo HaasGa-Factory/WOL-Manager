@@ -48,6 +48,14 @@ servers:
 
 Chaque machine peut déclarer plusieurs contrôles, y compris plusieurs ports TCP. `check_logic: any` considère la machine joignable dès qu'un contrôle réussit ; `all` exige la réussite de tous les contrôles. Un résultat absent ou indéterminé n'est jamais transformé en succès.
 
+Une liste `checks: []` signifie « hériter du niveau précédent ». Pour demander explicitement
+l'absence de vérification, l'assistant enregistre `checks_disabled: true` au niveau du réseau, du
+groupe ou de la machine. Ce booléen et une liste `checks` non vide sont incompatibles. Un niveau plus
+précis peut ensuite réactiver des contrôles en déclarant sa propre liste. Quand l'absence de contrôle
+est effective, `wol status ID` retourne immédiatement l'état `unknown`, sans attendre ; un réveil
+envoie au plus les paquets prévus mais ne prétend pas confirmer le démarrage et n'applique ni délai de
+vérification, ni tentative de contrôle, ni nouvel envoi motivé par un échec de vérification.
+
 Sans ces champs, le comportement historique reste inchangé : aucune attente initiale, fenêtre de 45 secondes et intervalle de 2 secondes. `wake_timeout` reste accepté pour les anciennes configurations. Une surcharge ponctuelle ne modifie pas le fichier :
 
 ```sh

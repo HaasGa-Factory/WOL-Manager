@@ -159,6 +159,13 @@ attemptsLoop:
 			continue
 		}
 		r.Packet = "sent"
+		if _, disabled := e.cfg.effectiveCheckPolicy(id); disabled {
+			status := StatusResult{Server: id, State: "unknown", Note: "aucune vérification configurée"}
+			r.Status = &status
+			r.Note = "paquet émis sans vérification de disponibilité"
+			e.audit.write("wake", "engine", id, "sent", r)
+			return r, nil
+		}
 		if !verificationStarted {
 			if initialDelay > 0 {
 				if e.progress != nil {

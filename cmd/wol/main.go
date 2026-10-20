@@ -551,6 +551,12 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 				fmt.Println("Réveil annulé: aucune machine sélectionnée.")
 				continue
 			}
+			if _, disabled := c.effectiveCheckPolicy(id); disabled {
+				fmt.Printf("Aucune vérification configurée pour %s; le réveil ne pourra pas confirmer son démarrage.\n", id)
+			} else {
+				_, timeout, _ := c.effectiveVerification(id)
+				fmt.Printf("Contrôle préalable de %s en cours, délai maximal %s…\n", id, frenchDuration(timeout))
+			}
 			status := checkServer(context.Background(), c, id)
 			fmt.Printf("État courant de %s: %s\n", id, status.State)
 			if !confirmPrompt(r, os.Stdout, "Envoyer réellement un paquet WoL à "+id+" ?") {

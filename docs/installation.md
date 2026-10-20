@@ -168,7 +168,7 @@ Vérification après réveil: 1 — ICMP
 | Groupes | Groupes auxquels rattacher la machine. Une réponse vide signifie aucun groupe. Saisir `-` sert à vider une valeur existante lors d'une modification. |
 | Dépendances | Autres machines que WoL Manager doit réveiller avant celle-ci. Une réponse vide signifie aucune dépendance. |
 
-Le choix `1 — ICMP` convient si TrueNAS répond au ping : WoL Manager l'utilise avant l'envoi pour éviter un réveil inutile, puis après l'envoi pour confirmer que la machine est devenue joignable. Le délai d'une tentative ICMP est de trois secondes. Si le ping est bloqué, utilisez plutôt `2 — TCP` avec un port réellement ouvert sur TrueNAS. Le contrôle ARP indique seulement la présence d'une entrée dans la table de voisinage et ne prouve pas que la machine est allumée.
+Le choix `1 — ICMP` convient si TrueNAS répond au ping : WoL Manager l'utilise avant l'envoi pour éviter un réveil inutile, puis après l'envoi pour confirmer que la machine est devenue joignable. Le délai d'une tentative ICMP est de trois secondes. Si le ping est bloqué, utilisez plutôt `2 — TCP` avec un port réellement ouvert sur TrueNAS. Le contrôle ARP indique seulement la présence d'une entrée dans la table de voisinage et ne prouve pas que la machine est allumée. Le choix `4 — Aucune vérification` désactive explicitement tout contrôle pour cette machine : son état reste `unknown` et aucun délai de vérification n'est appliqué. Le choix `6 — Hériter des vérifications globales` conserve au contraire les contrôles définis au niveau supérieur.
 
 Le message `Machine truenas prête.` confirme que les valeurs sont valides dans la session en cours. Il ne signifie pas encore qu'elles sont enregistrées sur disque. Revenez au menu principal, choisissez `5 — Résumé, validation et enregistrement`, contrôlez le résumé, puis confirmez `Enregistrer cette configuration ?`.
 
@@ -180,7 +180,9 @@ wol status truenas
 wol wake truenas --dry-run
 ```
 
-Le dernier contrôle est une simulation : aucun paquet Wake-on-LAN n'est envoyé.
+Le dernier contrôle est une simulation : aucun paquet Wake-on-LAN n'est envoyé. La simulation proposée
+par l'assistant affiche les machines sous forme de liste numérotée et accepte soit le numéro, soit
+l'identifiant technique.
 
 NUT et l'API sont facultatifs. `wol setup` peut être relancé : il sauvegarde le YAML, préserve les autres modules et écrit atomiquement seulement après validation. Une configuration existante n'est jamais remplacée par l'exemple. Le YAML reste un format interne ; `wol config edit` est réservé aux administrateurs qui souhaitent une édition avancée.
 

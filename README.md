@@ -11,6 +11,7 @@ WoL Manager `v1.2.1` est un gestionnaire Wake-on-LAN Linux centralisé pour plus
 - dépendances, groupes et reprise NUT séquentielle ou parallèle après un cycle de coupure réellement observé ;
 - seuils batterie bas/haut, stabilité secteur, politiques d'échec et reprise prudente après redémarrage ;
 - contrôles ICMP/TCP/ARP multiples avec logique ET/OU et quatre états distincts ;
+- distinction explicite entre héritage des contrôles et absence de vérification ;
 - découverte passive et diagnostic actif avec liste blanche, budget, débit, délai et audit ;
 - API `/api/v1` avec jetons hachés, permissions et limitation de débit ;
 - client NUT facultatif ;
@@ -52,6 +53,13 @@ Si vous activez immédiatement le service lors d'une première installation inte
 sudo wol token create --id admin --permissions read,wake,admin
 sudo wol token list
 sudo wol token revoke --id admin
+```
+
+Le jeton s'utilise comme en-tête Bearer, par exemple :
+
+```sh
+TOKEN='<jeton-affiché-une-fois>'
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health
 ```
 
 La création et la révocation sont prises en compte par l'API dès la requête suivante, sans redémarrer

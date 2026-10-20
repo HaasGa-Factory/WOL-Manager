@@ -28,7 +28,10 @@ func checkServer(ctx context.Context, c *Config, id string) StatusResult {
 	if !ok {
 		return StatusResult{Server: id, State: "check_impossible", Note: "serveur inconnu"}
 	}
-	checks := c.effectiveChecks(id)
+	checks, disabled := c.effectiveCheckPolicy(id)
+	if disabled {
+		return StatusResult{Server: id, State: "unknown", Note: "aucune vérification configurée"}
+	}
 	if len(checks) == 0 {
 		checks = []Check{{Type: "tcp", Port: 22, Timeout: Duration(2 * time.Second)}}
 	}

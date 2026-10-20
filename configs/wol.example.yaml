@@ -31,11 +31,14 @@ networks:
     allow_unicast: true
     allow_directed_broadcast: false
     relay: relay-vlan20
+    # Une liste checks vide hérite. Pour n'effectuer aucun contrôle à ce niveau :
+    # checks_disabled: true
 
 groups:
   infrastructure:
     priority: 10
     servers: [storage-1]
+    # checks_disabled: true  # désactive explicitement les contrôles du groupe
     ups_policy:
       ups: ups-main
       require_online: true
@@ -61,6 +64,8 @@ servers:
     ip: 192.168.20.10
     network: servers
     groups: [infrastructure]
+    # Alternative à la liste checks ci-dessous : checks_disabled: true
+    # Ne jamais définir checks_disabled: true avec une liste checks non vide.
     check_logic: all
     verification:
       initial_delay: 90s

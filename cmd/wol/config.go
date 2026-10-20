@@ -70,6 +70,7 @@ type Network struct {
 	Relay                  string   `yaml:"relay"`
 	TransportOrder         []string `yaml:"transport_order"`
 	Checks                 []Check  `yaml:"checks"`
+	ChecksDisabled         bool     `yaml:"checks_disabled,omitempty" json:"checks_disabled,omitempty"`
 	WakeTimeout            Duration `yaml:"wake_timeout"`
 	WakeRetries            *int     `yaml:"wake_retries"`
 	Delay                  Duration `yaml:"delay"`
@@ -80,6 +81,7 @@ type Group struct {
 	Priority       int                 `yaml:"priority"`
 	Servers        []string            `yaml:"servers"`
 	Checks         []Check             `yaml:"checks"`
+	ChecksDisabled bool                `yaml:"checks_disabled,omitempty" json:"checks_disabled,omitempty"`
 	TransportOrder []string            `yaml:"transport_order"`
 	WakeTimeout    Duration            `yaml:"wake_timeout"`
 	WakeRetries    *int                `yaml:"wake_retries"`
@@ -90,21 +92,22 @@ type Group struct {
 }
 
 type Server struct {
-	Name         string             `yaml:"name" json:"name"`
-	MAC          string             `yaml:"mac" json:"mac"`
-	IP           string             `yaml:"ip" json:"ip"`
-	Network      string             `yaml:"network" json:"network"`
-	Groups       []string           `yaml:"groups" json:"groups"`
-	Dependencies []string           `yaml:"dependencies" json:"dependencies"`
-	Checks       []Check            `yaml:"checks" json:"checks"`
-	Transports   []string           `yaml:"transports" json:"transports"`
-	WakeTimeout  Duration           `yaml:"wake_timeout" json:"-"`
-	WakeRetries  *int               `yaml:"wake_retries" json:"-"`
-	Delay        Duration           `yaml:"delay" json:"-"`
-	Verification VerificationConfig `yaml:"verification,omitempty" json:"-"`
-	CheckLogic   string             `yaml:"check_logic,omitempty" json:"-"`
-	UPS          *UPSPolicy         `yaml:"ups_policy" json:"-"`
-	Enabled      *bool              `yaml:"enabled" json:"enabled,omitempty"`
+	Name           string             `yaml:"name" json:"name"`
+	MAC            string             `yaml:"mac" json:"mac"`
+	IP             string             `yaml:"ip" json:"ip"`
+	Network        string             `yaml:"network" json:"network"`
+	Groups         []string           `yaml:"groups" json:"groups"`
+	Dependencies   []string           `yaml:"dependencies" json:"dependencies"`
+	Checks         []Check            `yaml:"checks" json:"checks"`
+	ChecksDisabled bool               `yaml:"checks_disabled,omitempty" json:"checks_disabled,omitempty"`
+	Transports     []string           `yaml:"transports" json:"transports"`
+	WakeTimeout    Duration           `yaml:"wake_timeout" json:"-"`
+	WakeRetries    *int               `yaml:"wake_retries" json:"-"`
+	Delay          Duration           `yaml:"delay" json:"-"`
+	Verification   VerificationConfig `yaml:"verification,omitempty" json:"-"`
+	CheckLogic     string             `yaml:"check_logic,omitempty" json:"-"`
+	UPS            *UPSPolicy         `yaml:"ups_policy" json:"-"`
+	Enabled        *bool              `yaml:"enabled" json:"enabled,omitempty"`
 }
 
 type VerificationConfig struct {
@@ -344,6 +347,9 @@ func (c *Config) Validate() error {
 		}
 		checkOrder("network "+id, n.TransportOrder)
 		checkChecks("network "+id, n.Checks)
+		if n.ChecksDisabled && len(n.Checks) > 0 {
+			problems = append(problems, "network "+id+": checks et checks_disabled sont incompatibles")
+		}
 		if n.Port < 0 || n.Port > 65535 {
 			problems = append(problems, "network "+id+": port invalide")
 		}
@@ -392,6 +398,9 @@ func (c *Config) Validate() error {
 		}
 		checkOrder("server "+id, s.Transports)
 		checkChecks("server "+id, s.Checks)
+		if s.ChecksDisabled && len(s.Checks) > 0 {
+			problems = append(problems, "server "+id+": checks et checks_disabled sont incompatibles")
+		}
 		checkVerification("server "+id+" verification", s.Verification)
 		checkLogic("server "+id, s.CheckLogic)
 		checkPolicy("server "+id, s.UPS)
@@ -425,6 +434,9 @@ func (c *Config) Validate() error {
 		}
 		checkOrder("group "+id, g.TransportOrder)
 		checkChecks("group "+id, g.Checks)
+		if g.ChecksDisabled && len(g.Checks) > 0 {
+			problems = append(problems, "group "+id+": checks et checks_disabled sont incompatibles")
+		}
 		checkPolicy("group "+id, g.UPS)
 		if g.WakeRetries != nil && *g.WakeRetries < 0 {
 			problems = append(problems, "group "+id+": wake_retries négatif")
@@ -598,19 +610,31 @@ func (c *Config) groupsFor(id string) []Group {
 	sort.Slice(out, func(i, j int) bool { return out[i].Priority < out[j].Priority })
 	return out
 }
-func (c *Config) effectiveChecks(id string) []Check {
+func (c *Config) effectiveCheckPolicy(id string) ([]Check, bool) {
 	xs := c.Global.Checks
-	if n := c.Networks[c.Servers[id].Network]; len(n.Checks) > 0 {
-		xs = n.Checks
+	disabled := false
+	if n := c.Networks[c.Servers[id].Network]; n.ChecksDisabled {
+		xs, disabled = nil, true
+	} else if len(n.Checks) > 0 {
+		xs, disabled = n.Checks, false
 	}
 	for _, g := range c.groupsFor(id) {
-		if len(g.Checks) > 0 {
-			xs = g.Checks
+		if g.ChecksDisabled {
+			xs, disabled = nil, true
+		} else if len(g.Checks) > 0 {
+			xs, disabled = g.Checks, false
 		}
 	}
-	if len(c.Servers[id].Checks) > 0 {
-		xs = c.Servers[id].Checks
+	if s := c.Servers[id]; s.ChecksDisabled {
+		xs, disabled = nil, true
+	} else if len(s.Checks) > 0 {
+		xs, disabled = s.Checks, false
 	}
+	return xs, disabled
+}
+
+func (c *Config) effectiveChecks(id string) []Check {
+	xs, _ := c.effectiveCheckPolicy(id)
 	return xs
 }
 

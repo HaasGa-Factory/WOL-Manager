@@ -14,6 +14,9 @@
 - état des automatismes disponible avec `wol automation status` et `GET /api/v1/automations` ;
 - configuration guidée des politiques de reprise, sans édition YAML obligatoire.
 - messages interactifs colorés avec désactivation automatique pour les journaux, JSON, redirections, `NO_COLOR` et terminaux incompatibles.
+- distinction explicite entre héritage des contrôles et « aucune vérification », sans attente ni tentative inutile ;
+- simulation de fin d'assistant avec sélection numérotée, aides de champ précises et progression visible avant le contrôle d'un réveil réel ;
+- aide de création des jetons complétée par un exemple d'en-tête Bearer.
 
 ## 1.1.1 - 2026-10-16
 

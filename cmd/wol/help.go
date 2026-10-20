@@ -148,7 +148,11 @@ Accordez le minimum nécessaire. Le secret créé est affiché une seule fois; s
 
 Valeurs par défaut: id admin; permissions read,wake,admin. Les permissions acceptées sont read,
 wake et admin. Protégez immédiatement le jeton affiché: il ne peut pas être relu ensuite.
-Un processus API actif prend en compte le nouveau jeton dès la requête suivante, sans redémarrage.`,
+Un processus API actif prend en compte le nouveau jeton dès la requête suivante, sans redémarrage.
+
+Utilisation:
+  TOKEN='<jeton-affiché-une-fois>'
+  curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health`,
 	"token list": `Usage: sudo wol token list
 
 Liste les identifiants, permissions et états des jetons. Les secrets et hashes ne sont jamais affichés.`,

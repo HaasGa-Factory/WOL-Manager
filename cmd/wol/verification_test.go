@@ -124,6 +124,32 @@ func TestWakeDryRunNeverWaits(t *testing.T) {
 	}
 }
 
+func TestWakeWithChecksDisabledSendsOnceAndReturnsImmediately(t *testing.T) {
+	cfg := testConfig(t)
+	server := cfg.Servers["two"]
+	server.ChecksDisabled = true
+	server.Verification.InitialDelay = durationPointer(5 * time.Second)
+	retries := 4
+	server.Verification.PacketRetries = &retries
+	cfg.Servers["two"] = server
+	sent := 0
+	engine := &Engine{cfg: cfg, audit: &Auditor{}, sendPacket: func(string, string, bool, []byte) error {
+		sent++
+		return nil
+	}}
+	start := time.Now()
+	result, err := engine.wakeTree(context.Background(), "two", map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent != 1 || len(result) != 1 || result[0].Verified || result[0].Status == nil || result[0].Status.State != "unknown" {
+		t.Fatalf("réveil sans vérification incorrect: sent=%d result=%#v", sent, result)
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("réveil sans vérification a attendu %s", time.Since(start))
+	}
+}
+
 type notificationWriter struct {
 	once sync.Once
 	done chan struct{}

@@ -14,6 +14,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -268,6 +269,66 @@ func TestSimulationSelectionUsesNumberIdentifierAndContextHelp(t *testing.T) {
 	}
 }
 
+func TestMenuAnnouncesPreflightCheckBeforeRealWakeConfirmation(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Global.Checks = []Check{{Type: "tcp", Port: 1, Timeout: Duration(10 * time.Millisecond)}}
+	inputReader, inputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputReader, outputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldInput, oldOutput := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = inputReader, outputWriter
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = oldInput, oldOutput
+		_ = inputReader.Close()
+		_ = outputReader.Close()
+	})
+	if _, err := inputWriter.WriteString("8\n2\nn\n0\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = inputWriter.Close()
+	if err := menu("", cfg, &Engine{cfg: cfg, audit: &Auditor{}}, false); err != nil {
+		t.Fatal(err)
+	}
+	_ = outputWriter.Close()
+	text, err := io.ReadAll(outputReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(text), "Contrôle préalable de two en cours, délai maximal 45 secondes…") {
+		t.Fatalf("progression absente:\n%s", text)
+	}
+}
+
+func TestDisabledChecksReturnUnknownImmediately(t *testing.T) {
+	cfg := testConfig(t)
+	server := cfg.Servers["two"]
+	server.ChecksDisabled = true
+	server.Verification.InitialDelay = durationPointer(90 * time.Second)
+	cfg.Servers["two"] = server
+	start := time.Now()
+	result := checkServer(context.Background(), cfg, "two")
+	if result.State != "unknown" || result.Note != "aucune vérification configurée" || len(result.Results) != 0 {
+		t.Fatalf("résultat inattendu: %#v", result)
+	}
+	if time.Since(start) > 100*time.Millisecond {
+		t.Fatalf("status sans contrôle a attendu %s", time.Since(start))
+	}
+}
+
+func TestTokenCreateHelpShowsBearerUsage(t *testing.T) {
+	help := commandHelp["token create"]
+	for _, expected := range []string{"Authorization: Bearer $TOKEN", "127.0.0.1:8080/api/v1/health"} {
+		if !strings.Contains(help, expected) {
+			t.Fatalf("aide token create sans %q:\n%s", expected, help)
+		}
+	}
+}
+
 func TestHumanMenuPresentationAvoidsRawJSONAndNanoseconds(t *testing.T) {
 	cfg := testConfig(t)
 	var output bytes.Buffer
@@ -449,6 +510,47 @@ func TestConfigurationInheritance(t *testing.T) {
 	_, retries, _ := c.effectiveTiming("one")
 	if retries != 2 {
 		t.Fatalf("priorité groupe non appliquée: %d", retries)
+	}
+}
+
+func TestChecksDisabledHierarchyAndExplicitOverride(t *testing.T) {
+	c := testConfig(t)
+	c.Global.Checks = []Check{{Type: "tcp", Port: 22}}
+	n := c.Networks["lan"]
+	n.ChecksDisabled = true
+	c.Networks["lan"] = n
+	if checks, disabled := c.effectiveCheckPolicy("two"); !disabled || len(checks) != 0 {
+		t.Fatalf("désactivation réseau ignorée: %#v disabled=%t", checks, disabled)
+	}
+	s := c.Servers["two"]
+	s.Checks = []Check{{Type: "tcp", Port: 443}}
+	c.Servers["two"] = s
+	if checks, disabled := c.effectiveCheckPolicy("two"); disabled || len(checks) != 1 || checks[0].Port != 443 {
+		t.Fatalf("surcharge machine ignorée: %#v disabled=%t", checks, disabled)
+	}
+
+	n.ChecksDisabled = false
+	c.Networks["lan"] = n
+	g := c.Groups["pair"]
+	g.ChecksDisabled = true
+	c.Groups["pair"] = g
+	s = c.Servers["two"]
+	s.Checks = nil
+	s.Groups = []string{"pair"}
+	c.Servers["two"] = s
+	if checks, disabled := c.effectiveCheckPolicy("two"); !disabled || len(checks) != 0 {
+		t.Fatalf("désactivation groupe ignorée: %#v disabled=%t", checks, disabled)
+	}
+}
+
+func TestChecksDisabledRejectsExplicitChecksAtSameLevel(t *testing.T) {
+	c := testConfig(t)
+	s := c.Servers["two"]
+	s.ChecksDisabled = true
+	s.Checks = []Check{{Type: "tcp", Port: 22}}
+	c.Servers["two"] = s
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "checks et checks_disabled sont incompatibles") {
+		t.Fatalf("configuration contradictoire acceptée: %v", err)
 	}
 }
 
