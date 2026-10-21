@@ -303,7 +303,9 @@ func TestDiscoveryCancellationDoesNotModifyFile(t *testing.T) {
 func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 	cases := map[string][]string{
 		"Nom":                                    {"nom lisible", "espaces"},
+		"Nom: ":                                  {"nom lisible", "espaces"},
 		"Réseau":                                 {"liste affichée"},
+		"Réseau: ":                               {"liste affichée"},
 		"Enregistrer cette configuration ?":      {"sauvegarde", "atomiquement"},
 		"Tester une machine en simulation WoL ?": {"aucun Magic Packet"},
 		"Machine à simuler":                      {"numéro affiché", "Entrée annule"},

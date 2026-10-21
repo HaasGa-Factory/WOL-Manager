@@ -11,6 +11,18 @@ import (
 	"strings"
 )
 
+func requireSetupWriteAccess(path string) error {
+	return setupWriteAccessError(path, os.Geteuid())
+}
+
+func setupWriteAccessError(path string, euid int) error {
+	cleanTarget := filepath.Clean(path)
+	if euid == 0 || !(cleanTarget == "/etc/wol-manager/wol.yaml" || strings.HasPrefix(cleanTarget, "/etc/wol-manager/")) {
+		return nil
+	}
+	return fmt.Errorf("la configuration %s est administrée par root; relancez avec « sudo wol setup »", cleanTarget)
+}
+
 func secureConfigFile(actualPath, targetPath string) error {
 	if err := os.Chmod(actualPath, 0640); err != nil {
 		return fmt.Errorf("permissions de configuration: %w", err)

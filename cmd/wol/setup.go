@@ -171,6 +171,9 @@ type configSession struct {
 }
 
 func newConfigSession(path string) (*configSession, error) {
+	if err := requireSetupWriteAccess(path); err != nil {
+		return nil, err
+	}
 	base := []byte(minimalConfig)
 	existing := false
 	if info, err := os.Lstat(path); err == nil {
@@ -1778,7 +1781,7 @@ func prompt(reader *bufio.Reader, output io.Writer, text string) string {
 }
 
 func fieldHelp(label string) string {
-	key := strings.ToLower(label)
+	key := strings.TrimSuffix(strings.TrimSpace(strings.ToLower(label)), ":")
 	switch {
 	case key == "nom" || strings.HasPrefix(key, "nom ["):
 		return "Aide: nom lisible affiché aux utilisateurs; les espaces sont autorisés, par exemple « Serveur TrueNAS » ou « PC du bureau »."
