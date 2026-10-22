@@ -45,7 +45,9 @@ jamais rendus lisibles par tous les utilisateurs.
 
 Toutes les commandes disposent d'une aide sans charger la configuration, par exemple
 `wol wake --help`, `wol config group --help` ou `wol automation status --help`. Dans les menus
-interactifs, saisissez `?` pour afficher l'aide du contexte courant.
+interactifs, saisissez `?` pour afficher l'aide du contexte courant. L'aide colorée se désactive
+automatiquement dans les pipes et redirections ; utilisez `wol --no-color --help` ou `NO_COLOR=1`
+pour la désactiver explicitement.
 
 Si vous activez immédiatement le service lors d'une première installation interactive, l'installateur crée et affiche le premier jeton administrateur. En mode CLI ou si vous configurez l'API plus tard :
 

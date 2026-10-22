@@ -67,6 +67,7 @@ func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h"`,
 		`automation) COMPREPLY=( $(compgen -W "status --help -h"`,
 		`version) COMPREPLY=( $(compgen -W "--channel --source-revision --commit --help -h"`,
+		`--config --json --no-color`,
 		`complete -F _wol wol`,
 	} {
 		if !strings.Contains(bashCompletion, expected) {
@@ -98,16 +99,17 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 		t.Fatalf("aide générale: %v", err)
 	}
 	commands := [][]string{
-		{"setup", "--help"}, {"update", "--help"}, {"completion", "bash", "--help"},
+		{"setup", "--help"}, {"update", "--help"}, {"completion", "--help"}, {"completion", "bash", "--help"},
 		{"list", "--help"}, {"status", "--help"}, {"wake", "--help"},
 		{"config", "--help"}, {"config", "check", "--help"}, {"config", "edit", "--help"},
 		{"config", "network", "--help"}, {"config", "machine", "--help"},
 		{"config", "group", "--help"}, {"config", "nut", "--help"},
-		{"config", "discovery", "--help"}, {"token", "create", "--help"},
+		{"config", "discovery", "--help"}, {"token", "--help"}, {"token", "create", "--help"},
 		{"token", "list", "--help"}, {"token", "revoke", "--help"}, {"network", "test", "--help"},
-		{"network", "discover", "--help"}, {"ups", "status", "--help"},
+		{"network", "--help"}, {"network", "discover", "--help"}, {"ups", "--help"}, {"ups", "status", "--help"},
 		{"ups", "test", "--help"}, {"jobs", "--help"}, {"automation", "status", "--help"},
-		{"menu", "--help"}, {"api", "serve", "--help"}, {"relay", "serve", "--help"},
+		{"automation", "--help"}, {"menu", "--help"}, {"api", "--help"}, {"api", "serve", "--help"},
+		{"relay", "--help"}, {"relay", "serve", "--help"},
 		{"relay", "check", "--help"}, {"version", "--help"},
 	}
 	for _, command := range commands {
@@ -118,6 +120,22 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Fatalf("l'aide a créé ou modifié la configuration: %v", err)
+	}
+}
+
+func TestAllDetailedHelpsUseModernRendererWithoutLosingContent(t *testing.T) {
+	for key, raw := range commandHelp {
+		var output bytes.Buffer
+		renderCommandHelp(&output, raw, helpRenderOptions{mode: colorNone, width: 80})
+		text := output.String()
+		for _, expected := range []string{"WoL Manager", "Gestion centralisée du Wake-on-LAN", "UTILISATION", "wol"} {
+			if !strings.Contains(text, expected) {
+				t.Errorf("aide %q sans %q", key, expected)
+			}
+		}
+		if strings.Contains(text, "\x1b[") {
+			t.Errorf("aide %q contient ANSI en mode texte", key)
+		}
 	}
 }
 
@@ -381,7 +399,7 @@ func TestConfigHelpContent(t *testing.T) {
 		if err := printCommandHelp(&output, []string{"config", section, "--help"}); err != nil {
 			t.Fatal(err)
 		}
-		for _, expected := range []string{"Usage:", "Actions:", "Paramètres:", "Contraintes:"} {
+		for _, expected := range []string{"UTILISATION", "ACTIONS", "PARAMÈTRES", "CONTRAINTES"} {
 			if !strings.Contains(output.String(), expected) {
 				t.Fatalf("aide %s incomplète: %q absent", section, expected)
 			}

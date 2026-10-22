@@ -40,6 +40,7 @@ func main() {
 	}
 }
 func run(args []string) error {
+	args, cliNoColor = presentationArgs(args)
 	root := flag.NewFlagSet("wol", flag.ContinueOnError)
 	configPath := root.String("config", envOr("WOL_CONFIG", "/etc/wol-manager/wol.yaml"), "fichier de configuration")
 	jsonOut := root.Bool("json", false, "sortie JSON")
@@ -203,34 +204,23 @@ func usage() error {
 }
 
 func printUsage(output io.Writer) {
-	fmt.Fprintln(output, `WoL Manager `+version+`
-Usage: wol [--config FILE] [--json] COMMAND
-  setup                         assistant de configuration
-  update [--check] [--channel main|dev]
-                                vérifie ou installe une mise à jour
-  completion bash               génère l'autocomplétion Bash
-  list                          liste des serveurs
-  status SERVER                 vérifie un serveur
-  wake SERVER [--dry-run] [--verification-delay DURÉE]
-                                réveille un serveur et ses dépendances
-  wake --group GROUP            réveille un groupe
-  wake --all                    réveille tous les serveurs actifs
-  config check                  valide la configuration
-  config network|machine|group|nut|discovery
-                                gestion guidée sans édition YAML
-  config edit                   édition avancée manuelle
-  token create|list|revoke      gestion sûre des jetons API
-  network test [SERVER...]      explique les transports
-  network discover [options]    découverte passive ou active
-  ups status|test               état/diagnostic en lecture seule des UPS NUT
-  jobs                          liste les tâches persistées
-  automation status             état et raisons d'attente des reprises NUT
-  menu                          interface interactive
-  api serve                     démarre l'API
-  relay serve|check             relais distant
-  version                       version, canal ou révision source
+	renderRootHelp(output, helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)})
+}
 
-Utilisez "wol COMMANDE --help" pour l'aide détaillée.`)
+func presentationArgs(args []string) ([]string, bool) {
+	filtered := make([]string, 0, len(args))
+	disabled := false
+	for _, arg := range args {
+		if arg == "--no-color" {
+			disabled = true
+			continue
+		}
+		if arg == "--json" {
+			disabled = true
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered, disabled
 }
 
 const bashCompletion = `# bash completion for WoL Manager
@@ -240,12 +230,12 @@ _wol() {
     for ((i=1; i<COMP_CWORD; i++)); do
         case "${COMP_WORDS[i]}" in
             --config) ((i++)) ;;
-            --json) ;;
+			--json|--no-color) ;;
             *) cmd="${COMP_WORDS[i]}"; break ;;
         esac
     done
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs automation menu api relay version completion --config --json" -- "$cur") )
+		COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs automation menu api relay version completion --config --json --no-color" -- "$cur") )
         return
     fi
     case "$cmd" in

@@ -1,6 +1,6 @@
 # CLI
 
-Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
+Syntaxe générale : `wol [--config FILE] [--json] [--no-color] COMMANDE`.
 
 | Commande | Fonction |
 |---|---|
@@ -99,7 +99,13 @@ le moniteur à lui seul.
 
 Codes de sortie : `0` succès, `1` erreur d'exécution/configuration/politique, `2` syntaxe invalide. Les diagnostics actifs affichent toujours un avertissement sur stderr.
 
-Sur un terminal compatible, la CLI met en évidence les erreurs en rouge, les avertissements en jaune, les validations réussies en vert et les informations importantes en cyan. Les couleurs sont automatiquement désactivées pour une redirection, une sortie JSON, un terminal `dumb` ou lorsque la variable standard `NO_COLOR` est définie. Les textes et codes de sortie restent identiques pour les scripts.
+Sur un terminal compatible, la CLI utilise TrueColor lorsque cette capacité est annoncée, puis se
+replie sur ANSI 256 couleurs et ANSI 16 couleurs. Elle met en évidence les erreurs en rouge, les
+avertissements et titres en jaune, les commandes et validations réussies en vert, et les informations
+importantes en bleu ou cyan. Les couleurs sont automatiquement désactivées pour une redirection, une
+sortie JSON, un terminal `dumb`, avec `NO_COLOR`, ou avec l'option globale `--no-color`. Les textes et
+codes de sortie restent identiques pour les scripts. La largeur de l'aide s'adapte au terminal sans
+tronquer les commandes.
 
 L'installateur place automatiquement l'autocomplétion Bash au bon emplacement. Dans un nouveau terminal, `wol m<Tab>` complète `menu` et `wol config m<Tab>` complète `machine`. Les options d'aide et de version sont également proposées. La commande `wol completion bash` permet aussi d'afficher le script sans l'installer.
 

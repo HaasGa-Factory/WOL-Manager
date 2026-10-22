@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -34,8 +35,232 @@ func printCommandHelp(output io.Writer, args []string) error {
 	if !ok {
 		return errUsage
 	}
-	fmt.Fprintf(output, "WoL Manager %s\n\n%s\n", version, text)
+	renderCommandHelp(output, text, helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)})
 	return nil
+}
+
+type helpRow struct {
+	command     string
+	description string
+}
+
+type helpSection struct {
+	title string
+	text  []string
+	rows  []helpRow
+}
+
+type helpRenderOptions struct {
+	mode  colorMode
+	width int
+}
+
+func renderRootHelp(output io.Writer, options helpRenderOptions) {
+	options.width = clampWidth(options.width)
+	renderHelpHeader(output, options)
+	renderHelpSection(output, helpSection{title: "UTILISATION", text: []string{"wol [--config FILE] [--json] [--no-color] COMMANDE"}}, options)
+	renderHelpSection(output, helpSection{title: "COMMANDES PRINCIPALES", rows: []helpRow{
+		{command: "wol setup", description: "Assistant de configuration"},
+		{command: "wol list", description: "Liste les machines"},
+		{command: "wol status MACHINE", description: "Vérifie une machine"},
+		{command: "wol wake MACHINE", description: "Réveille une machine et ses dépendances"},
+		{command: "wol wake --group GROUPE", description: "Réveille un groupe"},
+		{command: "wol wake --all", description: "Réveille toutes les machines actives"},
+		{command: "wol menu", description: "Ouvre l'interface interactive"},
+	}}, options)
+	renderHelpSection(output, helpSection{title: "CONFIGURATION ET ACCÈS", rows: []helpRow{
+		{command: "wol config check", description: "Valide la configuration"},
+		{command: "wol config network|machine|group|nut|discovery", description: "Gestion guidée sans édition YAML"},
+		{command: "wol config edit", description: "Ouvre l'édition YAML avancée"},
+		{command: "wol token create|list|revoke", description: "Gère les jetons API"},
+	}}, options)
+	renderHelpSection(output, helpSection{title: "RÉSEAU, UPS ET SERVICES", rows: []helpRow{
+		{command: "wol network test [MACHINE...]", description: "Explique les transports sans envoyer de paquet"},
+		{command: "wol network discover [OPTIONS]", description: "Lance la découverte passive ou active"},
+		{command: "wol ups status|test", description: "Consulte ou diagnostique les UPS NUT en lecture seule"},
+		{command: "wol jobs", description: "Liste les tâches persistées"},
+		{command: "wol automation status", description: "Affiche l'état des reprises NUT"},
+		{command: "wol api serve", description: "Démarre l'API et les automatismes"},
+		{command: "wol relay serve|check", description: "Exécute ou vérifie un relais distant"},
+	}}, options)
+	renderHelpSection(output, helpSection{title: "MAINTENANCE", rows: []helpRow{
+		{command: "wol update [--check] [--channel main|dev]", description: "Vérifie ou installe une mise à jour"},
+		{command: "wol completion bash", description: "Génère l'autocomplétion Bash"},
+		{command: "wol version", description: "Affiche la version, le canal ou la révision source"},
+		{command: "wol --help", description: "Affiche cette aide"},
+	}}, options)
+	renderHelpSection(output, helpSection{title: "OPTIONS GLOBALES", rows: []helpRow{
+		{command: "--config FILE", description: "Utilise un autre fichier de configuration"},
+		{command: "--json", description: "Produit une sortie JSON exploitable par un script"},
+		{command: "--no-color", description: "Désactive les couleurs ANSI"},
+		{command: "-h, --help", description: "Affiche l'aide générale ou détaillée"},
+	}}, options)
+	renderHelpTip(output, "Astuce : wol wake --help affiche les options détaillées du réveil.", options)
+}
+
+func renderHelpHeader(output io.Writer, options helpRenderOptions) {
+	symbol := "⚡"
+	locale := os.Getenv("LC_ALL")
+	if locale == "" {
+		locale = os.Getenv("LANG")
+	}
+	if locale == "C" || locale == "POSIX" {
+		symbol = ">"
+	}
+	fmt.Fprintf(output, "%s %s %s\n\n",
+		styledTextMode(symbol, styleSection, options.mode),
+		styledTextMode("WoL Manager", styleTitle, options.mode),
+		styledTextMode("v"+version, styleMuted, options.mode),
+	)
+	fmt.Fprintln(output, styledTextMode("Gestion centralisée du Wake-on-LAN", styleDescription, options.mode))
+}
+
+func renderCommandHelp(output io.Writer, raw string, options helpRenderOptions) {
+	options.width = clampWidth(options.width)
+	renderHelpHeader(output, options)
+	for _, section := range parseCommandHelp(raw) {
+		renderHelpSection(output, section, options)
+	}
+	renderHelpTip(output, "Astuce : wol --help affiche toutes les commandes disponibles.", options)
+}
+
+func renderHelpTip(output io.Writer, tip string, options helpRenderOptions) {
+	fmt.Fprintln(output)
+	for _, line := range wrapText(tip, options.width) {
+		fmt.Fprintln(output, styledTextMode(line, styleMuted, options.mode))
+	}
+}
+
+func parseCommandHelp(raw string) []helpSection {
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	sections := make([]helpSection, 0, 4)
+	for index := 0; index < len(lines); {
+		if strings.TrimSpace(lines[index]) == "" {
+			index++
+			continue
+		}
+		line := strings.TrimSpace(lines[index])
+		if strings.HasPrefix(line, "Usage:") {
+			section := helpSection{title: "UTILISATION", text: []string{strings.TrimSpace(strings.TrimPrefix(line, "Usage:"))}}
+			index++
+			for index < len(lines) && strings.TrimSpace(lines[index]) != "" {
+				section.text = append(section.text, strings.TrimSpace(lines[index]))
+				index++
+			}
+			sections = append(sections, section)
+			continue
+		}
+		if title, rest, ok := helpLabel(line); ok {
+			section := helpSection{title: title}
+			if title == "OPTIONS" || title == "SOUS-COMMANDES" {
+				index++
+				for index < len(lines) && strings.TrimSpace(lines[index]) != "" {
+					section.rows = append(section.rows, splitHelpRow(lines[index]))
+					index++
+				}
+			} else {
+				if rest != "" {
+					section.text = append(section.text, rest)
+				}
+				index++
+			}
+			sections = append(sections, section)
+			continue
+		}
+		section := helpSection{title: "DESCRIPTION"}
+		paragraph := make([]string, 0, 4)
+		for index < len(lines) && strings.TrimSpace(lines[index]) != "" {
+			line = strings.TrimSpace(lines[index])
+			if title, rest, ok := helpLabel(line); ok {
+				if len(paragraph) > 0 {
+					section.text = append(section.text, strings.Join(paragraph, " "))
+					paragraph = paragraph[:0]
+				}
+				if len(section.text) > 0 {
+					sections = append(sections, section)
+				}
+				sections = append(sections, helpSection{title: title, text: []string{rest}})
+				section = helpSection{title: "DESCRIPTION"}
+			} else {
+				paragraph = append(paragraph, line)
+			}
+			index++
+		}
+		if len(paragraph) > 0 {
+			section.text = append(section.text, strings.Join(paragraph, " "))
+		}
+		if len(section.text) > 0 {
+			sections = append(sections, section)
+		}
+	}
+	return sections
+}
+
+func helpLabel(line string) (string, string, bool) {
+	labels := []string{"Options:", "Sous-commandes:", "Actions:", "Paramètres:", "Valeurs par défaut:", "Contraintes:", "Utilisation:"}
+	for _, label := range labels {
+		if strings.HasPrefix(line, label) {
+			return strings.ToUpper(strings.TrimSuffix(label, ":")), strings.TrimSpace(strings.TrimPrefix(line, label)), true
+		}
+	}
+	return "", "", false
+}
+
+func splitHelpRow(line string) helpRow {
+	line = strings.TrimSpace(line)
+	for index := 0; index < len(line)-1; index++ {
+		if line[index] == ' ' && line[index+1] == ' ' {
+			return helpRow{command: strings.TrimSpace(line[:index]), description: strings.TrimSpace(line[index:])}
+		}
+	}
+	return helpRow{command: line}
+}
+
+func renderHelpSection(output io.Writer, section helpSection, options helpRenderOptions) {
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, styledTextMode(section.title, styleSection, options.mode))
+	if len(section.rows) > 0 {
+		renderHelpRows(output, section.rows, options)
+		return
+	}
+	for _, paragraph := range section.text {
+		for _, line := range wrapText(paragraph, options.width) {
+			fmt.Fprintln(output, styledTextMode(line, styleDescription, options.mode))
+		}
+	}
+}
+
+func renderHelpRows(output io.Writer, rows []helpRow, options helpRenderOptions) {
+	leftWidth := 0
+	for _, row := range rows {
+		if width := visibleWidth(row.command); width > leftWidth {
+			leftWidth = width
+		}
+	}
+	gap := 4
+	stacked := options.width-leftWidth-gap < 24
+	for _, row := range rows {
+		command := styledTextMode(row.command, styleCommand, options.mode)
+		if row.description == "" {
+			fmt.Fprintln(output, command)
+			continue
+		}
+		if stacked {
+			fmt.Fprintln(output, command)
+			for _, line := range wrapText(row.description, options.width-4) {
+				fmt.Fprintf(output, "    %s\n", styledTextMode(line, styleDescription, options.mode))
+			}
+			continue
+		}
+		descriptionWidth := options.width - leftWidth - gap
+		wrapped := wrapText(row.description, descriptionWidth)
+		padding := strings.Repeat(" ", leftWidth-visibleWidth(row.command)+gap)
+		fmt.Fprintf(output, "%s%s%s\n", command, padding, styledTextMode(wrapped[0], styleDescription, options.mode))
+		continuation := strings.Repeat(" ", leftWidth+gap)
+		for _, line := range wrapped[1:] {
+			fmt.Fprintf(output, "%s%s\n", continuation, styledTextMode(line, styleDescription, options.mode))
+		}
+	}
 }
 
 var commandHelp = map[string]string{
