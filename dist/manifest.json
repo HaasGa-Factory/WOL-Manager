@@ -1,13 +1,13 @@
 {
   "manifest_version": 2,
-  "version": "1.1.1",
+  "version": "1.2.1",
   "channel": "main",
-  "source_revision": "10c888f9bf6f9603f8cd01f358ffdee3a4a5a7a4",
+  "source_revision": "81600fa7560deda8a360cad60b04e84691312e6c",
   "key_id": "wol-manager-2026-01",
   "installer_file": "install.sh",
-  "installer_sha256": "b49e3f1a2d5deec262b012c0443540b7802de47e62ad6b32a5ea1906a9f164ac",
+  "installer_sha256": "0819d24574a1796bcab6cbe10428096a30f4036bbdf4514d30012bdfce29b77a",
   "linux_amd64_file": "wol-linux-amd64",
-  "linux_amd64_sha256": "c570fa8218d9975b1c6c7b0d0bff9e60a7bc032488993eb2ea5bd58ec443fc4a",
+  "linux_amd64_sha256": "98e57283f0bef18cb10a6c9b4cf19b749e399f30f9726b10ed1ac8221088be88",
   "linux_arm64_file": "wol-linux-arm64",
-  "linux_arm64_sha256": "48561f5afdc1a66a5842957efdbfaf92b8e50d29eaa97dc7c1fc15080421abf0"
+  "linux_arm64_sha256": "4071abb9798edaaf0070a652331b497a2020b15144d1f207cf2dff0318c485df"
 }

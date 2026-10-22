@@ -25,7 +25,7 @@ while (($#)); do
   esac
 done
 
-for command in go git sha256sum file openssl; do
+for command in go git sha256sum file openssl tar; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Prérequis développeur manquant: $command" >&2
     exit 1
@@ -72,7 +72,7 @@ fi
 }
 
 mkdir -p "$DIST"
-work=$(mktemp -d "$DIST/.build.XXXXXX")
+work=$(mktemp -d /tmp/wol-manager-build.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT
 
 openssl pkey -in "$SIGNING_KEY" -pubout -outform DER -out "$work/derived-public.der" >/dev/null 2>&1
@@ -89,14 +89,23 @@ export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
 
 echo "Tests Go..."
-go mod verify
-go test ./...
+source_tree="$work/source"
+mkdir -p "$source_tree"
+git archive HEAD -- cmd api go.mod go.sum | tar -xf - -C "$source_tree"
+(
+  cd "$source_tree"
+  go mod verify
+  go test ./...
+)
 
 ldflags="-s -w -X main.version=$version -X main.sourceRevision=$source_revision -X main.buildChannel=$CHANNEL"
 for arch in amd64 arm64; do
   output="$work/wol-linux-$arch"
   echo "Compilation linux/$arch..."
-  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags="$ldflags" -o "$output" ./cmd/wol
+  (
+    cd "$source_tree"
+    CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags="$ldflags" -o "$output" ./cmd/wol
+  )
 done
 
 file "$work/wol-linux-amd64" | grep -Eq 'ELF 64-bit.*x86-64' || {

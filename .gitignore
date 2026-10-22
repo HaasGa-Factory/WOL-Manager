@@ -8,7 +8,9 @@
 
 # Artefacts temporaires de développement
 dist/.build.*/
+.folderignore/
 wol-test-*/
 *.log
 *.tmp
 coverage.out
+inventaire-aides-wol-manager.md

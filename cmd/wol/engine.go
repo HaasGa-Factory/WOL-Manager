@@ -16,10 +16,17 @@ import (
 )
 
 type Engine struct {
-	cfg    *Config
-	audit  *Auditor
-	dry    bool
-	noWait bool
+	cfg               *Config
+	audit             *Auditor
+	dry               bool
+	noWait            bool
+	verificationDelay *time.Duration
+	progress          io.Writer
+	gate              *PowerGate
+	requireVerified   bool
+	automationUPS     string
+	coordinator       *wakeCoordinator
+	sendPacket        func(destination, source string, broadcast bool, packet []byte) error
 }
 type WakeResult struct {
 	Server      string        `json:"server"`
@@ -32,6 +39,19 @@ type WakeResult struct {
 }
 
 func (e *Engine) wakeTree(ctx context.Context, id string, done map[string]bool) ([]WakeResult, error) {
+	if e.coordinator != nil {
+		owner, err := e.coordinator.acquire(ctx, id)
+		if !owner {
+			return nil, err
+		}
+		result, runErr := e.wakeTreeCore(ctx, id, done)
+		e.coordinator.complete(id, runErr)
+		return result, runErr
+	}
+	return e.wakeTreeCore(ctx, id, done)
+}
+
+func (e *Engine) wakeTreeCore(ctx context.Context, id string, done map[string]bool) ([]WakeResult, error) {
 	if done[id] {
 		return nil, nil
 	}
@@ -67,13 +87,14 @@ func (e *Engine) wakeTree(ctx context.Context, id string, done map[string]bool) 
 	if err != nil {
 		return out, err
 	}
+	if e.requireVerified && !x.Verified {
+		return out, fmt.Errorf("serveur %s non validé après le réveil", id)
+	}
 	done[id] = true
 	_, _, delay := e.cfg.effectiveTiming(id)
-	if delay > 0 {
-		select {
-		case <-ctx.Done():
-			return out, ctx.Err()
-		case <-time.After(delay):
+	if !e.dry && delay > 0 {
+		if err := waitContext(ctx, delay); err != nil {
+			return out, err
 		}
 	}
 	return out, nil
@@ -99,30 +120,73 @@ func (e *Engine) wakeOne(ctx context.Context, id string) (WakeResult, error) {
 	}
 	mac, _ := net.ParseMAC(e.cfg.Servers[id].MAC)
 	packet := magicPacket(mac)
-	timeout, retries, _ := e.cfg.effectiveTiming(id)
-	attempts := retries + 1
-	deadline := time.Now().Add(timeout)
-	for attempt := 1; attempt <= attempts; attempt++ {
+	initialDelay, timeout, interval := e.verificationTiming(id)
+	maxChecks, packetRetries := e.cfg.effectiveVerificationAttempts(id)
+	packetAttempts := packetRetries + 1
+	checks := 0
+	var verificationContext context.Context
+	var cancelVerification context.CancelFunc
+	var deadline time.Time
+	verificationStarted := false
+attemptsLoop:
+	for attempt := 1; attempt <= packetAttempts; attempt++ {
+		if e.gate != nil {
+			var gateErr error
+			if e.automationUPS != "" {
+				gateErr = e.gate.AllowUPS(e.automationUPS)
+			} else {
+				gateErr = e.gate.AllowServer(e.cfg, id)
+			}
+			if gateErr != nil {
+				return r, gateErr
+			}
+		}
 		if d.Name == "relay" {
 			err = e.sendRelay(ctx, d.Relay, id)
 		} else {
 			n := e.cfg.Networks[e.cfg.Servers[id].Network]
-			err = sendMagic(d.Destination, sourceForNetwork(n), d.Name != "unicast", packet)
+			if e.sendPacket == nil {
+				err = fmt.Errorf("émetteur Magic Packet non configuré")
+			} else {
+				err = e.sendPacket(d.Destination, sourceForNetwork(n), d.Name != "unicast", packet)
+			}
 		}
 		if err != nil {
-			if attempt == attempts {
+			if attempt == packetAttempts {
 				e.audit.write("wake", "engine", id, "failed", err.Error())
 				return r, err
 			}
 			continue
 		}
 		r.Packet = "sent"
+		if _, disabled := e.cfg.effectiveCheckPolicy(id); disabled {
+			status := StatusResult{Server: id, State: "unknown", Note: "aucune vérification configurée"}
+			r.Status = &status
+			r.Note = "paquet émis sans vérification de disponibilité"
+			e.audit.write("wake", "engine", id, "sent", r)
+			return r, nil
+		}
+		if !verificationStarted {
+			if initialDelay > 0 {
+				if e.progress != nil {
+					infof(e.progress, "Paquet envoyé, vérification dans %s…", frenchDuration(initialDelay))
+				}
+				if err := waitContext(ctx, initialDelay); err != nil {
+					return r, err
+				}
+			}
+			deadline = time.Now().Add(timeout)
+			verificationContext, cancelVerification = context.WithDeadline(ctx, deadline)
+			defer cancelVerification()
+			verificationStarted = true
+		}
 		window := deadline
-		if remaining := attempts - attempt + 1; remaining > 1 {
+		if remaining := packetAttempts - attempt + 1; remaining > 1 {
 			window = time.Now().Add(time.Until(deadline) / time.Duration(remaining))
 		}
 		for {
-			status := checkServer(ctx, e.cfg, id)
+			status := checkServer(verificationContext, e.cfg, id)
+			checks++
 			r.Status = &status
 			r.Verified = status.State == "reachable"
 			if r.Verified {
@@ -134,18 +198,69 @@ func (e *Engine) wakeOne(ctx context.Context, id string) (WakeResult, error) {
 				e.audit.write("wake", "engine", id, "sent", r)
 				return r, nil
 			}
-			if time.Now().Add(2 * time.Second).After(window) {
+			if maxChecks > 0 && checks >= maxChecks {
+				break attemptsLoop
+			}
+			if ctx.Err() != nil {
+				return r, ctx.Err()
+			}
+			if verificationContext.Err() != nil {
+				break attemptsLoop
+			}
+			remaining := time.Until(window)
+			if remaining <= 0 {
 				break
 			}
-			select {
-			case <-ctx.Done():
-				return r, ctx.Err()
-			case <-time.After(2 * time.Second):
+			pause := interval
+			if pause > remaining {
+				pause = remaining
+			}
+			if err := waitContext(verificationContext, pause); err != nil {
+				if ctx.Err() != nil {
+					return r, ctx.Err()
+				}
+				break attemptsLoop
+			}
+			if !time.Now().Before(window) {
+				break
 			}
 		}
 	}
 	e.audit.write("wake", "engine", id, "sent", r)
 	return r, nil
+}
+
+func (e *Engine) verificationTiming(id string) (initialDelay, timeout, interval time.Duration) {
+	initialDelay, timeout, interval = e.cfg.effectiveVerification(id)
+	if e.verificationDelay != nil {
+		initialDelay = *e.verificationDelay
+	}
+	return initialDelay, timeout, interval
+}
+
+func waitContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func frenchDuration(delay time.Duration) string {
+	if delay%time.Second == 0 {
+		seconds := int64(delay / time.Second)
+		if seconds == 1 {
+			return "1 seconde"
+		}
+		return fmt.Sprintf("%d secondes", seconds)
+	}
+	return delay.String()
 }
 func (e *Engine) sendRelay(ctx context.Context, relay, id string) error {
 	r := e.cfg.Relays[relay]

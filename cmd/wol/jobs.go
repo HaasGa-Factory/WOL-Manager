@@ -24,17 +24,19 @@ type Job struct {
 	Result  any       `json:"result,omitempty"`
 }
 type jobFile struct {
-	Jobs map[string]*Job `json:"jobs"`
+	Jobs   map[string]*Job        `json:"jobs"`
+	Cycles map[string]*PowerCycle `json:"power_cycles,omitempty"`
 }
 type JobStore struct {
 	mu     sync.Mutex
 	path   string
 	jobs   map[string]*Job
 	cancel map[string]context.CancelFunc
+	cycles map[string]*PowerCycle
 }
 
 func openJobs(path string) (*JobStore, error) {
-	s := &JobStore{path: path, jobs: map[string]*Job{}, cancel: map[string]context.CancelFunc{}}
+	s := &JobStore{path: path, jobs: map[string]*Job{}, cancel: map[string]context.CancelFunc{}, cycles: map[string]*PowerCycle{}}
 	b, e := os.ReadFile(path)
 	if e != nil && !os.IsNotExist(e) {
 		return nil, e
@@ -45,18 +47,32 @@ func openJobs(path string) (*JobStore, error) {
 			return nil, fmt.Errorf("état des tâches: %w", e)
 		}
 		s.jobs = f.Jobs
-		for _, j := range s.jobs {
-			if j.State == "running" || j.State == "queued" {
-				j.State = "revalidation_required"
-				j.Message = "service redémarré; reprise interdite avant revalidation"
-				j.Updated = time.Now().UTC()
-			}
+		if s.jobs == nil {
+			s.jobs = map[string]*Job{}
 		}
-		if e = s.saveLocked(); e != nil {
-			return nil, e
+		if f.Cycles != nil {
+			s.cycles = f.Cycles
 		}
 	}
 	return s, nil
+}
+
+func (s *JobStore) markInterrupted() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := false
+	for _, job := range s.jobs {
+		if job.State == "running" || job.State == "queued" {
+			job.State = "revalidation_required"
+			job.Message = "service redémarré; reprise interdite avant revalidation"
+			job.Updated = time.Now().UTC()
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return s.saveLocked()
 }
 func newID() (string, error) {
 	b := make([]byte, 16)
@@ -68,15 +84,33 @@ func newID() (string, error) {
 	return hex.EncodeToString(b[:4]) + "-" + hex.EncodeToString(b[4:6]) + "-" + hex.EncodeToString(b[6:8]) + "-" + hex.EncodeToString(b[8:10]) + "-" + hex.EncodeToString(b[10:]), nil
 }
 func (s *JobStore) saveLocked() error {
-	if e := os.MkdirAll(filepath.Dir(s.path), 0750); e != nil {
+	dir := filepath.Dir(s.path)
+	if e := os.MkdirAll(dir, 0750); e != nil {
 		return e
 	}
-	b, e := json.MarshalIndent(jobFile{Jobs: s.jobs}, "", "  ")
+	if e := secureStateDir(dir); e != nil {
+		return e
+	}
+	b, e := json.MarshalIndent(jobFile{Jobs: s.jobs, Cycles: s.cycles}, "", "  ")
 	if e != nil {
 		return e
 	}
-	tmp := s.path + ".tmp"
-	if e = os.WriteFile(tmp, b, 0640); e != nil {
+	f, e := os.CreateTemp(dir, ".state-*.tmp")
+	if e != nil {
+		return e
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if e = f.Chmod(0640); e == nil {
+		_, e = f.Write(b)
+	}
+	if closeErr := f.Close(); e == nil {
+		e = closeErr
+	}
+	if e != nil {
+		return e
+	}
+	if e = secureStateFile(tmp); e != nil {
 		return e
 	}
 	if e = os.Rename(tmp, s.path); e == nil {
@@ -166,6 +200,9 @@ func (s *JobStore) update(id, state, msg string, result any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if j := s.jobs[id]; j != nil {
+		if terminalJobState(j.State) {
+			return
+		}
 		j.State = state
 		j.Message = msg
 		j.Result = result
@@ -195,17 +232,116 @@ func (s *JobStore) list() []Job {
 	}
 	return out
 }
-func (s *JobStore) cancelJob(id string) error {
+
+func (s *JobStore) revalidationJob(kind, target string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for id, job := range s.jobs {
+		if job.Kind == kind && job.Target == target && job.State == "revalidation_required" {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func (s *JobStore) activeJob(kind, target string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, job := range s.jobs {
+		if job.Kind == kind && job.Target == target && (job.State == "queued" || job.State == "running") {
+			return true
+		}
+	}
+	return false
+}
+func (s *JobStore) cancelJob(id string) error {
+	s.mu.Lock()
 	j := s.jobs[id]
 	if j == nil {
+		s.mu.Unlock()
 		return fmt.Errorf("tâche inconnue")
 	}
 	f := s.cancel[id]
 	if f == nil {
+		s.mu.Unlock()
 		return fmt.Errorf("tâche non annulable dans l'état %s", j.State)
 	}
+	previous := *j
+	j.State = "cancelled"
+	j.Message = "annulation demandée"
+	j.Updated = time.Now().UTC()
+	delete(s.cancel, id)
+	if e := s.saveLocked(); e != nil {
+		*j = previous
+		s.cancel[id] = f
+		s.mu.Unlock()
+		return e
+	}
+	s.mu.Unlock()
 	f()
 	return nil
+}
+
+func (s *JobStore) cancelMatching(kind, target string) {
+	var ids []string
+	s.mu.Lock()
+	for id, job := range s.jobs {
+		if job.Kind == kind && job.Target == target && s.cancel[id] != nil {
+			ids = append(ids, id)
+		}
+	}
+	s.mu.Unlock()
+	for _, id := range ids {
+		_ = s.cancelJob(id)
+	}
+}
+
+func terminalJobState(state string) bool {
+	switch state {
+	case "completed", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *JobStore) setCycle(cycle PowerCycle) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copy := clonePowerCycle(cycle)
+	s.cycles[cycle.UPS] = &copy
+	return s.saveLocked()
+}
+
+func (s *JobStore) cycle(ups string) (PowerCycle, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cycle, ok := s.cycles[ups]
+	if !ok {
+		return PowerCycle{}, false
+	}
+	return clonePowerCycle(*cycle), true
+}
+
+func (s *JobStore) listCycles() []PowerCycle {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]PowerCycle, 0, len(s.cycles))
+	for _, cycle := range s.cycles {
+		out = append(out, clonePowerCycle(*cycle))
+	}
+	return out
+}
+
+func clonePowerCycle(cycle PowerCycle) PowerCycle {
+	copy := cycle
+	copy.ArmedGroups = map[string]bool{}
+	for id, value := range cycle.ArmedGroups {
+		copy.ArmedGroups[id] = value
+	}
+	copy.CompletedGroups = map[string]bool{}
+	for id, value := range cycle.CompletedGroups {
+		copy.CompletedGroups[id] = value
+	}
+	return copy
 }

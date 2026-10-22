@@ -15,13 +15,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 var (
-	version        = "1.1.1"
+	version        = "1.2.1"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -30,7 +32,7 @@ var errUsage = errors.New("usage invalide")
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "erreur:", err)
+		errorf(os.Stderr, "ERREUR: %v", err)
 		if errors.Is(err, errUsage) {
 			os.Exit(2)
 		}
@@ -52,6 +54,9 @@ func run(args []string) error {
 	args = root.Args()
 	if len(args) == 0 {
 		return usage()
+	}
+	if wantsHelp(args) {
+		return printCommandHelp(os.Stdout, args)
 	}
 	cmd := args[0]
 	args = args[1:]
@@ -87,15 +92,12 @@ func run(args []string) error {
 		fmt.Print(bashCompletion)
 		return nil
 	}
-	if cmd == "config" && len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
-		return printConfigHelp(os.Stdout, args[0])
-	}
 	if cmd == "config" && len(args) > 0 && args[0] == "edit" {
 		return editConfig(*configPath)
 	}
 	if cmd == "config" && len(args) == 1 {
 		switch args[0] {
-		case "network", "networks", "machine", "server", "servers", "group", "groups", "nut", "ups":
+		case "network", "networks", "machine", "server", "servers", "group", "groups", "nut", "ups", "discovery":
 			return configSection(*configPath, args[0], os.Stdin, os.Stdout)
 		}
 	}
@@ -104,7 +106,14 @@ func run(args []string) error {
 		return err
 	}
 	if cmd == "config" && len(args) > 0 && args[0] == "check" {
-		return output(*jsonOut, map[string]any{"valid": true, "version": c.Version}, "configuration valide")
+		issues := readinessIssues(c)
+		if len(issues) > 0 {
+			if err := output(*jsonOut, map[string]any{"valid": true, "ready": false, "version": c.Version, "issues": issues}, ""); err != nil {
+				return err
+			}
+			return fmt.Errorf("configuration syntaxiquement valide mais non opérationnelle: %s", strings.Join(issues, "; "))
+		}
+		return output(*jsonOut, map[string]any{"valid": true, "ready": true, "version": c.Version}, "configuration syntaxiquement valide et opérationnelle")
 	}
 	if cmd == "token" {
 		return tokenCLI(c, args)
@@ -113,8 +122,8 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	audit := &Auditor{path: c.Storage.AuditFile}
-	engine := &Engine{cfg: c, audit: audit}
+	audit := &Auditor{path: c.Storage.AuditFile, mirror: cmd == "api"}
+	engine := &Engine{cfg: c, audit: audit, sendPacket: sendMagic}
 	switch cmd {
 	case "list":
 		ids := make([]string, 0, len(c.Servers))
@@ -133,7 +142,14 @@ func run(args []string) error {
 		if len(args) != 1 {
 			return errUsage
 		}
-		return output(*jsonOut, checkServer(context.Background(), c, args[0]), "")
+		result := checkServer(context.Background(), c, args[0])
+		if err := output(*jsonOut, result, ""); err != nil {
+			return err
+		}
+		if _, known := c.Servers[args[0]]; !known {
+			return errors.New("serveur inconnu")
+		}
+		return nil
 	case "wake":
 		return wakeCLI(c, engine, args, *jsonOut)
 	case "network":
@@ -162,6 +178,11 @@ func run(args []string) error {
 		return nil
 	case "jobs":
 		return output(true, jobs.list(), "")
+	case "automation":
+		if len(args) != 1 || args[0] != "status" {
+			return errUsage
+		}
+		return output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
 	case "api":
 		if len(args) != 1 || args[0] != "serve" {
 			return errUsage
@@ -190,66 +211,26 @@ Usage: wol [--config FILE] [--json] COMMAND
   completion bash               génère l'autocomplétion Bash
   list                          liste des serveurs
   status SERVER                 vérifie un serveur
-  wake SERVER [--dry-run]       réveille un serveur et ses dépendances
+  wake SERVER [--dry-run] [--verification-delay DURÉE]
+                                réveille un serveur et ses dépendances
   wake --group GROUP            réveille un groupe
   wake --all                    réveille tous les serveurs actifs
   config check                  valide la configuration
-  config network|machine|group|nut
+  config network|machine|group|nut|discovery
                                 gestion guidée sans édition YAML
   config edit                   édition avancée manuelle
-  token create                  crée un jeton API affiché une seule fois
-  network test [SERVER]         explique les transports
+  token create|list|revoke      gestion sûre des jetons API
+  network test [SERVER...]      explique les transports
   network discover [options]    découverte passive ou active
   ups status|test               état/diagnostic en lecture seule des UPS NUT
   jobs                          liste les tâches persistées
+  automation status             état et raisons d'attente des reprises NUT
   menu                          interface interactive
   api serve                     démarre l'API
-  relay serve|check             relais distant`)
-}
+  relay serve|check             relais distant
+  version                       version, canal ou révision source
 
-func printConfigHelp(output io.Writer, section string) error {
-	var details string
-	switch section {
-	case "network":
-		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, CIDR IPv4, interface, IP source et transports WoL.
-Valeurs par défaut: interface et IP source automatiques; broadcast local proposé à la création.
-Contraintes: identifiant unique, CIDR IPv4 valide; suppression refusée si une machine utilise le réseau.
-Exemple: sudo wol config network`
-	case "machine":
-		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, nom, MAC, IPv4, réseau, groupes, dépendances et vérification après réveil.
-Valeurs par défaut: port WoL global; vérification ICMP/TCP/ARP facultative.
-Contraintes: MAC et IPv4 valides, réseau existant; suppression refusée tant que la machine est référencée.
-Exemple: sudo wol config machine`
-	case "group":
-		details = `Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres demandés: identifiant, priorité, machines et dépendances.
-Valeurs par défaut: listes vides; priorité demandée par l'assistant.
-Contraintes: références existantes; suppression refusée si le groupe est encore utilisé.
-Exemple: sudo wol config group`
-	case "nut":
-		details = `Actions: détecter localement, ajouter ou modifier un serveur, sélectionner ou supprimer des UPS, tester ou reporter.
-Paramètres demandés: adresse IP/DNS, port, TLS éventuel et UPS à surveiller.
-Valeurs par défaut: 127.0.0.1:3493 pour la détection locale; port distant 3493; délai 3 s.
-Contraintes: lecture seule, aucun scan réseau, aucune installation ni modification du serveur NUT.
-Exemple: sudo wol config nut`
-	default:
-		return errUsage
-	}
-	fmt.Fprintf(output, `Usage: wol [--config FILE] config %s [--help]
-
-Gestion guidée interactive de la section %s.
-%s
-
-Options:
-  -h, --help       affiche cette aide et quitte sans charger la configuration
-  --config FILE    option globale à placer avant "config" (défaut: /etc/wol-manager/wol.yaml)
-
-Mode interactif: l'assistant demande les valeurs et une confirmation avant l'écriture atomique.
-Mode non interactif: aucune modification n'est proposée; utilisez "wol config check" pour valider.
-`, section, section, details)
-	return nil
+Utilisez "wol COMMANDE --help" pour l'aide détaillée.`)
 }
 
 const bashCompletion = `# bash completion for WoL Manager
@@ -264,7 +245,7 @@ _wol() {
         esac
     done
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs menu api relay version completion --config --json" -- "$cur") )
+        COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs automation menu api relay version completion --config --json" -- "$cur") )
         return
     fi
     case "$cmd" in
@@ -272,31 +253,55 @@ _wol() {
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--channel" ]]; then
                 COMPREPLY=( $(compgen -W "main dev" -- "$cur") )
             else
-                COMPREPLY=( $(compgen -W "--check --channel" -- "$cur") )
+				COMPREPLY=( $(compgen -W "--check --channel --help -h" -- "$cur") )
             fi ;;
-        config) COMPREPLY=( $(compgen -W "check edit network machine group nut" -- "$cur") ) ;;
-        wake) COMPREPLY=( $(compgen -W "--dry-run --group --all" -- "$cur") ) ;;
-        network) COMPREPLY=( $(compgen -W "test discover" -- "$cur") ) ;;
-        ups) COMPREPLY=( $(compgen -W "status test" -- "$cur") ) ;;
-        token) COMPREPLY=( $(compgen -W "create" -- "$cur") ) ;;
-        api) COMPREPLY=( $(compgen -W "serve" -- "$cur") ) ;;
-        relay) COMPREPLY=( $(compgen -W "serve check" -- "$cur") ) ;;
-        completion) COMPREPLY=( $(compgen -W "bash" -- "$cur") ) ;;
+		config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h" -- "$cur") $(compgen -W "discovery" -- "$cur") ) ;;
+		wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h" -- "$cur") ) ;;
+		network) COMPREPLY=( $(compgen -W "test discover --help -h" -- "$cur") ) ;;
+		ups) COMPREPLY=( $(compgen -W "status test --help -h" -- "$cur") ) ;;
+		automation) COMPREPLY=( $(compgen -W "status --help -h" -- "$cur") ) ;;
+		token) COMPREPLY=( $(compgen -W "create --help -h" -- "$cur") $(compgen -W "list revoke" -- "$cur") ) ;;
+		api) COMPREPLY=( $(compgen -W "serve --help -h" -- "$cur") ) ;;
+		relay) COMPREPLY=( $(compgen -W "serve check --help -h" -- "$cur") ) ;;
+		completion) COMPREPLY=( $(compgen -W "bash --help -h" -- "$cur") ) ;;
+		version) COMPREPLY=( $(compgen -W "--channel --source-revision --commit --help -h" -- "$cur") ) ;;
+		*) COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ) ;;
     esac
 }
 complete -F _wol wol
 `
 
 func wakeCLI(c *Config, e *Engine, args []string, jsonOut bool) error {
-	args = flagsFirst(args, map[string]bool{"--group": true})
+	args = flagsFirst(args, map[string]bool{"--group": true, "--verification-delay": true})
 	fs := flag.NewFlagSet("wake", flag.ContinueOnError)
 	group := fs.String("group", "", "groupe")
 	all := fs.Bool("all", false, "tous")
 	dry := fs.Bool("dry-run", false, "simulation")
+	verificationDelay := fs.String("verification-delay", "", "attente avant la première vérification")
 	if er := fs.Parse(args); er != nil {
 		return errUsage
 	}
+	selectors := fs.NArg()
+	if *group != "" {
+		selectors++
+	}
+	if *all {
+		selectors++
+	}
+	if selectors != 1 || fs.NArg() > 1 {
+		return fmt.Errorf("%w: MACHINE, --group et --all sont mutuellement exclusifs; consultez « wol wake --help »", errUsage)
+	}
+	if *verificationDelay != "" {
+		delay, er := time.ParseDuration(*verificationDelay)
+		if er != nil || delay < 0 || delay > maxVerificationDuration {
+			return fmt.Errorf("verification-delay doit être une durée Go comprise entre 0s et 24h")
+		}
+		e.verificationDelay = &delay
+	}
 	e.dry = *dry
+	if !jsonOut {
+		e.progress = os.Stdout
+	}
 	var v any
 	var er error
 	switch {
@@ -337,6 +342,7 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 	switch args[0] {
 	case "test":
 		out := map[string]any{}
+		failed := false
 		ids := args[1:]
 		if len(ids) == 0 {
 			for id := range c.Servers {
@@ -346,8 +352,15 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 		for _, id := range ids {
 			p, e := transportPlan(c, id)
 			out[id] = map[string]any{"plan": p, "error": errorString(e)}
+			failed = failed || e != nil || len(p) == 0
 		}
-		return output(true, out, "")
+		if err := output(true, out, ""); err != nil {
+			return err
+		}
+		if failed {
+			return errors.New("un ou plusieurs plans réseau n'ont pas pu être produits")
+		}
+		return nil
 	case "discover":
 		fs := flag.NewFlagSet("discover", flag.ContinueOnError)
 		active := fs.Bool("active", false, "diagnostic actif")
@@ -363,9 +376,9 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 			return output(jsonOut, passiveDiscovery(context.Background()), "")
 		}
 		if !c.Discovery.ActiveEnabled {
-			return errors.New("découverte active désactivée dans la configuration")
+			return errors.New("découverte active désactivée: lancez « sudo wol config discovery » pour définir les sous-réseaux, limites, débit et timeout; --allow-active-scan autorise seulement cet appel et n'active pas la fonction globalement")
 		}
-		fmt.Fprintln(os.Stderr, "AVERTISSEMENT: diagnostic réseau actif limité aux sous-réseaux explicitement autorisés")
+		warningf(os.Stderr, "AVERTISSEMENT: diagnostic réseau actif limité aux sous-réseaux explicitement autorisés")
 		if !*allow {
 			info, statErr := os.Stdin.Stat()
 			if statErr != nil || info.Mode()&os.ModeCharDevice == 0 {
@@ -389,7 +402,7 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 }
 func relayCLI(c *Config, e *Engine, args []string) error {
 	if len(args) == 0 {
-		return errUsage
+		return fmt.Errorf("%w: consultez « wol relay --help »", errUsage)
 	}
 	switch args[0] {
 	case "serve":
@@ -400,7 +413,7 @@ func relayCLI(c *Config, e *Engine, args []string) error {
 		key := fs.String("key", "", "")
 		ca := fs.String("client-ca", "", "")
 		if fs.Parse(args[1:]) != nil || *id == "" || *cert == "" || *key == "" || *ca == "" {
-			return errUsage
+			return fmt.Errorf("%w: wol relay serve --id ID --cert FILE --key FILE --client-ca FILE [--listen ADRESSE]; consultez « wol relay serve --help »", errUsage)
 		}
 		return serveRelay(c, e, *id, *listen, *cert, *key, *ca)
 	case "check":
@@ -409,7 +422,7 @@ func relayCLI(c *Config, e *Engine, args []string) error {
 		}
 		r, ok := c.Relays[args[1]]
 		if !ok {
-			return fmt.Errorf("relais inconnu")
+			return fmt.Errorf("relais %q inconnu; déclarez-le dans la section relays de la configuration ou consultez « wol relay --help »", args[1])
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), r.Timeout.Value(5*time.Second))
 		defer cancel()
@@ -427,7 +440,7 @@ func output(asJSON bool, v any, text string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(v)
 	}
-	fmt.Println(text)
+	successf(os.Stdout, "%s", text)
 	return nil
 }
 func envOr(k, d string) string {
@@ -437,6 +450,10 @@ func envOr(k, d string) string {
 	return d
 }
 func editConfig(path string) error {
+	before, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vi"
@@ -445,28 +462,54 @@ func editConfig(path string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(before, after) {
+		fmt.Println("Aucune modification enregistrée.")
+	}
+	return nil
 }
 func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  0 Quitter\n> ")
+		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  9 Automatismes  0 Quitter  ? Aide\n> ")
 		x, _ := r.ReadString('\n')
 		switch strings.TrimSpace(x) {
 		case "0":
 			return nil
 		case "1":
-			_ = output(jsonOut, c.Servers, "")
+			if jsonOut {
+				_ = output(true, c.Servers, "")
+			} else {
+				printMenuMachines(os.Stdout, c)
+			}
 		case "2":
-			_ = output(jsonOut, c.Networks, "")
+			if jsonOut {
+				_ = output(true, c.Networks, "")
+			} else {
+				printNetworks(os.Stdout, c.Networks)
+			}
 		case "3":
-			_ = output(jsonOut, c.Groups, "")
+			if jsonOut {
+				_ = output(true, c.Groups, "")
+			} else {
+				printGroups(os.Stdout, c.Groups)
+			}
 		case "4":
 			out := map[string]UPSStatus{}
 			for id, u := range c.UPS {
 				out[id] = nutStatus(context.Background(), id, u)
 			}
-			_ = output(jsonOut, out, "")
+			if jsonOut {
+				_ = output(true, out, "")
+			} else {
+				printMenuUPS(os.Stdout, out)
+			}
 		case "5":
 			if err := c.Validate(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -486,19 +529,36 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			c = updated
 			e.cfg = updated
 		case "7":
-			fmt.Print("Machine: ")
-			id, _ := r.ReadString('\n')
+			id, ok := selectMenuServer(r, os.Stdout, c)
+			if !ok {
+				fmt.Println("Simulation annulée: aucune machine sélectionnée.")
+				continue
+			}
 			dryEngine := &Engine{cfg: c, audit: e.audit, dry: true, noWait: true}
-			v, err := dryEngine.wakeTree(context.Background(), strings.TrimSpace(id), map[string]bool{})
+			v, err := dryEngine.wakeTree(context.Background(), id, map[string]bool{})
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else {
-				_ = output(jsonOut, v, "")
+				if jsonOut {
+					_ = output(true, v, "")
+				} else {
+					printWakeResults(os.Stdout, v)
+				}
 			}
 		case "8":
-			fmt.Print("Machine: ")
-			id, _ := r.ReadString('\n')
-			id = strings.TrimSpace(id)
+			id, ok := selectMenuServer(r, os.Stdout, c)
+			if !ok {
+				fmt.Println("Réveil annulé: aucune machine sélectionnée.")
+				continue
+			}
+			if _, disabled := c.effectiveCheckPolicy(id); disabled {
+				fmt.Printf("Aucune vérification configurée pour %s; le réveil ne pourra pas confirmer son démarrage.\n", id)
+			} else {
+				_, timeout, _ := c.effectiveVerification(id)
+				fmt.Printf("Contrôle préalable de %s en cours, délai maximal %s…\n", id, frenchDuration(timeout))
+			}
+			status := checkServer(context.Background(), c, id)
+			fmt.Printf("État courant de %s: %s\n", id, status.State)
 			if !confirmPrompt(r, os.Stdout, "Envoyer réellement un paquet WoL à "+id+" ?") {
 				fmt.Println("Réveil annulé.")
 				continue
@@ -507,11 +567,134 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else {
-				_ = output(jsonOut, v, "")
+				if jsonOut {
+					_ = output(true, v, "")
+				} else {
+					printWakeResults(os.Stdout, v)
+				}
 			}
+		case "9":
+			jobs, err := openJobs(c.Storage.StateFile)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			if jsonOut {
+				_ = output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
+			} else {
+				printMenuAutomations(os.Stdout, c.restorePlans(), jobs.listCycles(), jobs.list())
+			}
+		case "?", "aide", "help":
+			printContextHelp(os.Stdout, "menu")
 		default:
 			fmt.Println("Choix invalide.")
 		}
+	}
+}
+
+func printWakeResults(output io.Writer, results []WakeResult) {
+	for _, result := range results {
+		packet := result.Packet
+		switch packet {
+		case "dry_run":
+			packet = "simulation, aucun paquet émis"
+		case "sent":
+			packet = "paquet annoncé comme émis"
+		case "not_sent":
+			packet = "aucun paquet émis"
+		}
+		fmt.Fprintf(output, "- %s: %s", result.Server, packet)
+		if result.Transport != "" {
+			fmt.Fprintf(output, "; transport=%s", result.Transport)
+		}
+		if result.Destination != "" {
+			fmt.Fprintf(output, "; destination=%s", result.Destination)
+		}
+		fmt.Fprintf(output, "; vérifié=%t", result.Verified)
+		if result.Note != "" {
+			fmt.Fprintf(output, "; %s", result.Note)
+		}
+		fmt.Fprintln(output)
+	}
+}
+
+func printMenuMachines(output io.Writer, c *Config) {
+	for _, id := range sortedKeys(c.Servers) {
+		s := c.Servers[id]
+		initial, timeout, interval := c.effectiveVerification(id)
+		fmt.Fprintf(output, "- %s — %s: IP=%s MAC=%s réseau=%s actif=%t contrôles=%s délais=%s/%s/%s\n",
+			id, emptyAs(s.Name, "sans nom"), s.IP, s.MAC, s.Network, enabled(s), formatChecks(c.effectiveChecks(id)), initial, timeout, interval)
+	}
+}
+
+func printMenuUPS(output io.Writer, statuses map[string]UPSStatus) {
+	if len(statuses) == 0 {
+		fmt.Fprintln(output, "Aucun UPS NUT configuré.")
+		return
+	}
+	for _, id := range sortedKeys(statuses) {
+		status := statuses[id]
+		if status.Error != "" {
+			fmt.Fprintf(output, "- %s: erreur=%s\n", id, status.Error)
+			continue
+		}
+		battery := "inconnue"
+		if status.BatteryKnown {
+			battery = fmt.Sprintf("%.0f%%", status.Battery)
+		}
+		fmt.Fprintf(output, "- %s: état=%s batterie=%s\n", id, emptyAs(status.RawStatus, "inconnu"), battery)
+	}
+}
+
+func printMenuAutomations(output io.Writer, plans []restorePlan, cycles []PowerCycle, jobs []Job) {
+	if len(plans) == 0 {
+		fmt.Fprintln(output, "Aucune politique de reprise NUT configurée.")
+	}
+	for _, plan := range plans {
+		fmt.Fprintf(output, "- groupe %s: UPS=%s mode=%s stabilité=%s fréquence=%s échec=%s tentatives=%d intervalle=%s\n",
+			plan.Group, plan.UPS, plan.Mode, plan.StableFor, plan.PollInterval, plan.FailurePolicy, plan.RetryLimit, plan.RetryInterval)
+	}
+	for _, cycle := range cycles {
+		fmt.Fprintf(output, "- cycle UPS %s: état=%s raison=%s batterie=%s\n", cycle.UPS, cycle.State, emptyAs(cycle.Reason, "aucune"), formatBattery(cycle))
+	}
+	for _, job := range jobs {
+		fmt.Fprintf(output, "- tâche %s: type=%s cible=%s état=%s\n", job.ID, job.Kind, job.Target, job.State)
+	}
+}
+
+func formatBattery(cycle PowerCycle) string {
+	if !cycle.BatteryKnown {
+		return "inconnue"
+	}
+	return fmt.Sprintf("%.0f%%", cycle.Battery)
+}
+
+func selectMenuServer(reader *bufio.Reader, output io.Writer, c *Config) (string, bool) {
+	ids := sortedKeys(c.Servers)
+	if len(ids) == 0 {
+		fmt.Fprintln(output, "Aucune machine configurée.")
+		return "", false
+	}
+	fmt.Fprintln(output, "Machines disponibles:")
+	for i, id := range ids {
+		fmt.Fprintf(output, "[%d] %s — %s\n", i+1, id, emptyAs(c.Servers[id].Name, "sans nom"))
+	}
+	for {
+		value := prompt(reader, output, "Choisissez un numéro ou un identifiant (Entrée=annuler): ")
+		if value == "?" || value == "aide" || value == "help" {
+			fmt.Fprintln(output, "Aide: choisissez le numéro affiché ou l'identifiant exact de la machine. Entrée annule sans envoyer de paquet.")
+			continue
+		}
+		if value == "" || value == "annuler" || value == "retour" {
+			return "", false
+		}
+		if index, err := strconv.Atoi(value); err == nil && index >= 1 && index <= len(ids) {
+			return ids[index-1], true
+		}
+		if _, ok := c.Servers[value]; ok {
+			return value, true
+		}
+		fmt.Fprintln(output, "Sélection inconnue ou ambiguë. Aucun paquet ne sera envoyé; recommencez ou appuyez sur Entrée.")
 	}
 }
 func generateToken() (plain, hash string, err error) {
@@ -525,7 +708,61 @@ func generateToken() (plain, hash string, err error) {
 	return plain, hash, nil
 }
 func tokenCLI(c *Config, args []string) error {
-	if len(args) == 0 || args[0] != "create" {
+	return tokenCLIWithIO(c, args, os.Stdin, os.Stdout)
+}
+
+func tokenCLIWithIO(c *Config, args []string, input io.Reader, output io.Writer) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	if args[0] == "list" {
+		if len(args) != 1 {
+			return errUsage
+		}
+		f, err := readTokenFile(c.API.TokensFile)
+		if err != nil {
+			return err
+		}
+		for _, token := range f.Tokens {
+			fmt.Fprintf(output, "%s\tpermissions=%s\tactif=%t\n", token.ID, strings.Join(token.Permissions, ","), !token.Disabled)
+		}
+		return nil
+	}
+	if args[0] == "revoke" {
+		fs := flag.NewFlagSet("token revoke", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		id := fs.String("id", "", "identifiant")
+		if fs.Parse(args[1:]) != nil || *id == "" {
+			return errUsage
+		}
+		f, err := readTokenFile(c.API.TokensFile)
+		if err != nil {
+			return err
+		}
+		index := -1
+		for i := range f.Tokens {
+			if f.Tokens[i].ID == *id {
+				index = i
+			}
+		}
+		if index < 0 {
+			return fmt.Errorf("jeton %q inconnu", *id)
+		}
+		if f.Tokens[index].Disabled {
+			return fmt.Errorf("jeton %q déjà révoqué", *id)
+		}
+		if !confirmPrompt(bufio.NewReader(input), output, "Révoquer le jeton "+*id+" ?") {
+			fmt.Fprintln(output, "Révocation annulée.")
+			return nil
+		}
+		f.Tokens[index].Disabled = true
+		if err := writeTokenFile(c.API.TokensFile, f); err != nil {
+			return err
+		}
+		fmt.Fprintln(output, "Jeton révoqué:", *id)
+		return nil
+	}
+	if args[0] != "create" {
 		return errUsage
 	}
 	fs := flag.NewFlagSet("token create", flag.ContinueOnError)
@@ -543,15 +780,8 @@ func tokenCLI(c *Config, args []string) error {
 		}
 		ps = append(ps, p)
 	}
-	var f tokenFile
-	if b, e := os.ReadFile(c.API.TokensFile); e == nil {
-		if len(bytes.TrimSpace(b)) > 0 {
-			e = json.Unmarshal(b, &f)
-		}
-		if e != nil {
-			return e
-		}
-	} else if !os.IsNotExist(e) {
+	f, e := readTokenFile(c.API.TokensFile)
+	if e != nil {
 		return e
 	}
 	for _, t := range f.Tokens {
@@ -564,16 +794,61 @@ func tokenCLI(c *Config, args []string) error {
 		return tokenErr
 	}
 	f.Tokens = append(f.Tokens, TokenRecord{ID: *id, Hash: hash, Permissions: ps})
-	if e := os.MkdirAll(filepath.Dir(c.API.TokensFile), 0750); e != nil {
+	if e := writeTokenFile(c.API.TokensFile, f); e != nil {
 		return e
 	}
-	b, _ := json.MarshalIndent(f, "", "  ")
-	if e := os.WriteFile(c.API.TokensFile, b, 0600); e != nil {
-		return e
-	}
-	if e := secureTokenFile(c.API.TokensFile); e != nil {
-		return fmt.Errorf("sécurisation du fichier de jetons: %w", e)
-	}
-	fmt.Println("JETON (affiché une seule fois):", plain)
+	fmt.Fprintln(output, "JETON (affiché une seule fois):", plain)
 	return nil
+}
+
+func readTokenFile(path string) (tokenFile, error) {
+	var f tokenFile
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return f, nil
+	}
+	if err != nil {
+		return f, err
+	}
+	if len(bytes.TrimSpace(b)) == 0 {
+		return f, nil
+	}
+	return f, json.Unmarshal(b, &f)
+}
+
+func writeTokenFile(path string, f tokenFile) error {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("fichier de jetons refusé: lien symbolique")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".tokens-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err = temp.Chmod(0600); err == nil {
+		err = json.NewEncoder(temp).Encode(f)
+	}
+	if err == nil {
+		err = temp.Sync()
+	}
+	closeErr := temp.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err = secureTokenFile(tempPath); err != nil {
+		return fmt.Errorf("sécurisation du fichier de jetons: %w", err)
+	}
+	if runtime.GOOS == "windows" {
+		if err = os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return os.Rename(tempPath, path)
 }
