@@ -10,14 +10,17 @@ import (
 )
 
 type Auditor struct {
-	mu   sync.Mutex
-	path string
+	mu     sync.Mutex
+	path   string
+	mirror bool
 }
 
 func (a *Auditor) write(event, actor, target, outcome string, details any) {
 	x := map[string]any{"time": time.Now().UTC(), "event": event, "actor": actor, "target": target, "outcome": outcome, "details": details}
 	b, _ := json.Marshal(x)
-	log.Print(string(b))
+	if a != nil && a.mirror {
+		log.Print(string(b))
+	}
 	if a == nil || a.path == "" {
 		return
 	}

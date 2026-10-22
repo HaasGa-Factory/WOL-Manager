@@ -3,9 +3,15 @@ version: 1
 global:
   port: 9
   transport_order: [local_broadcast, unicast, directed_broadcast, relay]
-  wake_timeout: 45s
   wake_retries: 1
   delay: 2s
+  check_logic: any
+  verification:
+    initial_delay: 0s
+    timeout: 45s
+    interval: 2s
+    attempts: 0
+    packet_retries: 1
   checks:
     - type: tcp
       port: 22
@@ -25,16 +31,31 @@ networks:
     allow_unicast: true
     allow_directed_broadcast: false
     relay: relay-vlan20
+    # Une liste checks vide hérite. Pour n'effectuer aucun contrôle à ce niveau :
+    # checks_disabled: true
 
 groups:
   infrastructure:
     priority: 10
     servers: [storage-1]
+    # checks_disabled: true  # désactive explicitement les contrôles du groupe
     ups_policy:
       ups: ups-main
       require_online: true
       min_battery: 30
       min_runtime_seconds: 600
+    power_restore:
+      enabled: true
+      ups: ups-main
+      low_battery: 40
+      high_battery: 70
+      stable_for: 30s
+      poll_interval: 5s
+      mode: sequential
+      order: [storage-1]
+      failure_policy: stop
+      retry_limit: 2
+      retry_interval: 15s
 
 servers:
   storage-1:
@@ -43,6 +64,15 @@ servers:
     ip: 192.168.20.10
     network: servers
     groups: [infrastructure]
+    # Alternative à la liste checks ci-dessous : checks_disabled: true
+    # Ne jamais définir checks_disabled: true avec une liste checks non vide.
+    check_logic: all
+    verification:
+      initial_delay: 90s
+      timeout: 180s
+      interval: 5s
+      attempts: 0
+      packet_retries: 1
     checks:
       - {type: tcp, port: 22, timeout: 3s}
       - {type: arp}
@@ -86,10 +116,5 @@ relays:
     client_key: /etc/wol-manager/secrets/manager.key
     timeout: 5s
 
-automations:
-  - id: restore-infrastructure
-    enabled: false
-    event: nut.power_restored
-    ups: ups-main
-    group: infrastructure
-    stable_for: 30s
+# Les anciennes entrées automations/nut.power_restored restent acceptées pour
+# compatibilité V1.1.1. Les nouvelles politiques se configurent par groupe.

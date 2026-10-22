@@ -4,21 +4,25 @@ set -Eeuo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf -- "$WORK"' EXIT
+export WOL_TEST_CHOWN_LOG="$WORK/chown.log"
+: >"$WOL_TEST_CHOWN_LOG"
 PRIVATE_KEY="$WORK/release-private.pem"
 PUBLIC_KEY="$WORK/release-public.pem"
 PUBLICATION_COMMIT=1111111111111111111111111111111111111111
 
 fail() { echo "ECHEC: $*" >&2; exit 1; }
 assert_file() { [[ -f "$1" ]] || fail "fichier absent: $1"; }
-assert_contains() { grep -Fq "$2" "$1" || fail "'$2' absent de $1"; }
-assert_not_contains() { ! grep -Fq "$2" "$1" || fail "'$2' présent dans $1"; }
+assert_contains() { grep -Fq -- "$2" "$1" || fail "'$2' absent de $1"; }
+assert_not_contains() { ! grep -Fq -- "$2" "$1" || fail "'$2' présent dans $1"; }
+assert_has_ansi() { LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI absente de $1"; }
+assert_no_ansi() { ! LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI présente dans $1"; }
 
 openssl genpkey -algorithm Ed25519 -out "$PRIVATE_KEY"
 openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY"
 
 MOCK_BIN="$WORK/mock-bin"
 mkdir -p "$MOCK_BIN"
-for command in ip ping getent useradd groupadd dpkg-query; do
+for command in ip ping getent useradd usermod groupadd dpkg-query; do
   cat >"$MOCK_BIN/$command" <<'EOF'
 #!/bin/sh
 exit 0
@@ -27,7 +31,15 @@ EOF
 done
 cat >"$MOCK_BIN/apt" <<'EOF'
 #!/bin/sh
-if [ "${1:-}" = list ]; then echo 'Listing...'; fi
+if [ "${1:-}" = list ]; then
+  echo 'Listing...'
+  count=${WOL_TEST_APT_COUNT:-0}
+  i=1
+  while [ "$i" -le "$count" ]; do
+    printf 'package-%03d/stable 1.0 amd64 [upgradable from: 0.9]\n' "$i"
+    i=$((i + 1))
+  done
+fi
 EOF
 cat >"$MOCK_BIN/apt-get" <<'EOF'
 #!/bin/sh
@@ -215,6 +227,15 @@ REV3=cccccccccccccccccccccccccccccccccccccccc
 PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
+"$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.1"
+assert_contains "$WORK/install-help.log" "--service enable"
+assert_contains "$WORK/install-help.log" "--service install"
+assert_contains "$WORK/install-help.log" "--service cli"
+assert_contains "$WORK/install-help.log" "main  version stable"
+assert_contains "$WORK/install-help.log" "dev   version de développement/BETA"
+assert_contains "$WORK/install-help.log" "paquet local signé"
+
 echo "[1/16] Debian 12 AMD64, binaire local, sans Go"
 ROOT12="$WORK/root12"
 prepare_root "$ROOT12" 12
@@ -254,8 +275,32 @@ assert_contains "$WORK/reinstall.log" "utilisez sudo wol update"
 echo "[4/16] Debian 13 ARM64"
 ROOT13="$WORK/root13"
 prepare_root "$ROOT13" 13
-run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli
+run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
+assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.2.1"
+
+echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
+ROOT_APT="$WORK/root-apt"
+prepare_root "$ROOT_APT" 13
+WOL_TEST_APT_COUNT=206 run_installer "$PAYLOAD" "$ROOT_APT" amd64 --non-interactive --yes --service cli >"$WORK/apt-summary.log" 2>&1
+assert_contains "$WORK/apt-summary.log" "Mises à jour Debian disponibles (cache APT actuel): 206"
+assert_contains "$WORK/apt-summary.log" "Aucune mise à jour Debian n'a été installée"
+assert_not_contains "$WORK/apt-summary.log" "package-001/stable"
+APT_INSTALL_LOG=$(find "$ROOT_APT/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+assert_contains "$APT_INSTALL_LOG" "package-001/stable"
+
+echo "[permissions] ajout idempotent de SUDO_USER au groupe client"
+ROOT_GROUP="$WORK/root-group"
+prepare_root "$ROOT_GROUP" 13
+GROUP_LOG="$WORK/group-members.log"
+: >"$GROUP_LOG"
+SUDO_USER=alice WOL_TEST_GROUP_LOG="$GROUP_LOG" run_installer "$PAYLOAD" "$ROOT_GROUP" amd64 --non-interactive --yes --service cli --setup >"$WORK/group-install.log" 2>&1
+[[ $(grep -Fxc alice "$GROUP_LOG") = 1 ]] || fail "SUDO_USER n'a pas été ajouté exactement une fois"
+assert_contains "$WORK/group-install.log" "reconnectez-vous ou exécutez: newgrp wol-manager"
+[[ $(stat -c %a "$ROOT_GROUP/etc/wol-manager") = 750 ]] || fail "répertoire de configuration trop permissif"
+[[ $(stat -c %a "$ROOT_GROUP/etc/wol-manager/wol.yaml") = 640 ]] || fail "configuration lisible par les autres utilisateurs"
+[[ $(stat -c %a "$ROOT_GROUP/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "secrets élargis par l'ajout au groupe"
 
 echo "[5/16] dépendance manquante avec consentement"
 ROOT_DEP="$WORK/root-dep"
@@ -332,6 +377,10 @@ run_update_from() {
   "$root/usr/local/lib/wol-manager/install.sh" --update "$@"
 }
 
+SUDO_USER=alice WOL_TEST_GROUP_LOG="$GROUP_LOG" run_update "$ROOT_GROUP" main --yes --non-interactive >"$WORK/group-update.log" 2>&1
+[[ $(grep -Fxc alice "$GROUP_LOG") = 1 ]] || fail "la mise à jour a dupliqué l'appartenance au groupe"
+assert_contains "$WORK/group-update.log" "déjà membre du groupe wol-manager"
+
 echo "[6/16] vérification de mise à jour sans curl et sans installation APT"
 : >"$WORK/apt.log"
 if APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT12/systemd-state" \
@@ -366,6 +415,8 @@ mkdir -p "$ROOT12/etc/wol-manager/secrets" "$ROOT12/var/lib/wol-manager" "$ROOT1
 cp "$REPO/configs/wol.example.yaml" "$ROOT12/etc/wol-manager/wol.yaml"
 echo secret >"$ROOT12/etc/wol-manager/secrets/token"
 echo state >"$ROOT12/var/lib/wol-manager/state.keep"
+printf '{"jobs":{"upgrade-job":{"id":"upgrade-job","kind":"test","target":"preserve","state":"completed","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}}}\n' >"$ROOT12/var/lib/wol-manager/state.json"
+chmod 0600 "$ROOT12/var/lib/wol-manager/state.json"
 echo log >"$ROOT12/var/log/wol-manager/audit.keep"
 run_update "$ROOT12" main --yes --non-interactive
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "mise à jour main absente"
@@ -373,6 +424,13 @@ cmp -s "$REMOTE/main/install.sh" "$ROOT12/usr/local/lib/wol-manager/install.sh" 
 assert_file "$ROOT12/etc/wol-manager/secrets/token"
 assert_file "$ROOT12/var/lib/wol-manager/state.keep"
 assert_file "$ROOT12/var/log/wol-manager/audit.keep"
+assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"upgrade-job"'
+assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"target":"preserve"'
+[[ $(stat -c %a "$ROOT12/var/lib/wol-manager") = 750 ]] || fail "mode incorrect pour le répertoire d'état"
+[[ $(stat -c %a "$ROOT12/var/lib/wol-manager/state.json") = 640 ]] || fail "mode incorrect pour state.json"
+assert_contains "$WOL_TEST_CHOWN_LOG" "wol-manager:wol-manager $ROOT12/var/lib/wol-manager/state.json"
+[[ -r "$ROOT12/var/lib/wol-manager/state.json" && -w "$ROOT12/var/lib/wol-manager/state.json" ]] || fail "state.json n'est pas lisible et inscriptible par son propriétaire simulé"
+[[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "les permissions strictes des secrets ont changé"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
 echo "[10/16] absence de mise à jour"
@@ -382,6 +440,7 @@ assert_contains "$WORK/current.log" "est à jour"
 echo "[11/16] canal dev temporaire"
 run_update "$ROOT12" dev --yes --non-interactive >"$WORK/dev.log" 2>&1
 assert_contains "$WORK/dev.log" "CANAL DEV/BETA"
+assert_no_ansi "$WORK/dev.log"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.3 ]] || fail "mise à jour dev absente"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
@@ -448,6 +507,51 @@ if run_update_from "$REMOTE_UNKNOWN" "$ROOT12" main --check --non-interactive >"
   fail "un format de manifeste inconnu a été accepté"
 fi
 assert_contains "$WORK/unknown-format.log" "Format de manifeste non pris en charge"
+
+echo "[comparaison versions] protection contre les rétrogradations dev vers main"
+PAYLOAD_DEV="$WORK/payload-dev"
+prepare_payload "$PAYLOAD_DEV" 1.2.0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee dev
+ROOT_AUTO_DEV="$WORK/root-auto-dev"
+prepare_root "$ROOT_AUTO_DEV" 13
+run_installer "$PAYLOAD_DEV" "$ROOT_AUTO_DEV" amd64 --non-interactive --yes --service cli >"$WORK/auto-dev.log"
+assert_contains "$WORK/auto-dev.log" "Paquet local signé détecté: canal dev"
+[[ $("$ROOT_AUTO_DEV/usr/local/bin/wol" version --channel) = dev ]] || fail "le canal dev local signé n'a pas été détecté"
+ROOT_VERSION="$WORK/root-version"
+prepare_root "$ROOT_VERSION" 13
+run_installer "$PAYLOAD_DEV" "$ROOT_VERSION" amd64 --channel dev --non-interactive --yes --service cli
+
+REMOTE_VERSIONS="$WORK/remote-versions"
+mkdir -p "$REMOTE_VERSIONS/main" "$REMOTE_VERSIONS/dev"
+make_distribution "$REMOTE_VERSIONS/main" 1.1.1 ffffffffffffffffffffffffffffffffffffffff main
+make_distribution "$REMOTE_VERSIONS/dev" 1.2.0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee dev
+cp -a "$ROOT_VERSION" "$WORK/root-version-before"
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-old-main-check.log"
+assert_contains "$WORK/dev-to-old-main-check.log" 'Version dev installée : 1.2.0. Le canal main propose une version plus ancienne : 1.1.1.'
+assert_not_contains "$WORK/dev-to-old-main-check.log" "Mise à jour disponible"
+diff -r "$WORK/root-version-before" "$ROOT_VERSION" >/dev/null || fail "--check vers un ancien main a modifié l'installation"
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --yes --non-interactive >"$WORK/dev-to-old-main-update.log"
+assert_contains "$WORK/dev-to-old-main-update.log" "Aucun changement n'a été effectué."
+[[ $("$ROOT_VERSION/usr/local/bin/wol" version) = 1.2.0 ]] || fail "la tentative de rétrogradation a remplacé le binaire"
+[[ $("$ROOT_VERSION/usr/local/bin/wol" version --channel) = dev ]] || fail "la tentative de rétrogradation a changé le canal installé"
+
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" dev --channel dev --check --non-interactive >"$WORK/dev-same.log"
+assert_contains "$WORK/dev-same.log" "WoL Manager est à jour"
+make_distribution "$REMOTE_VERSIONS/dev" 1.2.1 1212121212121212121212121212121212121212 dev
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" dev --channel dev --check --non-interactive >"$WORK/dev-newer.log"
+assert_contains "$WORK/dev-newer.log" "Mise à jour disponible"
+
+make_distribution "$REMOTE_VERSIONS/main" 1.2.0 2020202020202020202020202020202020202020 main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-same-main.log"
+assert_contains "$WORK/dev-to-same-main.log" "Mise à jour disponible: même version"
+make_distribution "$REMOTE_VERSIONS/main" 1.3.0 3030303030303030303030303030303030303030 main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-new-main.log"
+assert_contains "$WORK/dev-to-new-main.log" "Mise à jour disponible"
+
+make_binary "$ROOT_VERSION/usr/local/bin/wol" 1.2.0 4040404040404040404040404040404040404040 unknown
+make_distribution "$REMOTE_VERSIONS/main" 1.1.1 ffffffffffffffffffffffffffffffffffffffff main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/unknown-channel-old-main.log"
+assert_contains "$WORK/unknown-channel-old-main.log" "La version proposée (1.1.1) est plus ancienne"
+assert_not_contains "$WORK/unknown-channel-old-main.log" "Mise à jour disponible"
 
 echo "[12/16] manifeste altéré refusé"
 cp -R "$REMOTE/main" "$WORK/tampered"
@@ -549,5 +653,54 @@ APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_REMOTE/system
   PATH="$MOCK_BIN:$PATH" "$ROOT_REMOTE/usr/local/lib/wol-manager/install.sh" --uninstall --non-interactive
 [[ ! -e "$ROOT_REMOTE/etc/bash_completion.d/wol-manager" ]] || fail "la complétion WoL Manager n'a pas été supprimée"
 assert_contains "$ROOT_REMOTE/usr/share/bash-completion/completions/wol" "fichier Debian mis à jour"
+assert_file "$ROOT_REMOTE/etc/wol-manager/secrets/tokens.json"
+run_installer "$PAYLOAD" "$ROOT_REMOTE" amd64 --non-interactive --yes --service cli >"$WORK/reinstall-after-uninstall.log" 2>&1
+assert_file "$ROOT_REMOTE/usr/local/bin/wol"
+assert_file "$ROOT_REMOTE/etc/wol-manager/secrets/tokens.json"
+
+echo "[permissions réelles] lecture membre, refus non-membre et écriture refusée"
+if [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
+  PERM_DIR=$(mktemp -d /tmp/wol-permission.XXXXXX)
+  chmod 0755 "$PERM_DIR"
+  install -d -o 0 -g 65534 -m 0750 "$PERM_DIR"
+  printf 'version: 1\n' >"$PERM_DIR/wol.yaml"
+  chown 0:65534 "$PERM_DIR/wol.yaml"
+  chmod 0640 "$PERM_DIR/wol.yaml"
+  setpriv --reuid=65534 --regid=65534 --clear-groups cat "$PERM_DIR/wol.yaml" >/dev/null || fail "un membre du groupe ne peut pas lire la configuration"
+  if setpriv --reuid=65533 --regid=65533 --clear-groups cat "$PERM_DIR/wol.yaml" >/dev/null 2>&1; then
+    fail "un non-membre peut lire la configuration"
+  fi
+  if setpriv --reuid=65534 --regid=65534 --clear-groups sh -c 'echo unsafe >>"$1"' _ "$PERM_DIR/wol.yaml" 2>/dev/null; then
+    fail "un membre non-root peut modifier la configuration"
+  fi
+  rm -rf -- "$PERM_DIR"
+fi
+
+echo "[présentation] couleurs TTY, redirection, NO_COLOR et journaux"
+command -v script >/dev/null 2>&1 || fail "commande script requise pour tester la sortie TTY"
+echo "[interaction] ? affiche l'aide et repose exactement la même question"
+ROOT_PROMPT="$WORK/root-prompt"
+prepare_root "$ROOT_PROMPT" 13
+PROMPT_COMMAND="env APT_LOG='$WORK/apt.log' GO_LOG='$WORK/go.log' SYSTEMD_STATE='$ROOT_PROMPT/systemd-state' WOL_ROOT='$ROOT_PROMPT' WOL_OS_RELEASE='$ROOT_PROMPT/os-release' WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux PATH='$MOCK_BIN:$PATH' '$PAYLOAD/install.sh'"
+printf 'invalide\n?\n3\nautre\n?\nn\n' | script -qec "$PROMPT_COMMAND" /dev/null >"$WORK/prompt-help.log"
+assert_contains "$WORK/prompt-help.log" "Aide: 1 installe et démarre le service"
+assert_contains "$WORK/prompt-help.log" "Aide: wol setup crée ou modifie la configuration guidée"
+assert_contains "$WORK/prompt-help.log" "Choix invalide: saisissez 1, 2, 3"
+assert_contains "$WORK/prompt-help.log" "Réponse invalide: saisissez y/o, n"
+[[ $(grep -Fc "Service systemd:" "$WORK/prompt-help.log") -ge 2 ]] || fail "la question systemd n'a pas été reposée après ?"
+[[ $(grep -Fc "Lancer wol setup maintenant ?" "$WORK/prompt-help.log") -ge 2 ]] || fail "la question setup n'a pas été reposée après ?"
+
+COLOR_TMP="$WORK/color-tmp"
+mkdir -p "$COLOR_TMP"
+TERM=xterm WOL_TEST_MODE=1 TMPDIR="$COLOR_TMP" script -qec "'$REPO/install.sh' --version" /dev/null >"$WORK/color-tty.log"
+assert_has_ansi "$WORK/color-tty.log"
+TERM=xterm NO_COLOR=1 WOL_TEST_MODE=1 TMPDIR="$COLOR_TMP" script -qec "'$REPO/install.sh' --version" /dev/null >"$WORK/color-no-color.log"
+assert_no_ansi "$WORK/color-no-color.log"
+TERM=xterm WOL_TEST_MODE=1 TMPDIR="$COLOR_TMP" "$REPO/install.sh" --version >"$WORK/color-redirected.log" 2>&1
+assert_no_ansi "$WORK/color-redirected.log"
+for logfile in "$COLOR_TMP"/wol-manager-check-*.log; do
+  assert_file "$logfile"
+  assert_no_ansi "$logfile"
+done
 
 echo "Tous les tests simulés de l'installateur ont réussi."
