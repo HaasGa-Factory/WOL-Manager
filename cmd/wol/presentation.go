@@ -43,15 +43,19 @@ func colorEnabled(output io.Writer) bool {
 
 func outputColorMode(output io.Writer) colorMode {
 	file, ok := output.(*os.File)
-	if !ok {
-		return colorNone
-	}
-	info, err := file.Stat()
-	if err != nil {
+	if !ok || !isTerminalFile(file) {
 		return colorNone
 	}
 	_, noColor := os.LookupEnv("NO_COLOR")
-	return detectColorMode(info.Mode()&os.ModeCharDevice != 0, noColor || cliNoColor, os.Getenv("TERM"), os.Getenv("COLORTERM"))
+	return detectColorMode(true, noColor || cliNoColor, os.Getenv("TERM"), os.Getenv("COLORTERM"))
+}
+
+func isTerminalFile(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func allowColor(tty, noColor bool, term string) bool {

@@ -466,6 +466,7 @@ func editConfig(path string) error {
 }
 func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
+	interactive := isTerminalFile(os.Stdin) && isTerminalFile(os.Stdout)
 	for {
 		printInteractiveMenu(os.Stdout, "MENU PRINCIPAL", []helpRow{
 			{command: "[1] Machines", description: "Consulter les machines configurées"},
@@ -486,24 +487,37 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 		case "0":
 			return nil
 		case "1":
+			printInteractiveViewHeader(os.Stdout, "MACHINES")
 			if jsonOut {
 				_ = output(true, c.Servers, "")
 			} else {
 				printMenuMachines(os.Stdout, c)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "machine") {
+				return nil
+			}
 		case "2":
+			printInteractiveViewHeader(os.Stdout, "RÉSEAUX")
 			if jsonOut {
 				_ = output(true, c.Networks, "")
 			} else {
 				printNetworks(os.Stdout, c.Networks)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "network") {
+				return nil
+			}
 		case "3":
+			printInteractiveViewHeader(os.Stdout, "GROUPES")
 			if jsonOut {
 				_ = output(true, c.Groups, "")
 			} else {
 				printGroups(os.Stdout, c.Groups)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "group") {
+				return nil
+			}
 		case "4":
+			printInteractiveViewHeader(os.Stdout, "UPS")
 			out := map[string]UPSStatus{}
 			for id, u := range c.UPS {
 				out[id] = nutStatus(context.Background(), id, u)
@@ -513,11 +527,18 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			} else {
 				printMenuUPS(os.Stdout, out)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "nut") {
+				return nil
+			}
 		case "5":
+			printInteractiveViewHeader(os.Stdout, "VALIDATION")
 			if err := c.Validate(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else {
 				fmt.Println("configuration valide")
+			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "menu") {
+				return nil
 			}
 		case "6":
 			if err := setupWithIO(configPath, r, os.Stdout); err != nil {
@@ -577,20 +598,46 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 				}
 			}
 		case "9":
+			printInteractiveViewHeader(os.Stdout, "AUTOMATISMES")
 			jobs, err := openJobs(c.Storage.StateFile)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
-				continue
-			}
-			if jsonOut {
+			} else if jsonOut {
 				_ = output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
 			} else {
 				printMenuAutomations(os.Stdout, c.restorePlans(), jobs.listCycles(), jobs.list())
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "menu") {
+				return nil
+			}
 		case "?", "aide", "help":
 			printContextHelp(os.Stdout, "menu")
+			if !waitForMenuReturn(r, os.Stdout, interactive, "menu") {
+				return nil
+			}
 		default:
 			fmt.Println("Choix invalide.")
+		}
+	}
+}
+
+func waitForMenuReturn(reader *bufio.Reader, output io.Writer, interactive bool, helpTopic string) bool {
+	if !interactive {
+		return false
+	}
+	for {
+		fmt.Fprint(output, "\nAppuyez sur Entrée pour revenir au menu principal: ")
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "", "0", "retour", "annuler":
+			return true
+		case "?", "aide", "help":
+			printContextHelp(output, helpTopic)
+		default:
+			fmt.Fprintln(output, "Réponse invalide: appuyez sur Entrée, ou saisissez retour, annuler, 0 ou ?.")
 		}
 	}
 }

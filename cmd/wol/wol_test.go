@@ -322,6 +322,76 @@ func TestMenuAnnouncesPreflightCheckBeforeRealWakeConfirmation(t *testing.T) {
 	}
 }
 
+func TestMenuViewWaitSupportsHelpAndReturn(t *testing.T) {
+	var output bytes.Buffer
+	reader := bufio.NewReader(strings.NewReader("?\nretour\n"))
+	if !waitForMenuReturn(reader, &output, true, "machine") {
+		t.Fatal("le retour interactif aurait dû redessiner le menu principal")
+	}
+	text := output.String()
+	for _, expected := range []string{"Appuyez sur Entrée", "AIDE MACHINES"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("%q absent de la pause interactive:\n%s", expected, text)
+		}
+	}
+}
+
+func TestMenuViewDoesNotWaitWhenRedirected(t *testing.T) {
+	var output bytes.Buffer
+	reader := bufio.NewReader(strings.NewReader("reste\n"))
+	if waitForMenuReturn(reader, &output, false, "machine") {
+		t.Fatal("une vue redirigée ne doit pas demander de retour au menu")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("une vue redirigée ne doit pas afficher de pause: %q", output.String())
+	}
+	remaining, err := reader.ReadString('\n')
+	if err != nil || remaining != "reste\n" {
+		t.Fatalf("l'entrée redirigée a été consommée: %q, %v", remaining, err)
+	}
+}
+
+func TestRedirectedMenuPrintsOneViewWithoutRedrawingMainMenu(t *testing.T) {
+	cfg := testConfig(t)
+	inputReader, inputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputReader, outputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldInput, oldOutput := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = inputReader, outputWriter
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = oldInput, oldOutput
+		_ = inputReader.Close()
+		_ = outputReader.Close()
+	})
+	if _, err := inputWriter.WriteString("1\n0\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = inputWriter.Close()
+	if err := menu("", cfg, &Engine{cfg: cfg, audit: &Auditor{}}, false); err != nil {
+		t.Fatal(err)
+	}
+	_ = outputWriter.Close()
+	text, err := io.ReadAll(outputReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := string(text)
+	if strings.Count(plain, "WoL Manager — MENU PRINCIPAL") != 1 {
+		t.Fatalf("le menu principal doit être imprimé une seule fois:\n%s", plain)
+	}
+	if !strings.Contains(plain, "WoL Manager — MACHINES") || !strings.Contains(plain, "One") {
+		t.Fatalf("la vue Machines est absente:\n%s", plain)
+	}
+	if strings.Contains(plain, "Appuyez sur Entrée") || strings.Contains(plain, "\x1b[") {
+		t.Fatalf("une sortie redirigée ne doit contenir ni pause ni ANSI:\n%q", plain)
+	}
+}
+
 func TestDisabledChecksReturnUnknownImmediately(t *testing.T) {
 	cfg := testConfig(t)
 	server := cfg.Servers["two"]

@@ -324,6 +324,13 @@ func renderInteractiveMenuHeader(output io.Writer, title string, options helpRen
 	)
 }
 
+func printInteractiveViewHeader(output io.Writer, title string) {
+	options := helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)}
+	fmt.Fprintln(output)
+	renderInteractiveMenuHeader(output, title, options)
+	fmt.Fprintln(output)
+}
+
 var commandHelp = map[string]string{
 	"setup": `Usage: sudo wol [--config FILE] setup
 
