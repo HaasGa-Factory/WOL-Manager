@@ -467,7 +467,20 @@ func editConfig(path string) error {
 func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  9 Automatismes  0 Quitter  ? Aide\n> ")
+		printInteractiveMenu(os.Stdout, "MENU PRINCIPAL", []helpRow{
+			{command: "[1] Machines", description: "Consulter les machines configurées"},
+			{command: "[2] Réseaux", description: "Consulter les réseaux Wake-on-LAN"},
+			{command: "[3] Groupes", description: "Consulter les groupes et dépendances"},
+			{command: "[4] UPS", description: "Consulter l’état des onduleurs NUT"},
+			{command: "[5] Valider", description: "Valider la configuration actuelle"},
+			{command: "[6] Configurer", description: "Ouvrir l’assistant de configuration"},
+			{command: "[7] Simulation WoL", description: "Simuler un réveil sans envoyer de paquet"},
+			{command: "[8] Réveil réel", description: "Envoyer un paquet après confirmation explicite"},
+			{command: "[9] Automatismes", description: "Consulter les reprises NUT, cycles et tâches"},
+			{command: "[0] Quitter", description: "Fermer le menu"},
+			{command: "[?] Aide", description: "Afficher l’aide détaillée du menu"},
+		})
+		fmt.Print("> ")
 		x, _ := r.ReadString('\n')
 		switch strings.TrimSpace(x) {
 		case "0":

@@ -194,6 +194,48 @@ func TestDetailedAndInteractiveHelpShareVisualIdentity(t *testing.T) {
 	}
 }
 
+func TestInteractiveMenuUsesSharedVisualIdentity(t *testing.T) {
+	rows := []helpRow{
+		{command: "[1] Machines", description: "Consulter les machines configurées"},
+		{command: "[0] Quitter", description: "Fermer le menu"},
+		{command: "[?] Aide", description: "Afficher l’aide détaillée"},
+	}
+	var output bytes.Buffer
+	printInteractiveMenu(&output, "MENU PRINCIPAL", rows)
+	text := output.String()
+	normalized := strings.Join(strings.Fields(text), " ")
+	for _, expected := range []string{"⚡ WoL Manager — MENU PRINCIPAL", "ACTIONS", "[1] Machines", "Consulter les machines configurées", "Les flèches ne sont pas utilisées"} {
+		if !strings.Contains(normalized, expected) {
+			t.Fatalf("menu interactif incomplet, élément absent %q:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "\x1b[") {
+		t.Fatalf("un rendu non-TTY ne doit pas contenir d’ANSI: %q", text)
+	}
+	var colored bytes.Buffer
+	renderInteractiveMenu(&colored, "MENU PRINCIPAL", rows, helpRenderOptions{mode: colorTrueColor, width: 80})
+	for _, code := range []string{"38;2;34;211;238", "38;2;74;222;128", "38;2;209;213;219"} {
+		if !strings.Contains(colored.String(), code) {
+			t.Fatalf("style TrueColor %q absent du menu: %q", code, colored.String())
+		}
+	}
+}
+
+func TestInteractiveMenuFitsNarrowTerminal(t *testing.T) {
+	rows := []helpRow{{command: "[7] Simulation WoL", description: "Simuler un réveil sans envoyer de paquet"}}
+	var output bytes.Buffer
+	options := helpRenderOptions{mode: colorNone, width: 40}
+	renderInteractiveMenu(&output, "MENU PRINCIPAL", rows, options)
+	for _, line := range strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n") {
+		if got := visibleWidth(line); got > 40 {
+			t.Fatalf("ligne trop longue (%d): %q", got, line)
+		}
+	}
+	if !strings.Contains(output.String(), "    Simuler un réveil") {
+		t.Fatalf("la description doit être empilée sur terminal étroit:\n%s", output.String())
+	}
+}
+
 func TestFieldHelpUsesModernRendererWithoutChangingGuidance(t *testing.T) {
 	var output bytes.Buffer
 	renderFieldHelp(&output, "Adresse MAC", helpRenderOptions{mode: colorNone, width: 60})

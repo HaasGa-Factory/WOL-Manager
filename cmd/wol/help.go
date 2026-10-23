@@ -291,6 +291,39 @@ func renderHelpRows(output io.Writer, rows []helpRow, options helpRenderOptions)
 	}
 }
 
+// printInteractiveMenu keeps interactive choices visually consistent with the
+// command help while leaving input handling and menu actions unchanged.
+func printInteractiveMenu(output io.Writer, title string, rows []helpRow) {
+	options := helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)}
+	renderInteractiveMenu(output, title, rows, options)
+}
+
+func renderInteractiveMenu(output io.Writer, title string, rows []helpRow, options helpRenderOptions) {
+	fmt.Fprintln(output)
+	renderInteractiveMenuHeader(output, title, options)
+	renderHelpSection(output, helpSection{title: "ACTIONS", rows: rows}, options)
+	fmt.Fprintln(output)
+	for _, line := range wrapText("Saisissez un numéro, ou ? pour afficher l’aide. Les flèches ne sont pas utilisées.", options.width) {
+		fmt.Fprintln(output, styledTextMode(line, styleMuted, options.mode))
+	}
+}
+
+func renderInteractiveMenuHeader(output io.Writer, title string, options helpRenderOptions) {
+	symbol := "⚡"
+	locale := os.Getenv("LC_ALL")
+	if locale == "" {
+		locale = os.Getenv("LANG")
+	}
+	if locale == "C" || locale == "POSIX" {
+		symbol = ">"
+	}
+	fmt.Fprintf(output, "%s %s %s\n",
+		styledTextMode(symbol, styleSection, options.mode),
+		styledTextMode("WoL Manager", styleTitle, options.mode),
+		styledTextMode("— "+strings.ToUpper(title), styleSection, options.mode),
+	)
+}
+
 var commandHelp = map[string]string{
 	"setup": `Usage: sudo wol [--config FILE] setup
 

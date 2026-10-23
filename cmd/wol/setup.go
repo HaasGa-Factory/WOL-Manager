@@ -36,7 +36,12 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 		fmt.Fprintln(output, "NUT signifie Network UPS Tools. Il permet de lire l'état d'un onduleur; cette fonction est facultative et WoL Manager ne commande jamais l'onduleur.")
 		fmt.Fprintln(output, "Si vous l'activez, préparez l'adresse IP/DNS, le port (3493), le choix TLS/STARTTLS et, seulement si nécessaires, les identifiants stockés dans des fichiers secrets.")
 		fmt.Fprintln(output, "Souhaitez-vous configurer un serveur NUT ?")
-		fmt.Fprintln(output, "[1] Oui\n[2] Non\n[3] Plus tard\n[?] Aide")
+		printInteractiveMenu(output, "CONFIGURATION NUT", []helpRow{
+			{command: "[1] Oui", description: "Configurer maintenant un serveur NUT et ses UPS"},
+			{command: "[2] Non", description: "Continuer sans intégration NUT"},
+			{command: "[3] Plus tard", description: "Reporter la configuration NUT"},
+			{command: "[?] Aide", description: "Expliquer NUT et son fonctionnement en lecture seule"},
+		})
 	chooseNUT:
 		for {
 			switch prompt(reader, output, "> ") {
@@ -56,8 +61,17 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 	}
 
 	for {
-		fmt.Fprintln(output, "\nConfiguration WoL Manager :")
-		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier\n[7] Délais globaux de vérification\n[8] Découverte réseau\n[?] Aide")
+		printInteractiveMenu(output, "CONFIGURATION", []helpRow{
+			{command: "[1] Réseaux WoL", description: "Ajouter ou modifier les réseaux et transports"},
+			{command: "[2] Machines", description: "Ajouter ou modifier les machines à réveiller"},
+			{command: "[3] Groupes et dépendances", description: "Organiser l’ordre et les dépendances"},
+			{command: "[4] Serveurs NUT et UPS", description: "Configurer la surveillance facultative des onduleurs"},
+			{command: "[5] Résumé et enregistrement", description: "Valider, simuler puis enregistrer atomiquement"},
+			{command: "[6] Annuler", description: "Quitter sans modifier la configuration"},
+			{command: "[7] Délais globaux", description: "Régler les valeurs de vérification héritées"},
+			{command: "[8] Découverte réseau", description: "Configurer la découverte passive et active"},
+			{command: "[?] Aide", description: "Afficher l’aide complète de l’assistant"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			session.changed = manageNetworks(reader, output, session.cfg) || session.changed
@@ -131,8 +145,14 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	}
 
 	for {
-		fmt.Fprintln(output, "\nConfiguration NUT :")
-		fmt.Fprintln(output, "[1] Ajouter ou modifier un serveur\n[2] Supprimer un UPS configuré\n[3] Tester les UPS configurés\n[4] Terminer\n[5] Annuler les changements NUT\n[?] Aide")
+		printInteractiveMenu(output, "SERVEURS NUT ET UPS", []helpRow{
+			{command: "[1] Ajouter ou modifier", description: "Configurer un serveur NUT et sélectionner ses UPS"},
+			{command: "[2] Supprimer un UPS", description: "Retirer un UPS de WoL Manager sans modifier NUT"},
+			{command: "[3] Tester", description: "Tester en lecture seule les UPS configurés"},
+			{command: "[4] Terminer", description: "Conserver les changements de cette section"},
+			{command: "[5] Annuler", description: "Annuler uniquement les changements NUT"},
+			{command: "[?] Aide", description: "Afficher l’aide NUT et les états OL, OB, LB et FSD"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if err := configureRemoteNUT(reader, output, working); err != nil {
@@ -213,9 +233,15 @@ func newConfigSession(path string) (*configSession, error) {
 func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	changed := false
 	for {
-		fmt.Fprintln(output, "\nRéseaux WoL :")
+		fmt.Fprintln(output, "\nRéseaux WoL configurés :")
 		printNetworks(output, cfg.Networks)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
+		printInteractiveMenu(output, "RÉSEAUX WOL", []helpRow{
+			{command: "[1] Ajouter", description: "Créer un réseau Wake-on-LAN"},
+			{command: "[2] Modifier", description: "Modifier un réseau existant"},
+			{command: "[3] Supprimer", description: "Supprimer un réseau inutilisé après confirmation"},
+			{command: "[4] Retour", description: "Revenir à la configuration générale"},
+			{command: "[?] Aide", description: "Expliquer CIDR, interface et transports"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if addOrEditNetwork(reader, output, cfg, "") {
@@ -334,9 +360,15 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	changed := false
 	for {
-		fmt.Fprintln(output, "\nMachines :")
+		fmt.Fprintln(output, "\nMachines configurées :")
 		printServers(output, cfg.Servers)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
+		printInteractiveMenu(output, "MACHINES", []helpRow{
+			{command: "[1] Ajouter", description: "Déclarer une machine à réveiller"},
+			{command: "[2] Modifier", description: "Modifier une machine existante"},
+			{command: "[3] Supprimer", description: "Supprimer une machine sans dépendance active"},
+			{command: "[4] Retour", description: "Revenir à la configuration générale"},
+			{command: "[?] Aide", description: "Expliquer identifiants, contrôles et délais"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if addOrEditServer(reader, output, cfg, "") {
@@ -445,9 +477,15 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	changed := false
 	for {
-		fmt.Fprintln(output, "\nGroupes :")
+		fmt.Fprintln(output, "\nGroupes configurés :")
 		printGroups(output, cfg.Groups)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
+		printInteractiveMenu(output, "GROUPES ET DÉPENDANCES", []helpRow{
+			{command: "[1] Ajouter", description: "Créer un groupe et son ordre de réveil"},
+			{command: "[2] Modifier", description: "Modifier un groupe existant"},
+			{command: "[3] Supprimer", description: "Supprimer un groupe inutilisé"},
+			{command: "[4] Retour", description: "Revenir à la configuration générale"},
+			{command: "[?] Aide", description: "Expliquer priorités, dépendances et reprise NUT"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			if addOrEditGroup(reader, output, cfg, "") {
@@ -947,7 +985,16 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check, curre
 	fmt.Fprintf(output, "Vérification après réveil actuelle: %s\n", currentText)
 	fmt.Fprintln(output, "ICMP: ping simple mais parfois bloqué. TCP: vérifie un port ouvert (22/80/443). ARP: présence locale, preuve plus faible. Aucune: paquet envoyé sans confirmation de démarrage.")
 	for {
-		fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune vérification\n[5] Plusieurs contrôles\n[6] Hériter des vérifications globales\n[Entrée] Conserver\n[?] Aide")
+		printInteractiveMenu(output, "VÉRIFICATION APRÈS RÉVEIL", []helpRow{
+			{command: "[1] ICMP", description: "Vérifier la réponse au ping"},
+			{command: "[2] TCP", description: "Vérifier l’ouverture d’un port précis"},
+			{command: "[3] ARP", description: "Vérifier la présence sur le réseau local"},
+			{command: "[4] Aucune vérification", description: "Envoyer le paquet sans confirmer le démarrage"},
+			{command: "[5] Plusieurs contrôles", description: "Combiner ICMP, TCP et ARP"},
+			{command: "[6] Hériter", description: "Utiliser les vérifications globales"},
+			{command: "[Entrée] Conserver", description: "Garder la valeur actuelle"},
+			{command: "[?] Aide", description: "Expliquer les contrôles et leur logique"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}, false
@@ -1046,7 +1093,12 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		}
 		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
 	}
-	fmt.Fprintln(output, "Seuils batterie: [1] 40/70 %  [2] 20/80 %  [3] personnalisés")
+	printInteractiveMenu(output, "SEUILS DE BATTERIE", []helpRow{
+		{command: "[1] 40 / 70 %", description: "Réarmement à 40 %, démarrage à 70 %"},
+		{command: "[2] 20 / 80 %", description: "Réarmement à 20 %, démarrage à 80 %"},
+		{command: "[3] Personnalisés", description: "Saisir les deux seuils manuellement"},
+		{command: "[?] Aide", description: "Expliquer les seuils bas et haut"},
+	})
 	low, high := 40, 70
 	if policy.LowBattery != nil && policy.HighBattery != nil {
 		low, high = *policy.LowBattery, *policy.HighBattery
@@ -1075,14 +1127,24 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		}
 	}
 	policy.LowBattery, policy.HighBattery = intPointer(low), intPointer(high)
-	fmt.Fprintln(output, "Stabilité secteur: [1] 30s  [2] 1m  [3] 5m  [4] personnalisée")
+	printInteractiveMenu(output, "STABILITÉ DU SECTEUR", []helpRow{
+		{command: "[1] 30s", description: "Attendre 30 secondes de secteur stable"},
+		{command: "[2] 1m", description: "Attendre une minute de secteur stable"},
+		{command: "[3] 5m", description: "Attendre cinq minutes de secteur stable"},
+		{command: "[4] Personnalisée", description: "Saisir une durée Go comme 1m30s"},
+	})
 	stableFor, err := chooseDuration(reader, output, []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute}, policy.StableFor.Value(30*time.Second), true)
 	if err != nil {
 		fmt.Fprintf(output, "Stabilité refusée: %v; politique précédente conservée.\n", err)
 		return group.PowerRestore
 	}
 	policy.StableFor = stableFor
-	fmt.Fprintln(output, "Fréquence NUT: [1] 5s  [2] 10s  [3] 30s  [4] personnalisée")
+	printInteractiveMenu(output, "FRÉQUENCE NUT", []helpRow{
+		{command: "[1] 5s", description: "Interroger NUT toutes les 5 secondes"},
+		{command: "[2] 10s", description: "Interroger NUT toutes les 10 secondes"},
+		{command: "[3] 30s", description: "Interroger NUT toutes les 30 secondes"},
+		{command: "[4] Personnalisée", description: "Saisir une durée Go comme 15s"},
+	})
 	pollInterval, err := chooseDuration(reader, output, []time.Duration{5 * time.Second, 10 * time.Second, 30 * time.Second}, policy.PollInterval.Value(5*time.Second), false)
 	if err != nil {
 		fmt.Fprintf(output, "Fréquence refusée: %v; politique précédente conservée.\n", err)
@@ -1379,7 +1441,13 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 			err = errors.New("aucun UPS disponible")
 		}
 		fmt.Fprintf(output, "Échec: %v\n", err)
-		fmt.Fprintln(output, "[1] Réessayer\n[2] Modifier l'adresse ou le port\n[3] Configurer un autre serveur\n[4] Reporter la configuration")
+		printInteractiveMenu(output, "CONNEXION NUT IMPOSSIBLE", []helpRow{
+			{command: "[1] Réessayer", description: "Retenter avec les mêmes paramètres"},
+			{command: "[2] Modifier", description: "Corriger l’adresse ou le port"},
+			{command: "[3] Autre serveur", description: "Configurer une autre adresse NUT"},
+			{command: "[4] Reporter", description: "Continuer sans enregistrer ce serveur"},
+			{command: "[?] Aide", description: "Expliquer les causes possibles de l’échec"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			continue
