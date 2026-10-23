@@ -35,7 +35,7 @@ func printCommandHelp(output io.Writer, args []string) error {
 	if !ok {
 		return errUsage
 	}
-	renderCommandHelp(output, text, helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)})
+	renderCommandHelpTopic(output, key, text, helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)})
 	return nil
 }
 
@@ -99,6 +99,10 @@ func renderRootHelp(output io.Writer, options helpRenderOptions) {
 }
 
 func renderHelpHeader(output io.Writer, options helpRenderOptions) {
+	renderHelpHeaderTopic(output, "", options)
+}
+
+func renderHelpHeaderTopic(output io.Writer, topic string, options helpRenderOptions) {
 	symbol := "⚡"
 	locale := os.Getenv("LC_ALL")
 	if locale == "" {
@@ -107,17 +111,29 @@ func renderHelpHeader(output io.Writer, options helpRenderOptions) {
 	if locale == "C" || locale == "POSIX" {
 		symbol = ">"
 	}
-	fmt.Fprintf(output, "%s %s %s\n\n",
+	if topic == "" {
+		fmt.Fprintf(output, "%s %s %s\n\n",
+			styledTextMode(symbol, styleSection, options.mode),
+			styledTextMode("WoL Manager", styleTitle, options.mode),
+			styledTextMode("v"+version, styleMuted, options.mode),
+		)
+		fmt.Fprintln(output, styledTextMode("Gestion centralisée du Wake-on-LAN", styleDescription, options.mode))
+		return
+	}
+	fmt.Fprintf(output, "%s %s %s\n",
 		styledTextMode(symbol, styleSection, options.mode),
 		styledTextMode("WoL Manager", styleTitle, options.mode),
-		styledTextMode("v"+version, styleMuted, options.mode),
+		styledTextMode("— AIDE "+strings.ToUpper(topic), styleSection, options.mode),
 	)
-	fmt.Fprintln(output, styledTextMode("Gestion centralisée du Wake-on-LAN", styleDescription, options.mode))
 }
 
 func renderCommandHelp(output io.Writer, raw string, options helpRenderOptions) {
+	renderCommandHelpTopic(output, "", raw, options)
+}
+
+func renderCommandHelpTopic(output io.Writer, topic, raw string, options helpRenderOptions) {
 	options.width = clampWidth(options.width)
-	renderHelpHeader(output, options)
+	renderHelpHeaderTopic(output, topic, options)
 	for _, section := range parseCommandHelp(raw) {
 		renderHelpSection(output, section, options)
 	}
@@ -159,10 +175,18 @@ func parseCommandHelp(raw string) []helpSection {
 					index++
 				}
 			} else {
-				if rest != "" {
-					section.text = append(section.text, rest)
-				}
+				paragraph := []string{rest}
 				index++
+				for index < len(lines) && strings.TrimSpace(lines[index]) != "" {
+					if _, _, isLabel := helpLabel(strings.TrimSpace(lines[index])); isLabel {
+						break
+					}
+					paragraph = append(paragraph, strings.TrimSpace(lines[index]))
+					index++
+				}
+				if text := strings.TrimSpace(strings.Join(paragraph, " ")); text != "" {
+					section.text = append(section.text, text)
+				}
 			}
 			sections = append(sections, section)
 			continue
@@ -197,10 +221,14 @@ func parseCommandHelp(raw string) []helpSection {
 }
 
 func helpLabel(line string) (string, string, bool) {
-	labels := []string{"Options:", "Sous-commandes:", "Actions:", "Paramètres:", "Valeurs par défaut:", "Contraintes:", "Utilisation:"}
+	labels := []string{"Options:", "Sous-commandes:", "Actions:", "Paramètres:", "Valeurs par défaut:", "Contraintes:", "Exemple:", "Exemples:"}
 	for _, label := range labels {
 		if strings.HasPrefix(line, label) {
-			return strings.ToUpper(strings.TrimSuffix(label, ":")), strings.TrimSpace(strings.TrimPrefix(line, label)), true
+			title := strings.ToUpper(strings.TrimSuffix(label, ":"))
+			if title == "EXEMPLE" {
+				title = "EXEMPLES"
+			}
+			return title, strings.TrimSpace(strings.TrimPrefix(line, label)), true
 		}
 	}
 	return "", "", false
@@ -375,7 +403,7 @@ Valeurs par défaut: id admin; permissions read,wake,admin. Les permissions acce
 wake et admin. Protégez immédiatement le jeton affiché: il ne peut pas être relu ensuite.
 Un processus API actif prend en compte le nouveau jeton dès la requête suivante, sans redémarrage.
 
-Utilisation:
+Exemple:
   TOKEN='<jeton-affiché-une-fois>'
   curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health`,
 	"token list": `Usage: sudo wol token list
@@ -463,15 +491,91 @@ affichent la révision Git des sources utilisées pour construire le binaire.`,
 }
 
 func printContextHelp(output io.Writer, topic string) {
-	messages := map[string]string{
-		"setup":   "Les sections peuvent être préparées dans n'importe quel ordre. Saisissez ? dans un champ pour son aide sans changer la valeur; « annuler » ou « retour » à la création d'un objet revient au menu. Rien n'est écrit avant Résumé, validation et enregistrement.",
-		"network": "Un réseau relie une machine à une interface et aux transports WoL autorisés. Sa suppression est refusée tant qu'une machine l'utilise.",
-		"machine": "Une machine possède une MAC, une IPv4, un réseau, des dépendances et des contrôles. La simulation n'envoie jamais de paquet.",
-		"group":   "Un groupe ordonne plusieurs machines. Ses dépendances restent obligatoires en mode séquentiel comme en mode parallèle.",
-		"nut":     "NUT reste facultatif et strictement lu. WoL Manager ne scanne pas le réseau, ne modifie pas NUT et n'envoie aucune commande électrique.",
-		"menu":    "Consultez les objets avec 1 à 4, validez avec 5, configurez avec 6, simulez avec 7 et confirmez explicitement tout réveil réel avec 8.",
+	renderContextHelp(output, topic, helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)})
+}
+
+func renderContextHelp(output io.Writer, topic string, options helpRenderOptions) {
+	page, ok := contextHelpPages[topic]
+	if !ok {
+		return
 	}
-	if message := messages[topic]; message != "" {
-		fmt.Fprintln(output, "Aide:", message)
+	options.width = clampWidth(options.width)
+	renderHelpHeaderTopic(output, page.title, options)
+	for _, section := range page.sections {
+		renderHelpSection(output, section, options)
 	}
+	renderHelpTip(output, page.tip, options)
+}
+
+func printFieldHelp(output io.Writer, label string) {
+	renderFieldHelp(output, label, helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)})
+}
+
+func renderFieldHelp(output io.Writer, label string, options helpRenderOptions) {
+	options.width = clampWidth(options.width)
+	renderHelpHeaderTopic(output, "CONTEXTUELLE", options)
+	renderHelpSection(output, helpSection{title: "DESCRIPTION", text: []string{fieldHelp(label)}}, options)
+	renderHelpTip(output, "Astuce : Entrée conserve le défaut affiché; l'aide ne modifie jamais la valeur.", options)
+}
+
+type contextHelpPage struct {
+	title    string
+	sections []helpSection
+	tip      string
+}
+
+var contextHelpPages = map[string]contextHelpPage{
+	"setup": {
+		title: "CONFIGURATION",
+		sections: []helpSection{
+			{title: "DESCRIPTION", text: []string{"Prépare les réseaux, machines, groupes, délais, découverte et UPS sans modifier directement le YAML. Rien n'est écrit avant le résumé, la validation et la confirmation finale."}},
+			{title: "NAVIGATION", rows: []helpRow{{command: "1", description: "Réseaux WoL"}, {command: "2", description: "Machines"}, {command: "3", description: "Groupes et dépendances"}, {command: "4", description: "Serveurs NUT et UPS"}, {command: "5", description: "Résumé, validation et enregistrement"}, {command: "6", description: "Annuler sans modifier"}, {command: "7", description: "Délais globaux de vérification"}, {command: "8", description: "Découverte réseau"}}},
+			{title: "SÉCURITÉ", text: []string{"La simulation finale n'envoie aucun Magic Packet. « annuler » ou « retour » abandonne l'objet courant sans l'enregistrer."}},
+		},
+		tip: "Astuce : saisissez ? dans un champ pour obtenir son aide sans changer sa valeur.",
+	},
+	"network": {
+		title: "RÉSEAUX",
+		sections: []helpSection{
+			{title: "DESCRIPTION", text: []string{"Un réseau relie une machine à une interface Linux et aux transports WoL autorisés. Sa suppression est refusée tant qu'une machine l'utilise."}},
+			{title: "ACTIONS", rows: []helpRow{{command: "1", description: "Ajouter un réseau"}, {command: "2", description: "Modifier un réseau"}, {command: "3", description: "Supprimer un réseau inutilisé"}, {command: "4", description: "Revenir au menu précédent"}}},
+			{title: "COMMANDE ÉQUIVALENTE", text: []string{"sudo wol config network"}},
+		},
+		tip: "Astuce : le broadcast local est généralement le choix recommandé sur le même sous-réseau.",
+	},
+	"machine": {
+		title: "MACHINES",
+		sections: []helpSection{
+			{title: "DESCRIPTION", text: []string{"Une machine possède une adresse MAC, une IPv4, un réseau, des dépendances et des contrôles de disponibilité. La simulation n'envoie jamais de paquet."}},
+			{title: "ACTIONS", rows: []helpRow{{command: "1", description: "Ajouter une machine"}, {command: "2", description: "Modifier une machine"}, {command: "3", description: "Supprimer une machine non référencée"}, {command: "4", description: "Revenir au menu précédent"}}},
+			{title: "COMMANDE ÉQUIVALENTE", text: []string{"sudo wol config machine"}},
+		},
+		tip: "Astuce : utilisez wol wake IDENTIFIANT --dry-run pour vérifier le plan sans envoyer de paquet.",
+	},
+	"group": {
+		title: "GROUPES",
+		sections: []helpSection{
+			{title: "DESCRIPTION", text: []string{"Un groupe ordonne plusieurs machines. Ses dépendances restent obligatoires en mode séquentiel comme en mode parallèle."}},
+			{title: "ACTIONS", rows: []helpRow{{command: "1", description: "Ajouter un groupe"}, {command: "2", description: "Modifier un groupe"}, {command: "3", description: "Supprimer un groupe non référencé"}, {command: "4", description: "Revenir au menu précédent"}}},
+			{title: "COMMANDE ÉQUIVALENTE", text: []string{"sudo wol config group"}},
+		},
+		tip: "Astuce : utilisez wol wake --group GROUPE pour réveiller un groupe configuré.",
+	},
+	"nut": {
+		title: "NUT ET UPS",
+		sections: []helpSection{
+			{title: "DESCRIPTION", text: []string{"NUT reste facultatif et strictement lu. Network UPS Tools permet de lire l'état d'un onduleur; WoL Manager ne scanne pas le réseau, ne modifie pas NUT et n'envoie aucune commande électrique."}},
+			{title: "ÉTATS", rows: []helpRow{{command: "OL", description: "Secteur présent"}, {command: "OB", description: "Fonctionnement sur batterie"}, {command: "LB", description: "Batterie faible"}, {command: "FSD", description: "Arrêt forcé signalé par NUT"}}},
+			{title: "COMMANDE ÉQUIVALENTE", text: []string{"sudo wol config nut"}},
+		},
+		tip: "Astuce : wol ups test vérifie les UPS configurés en lecture seule.",
+	},
+	"menu": {
+		title: "MENU PRINCIPAL",
+		sections: []helpSection{
+			{title: "NAVIGATION", rows: []helpRow{{command: "1 à 4", description: "Consulter machines, réseaux, groupes et UPS"}, {command: "5", description: "Valider la configuration"}, {command: "6", description: "Ouvrir l'assistant de configuration"}, {command: "7", description: "Simuler un réveil sans paquet"}, {command: "8", description: "Réveil réel après confirmation explicite"}, {command: "9", description: "Consulter les automatismes"}, {command: "0", description: "Quitter"}}},
+			{title: "SÉCURITÉ", text: []string{"Une réponse vide ou ambiguë n'envoie aucun paquet. Le réveil réel exige toujours une sélection valide puis une confirmation explicite."}},
+		},
+		tip: "Astuce : chaque action reste aussi disponible par une commande documentée dans wol --help.",
+	},
 }

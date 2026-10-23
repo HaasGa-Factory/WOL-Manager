@@ -176,6 +176,34 @@ func TestGuidedSetupContextHelpDoesNotWrite(t *testing.T) {
 	}
 }
 
+func TestEveryConfigurationSubmenuShowsModernHelpAndReturnsUnchanged(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		run  func(*bufio.Reader, io.Writer, *Config) bool
+	}{
+		{name: "networks", want: "AIDE RÉSEAUX", run: manageNetworks},
+		{name: "machines", want: "AIDE MACHINES", run: manageServers},
+		{name: "groups", want: "AIDE GROUPES", run: manageGroups},
+		{name: "nut", want: "AIDE NUT ET UPS", run: configureNUT},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.UPS = map[string]UPSConfig{"main": {Address: "127.0.0.1:3493"}}
+			var output bytes.Buffer
+			if changed := test.run(bufio.NewReader(strings.NewReader("?\n4\n")), &output, cfg); changed {
+				t.Fatal("l'aide a modifié la configuration")
+			}
+			for _, expected := range []string{"WoL Manager", test.want, "Astuce"} {
+				if !strings.Contains(output.String(), expected) {
+					t.Errorf("aide %s sans %q:\n%s", test.name, expected, output.String())
+				}
+			}
+		})
+	}
+}
+
 func TestGuidedGlobalVerification(t *testing.T) {
 	cfg := testConfig(t)
 	input := bufio.NewReader(strings.NewReader("10s\n3m\n5s\n\n\nany\n"))

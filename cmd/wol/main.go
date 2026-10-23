@@ -672,7 +672,7 @@ func selectMenuServer(reader *bufio.Reader, output io.Writer, c *Config) (string
 	for {
 		value := prompt(reader, output, "Choisissez un numéro ou un identifiant (Entrée=annuler): ")
 		if value == "?" || value == "aide" || value == "help" {
-			fmt.Fprintln(output, "Aide: choisissez le numéro affiché ou l'identifiant exact de la machine. Entrée annule sans envoyer de paquet.")
+			printFieldHelp(output, "Choisissez un numéro ou un identifiant")
 			continue
 		}
 		if value == "" || value == "annuler" || value == "retour" {

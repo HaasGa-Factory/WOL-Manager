@@ -975,7 +975,7 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check, curre
 		case "6":
 			return nil, false
 		case "?", "aide", "help":
-			fmt.Fprintln(output, fieldHelp("contrôles"))
+			printFieldHelp(output, "contrôles")
 		case "":
 			return current, currentDisabled
 		default:
@@ -1031,7 +1031,7 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 	if !promptBool(reader, output, "Activer la reprise automatique NUT pour ce groupe ?", enabled) {
 		return nil
 	}
-	fmt.Fprintln(output, "Aide: le seuil bas réarme un cycle observé; le seuil haut et la stabilité secteur autorisent le démarrage. Une mesure inconnue ou un état OB/LB/FSD bloque tout nouveau réveil.")
+	printFieldHelp(output, "Reprise automatique NUT")
 	fmt.Fprintln(output, "Le mode sequential attend chaque machine et ses dépendances; parallel autorise les machines indépendantes sans contourner leurs prérequis.")
 	policy := PowerRestorePolicy{Enabled: true, Mode: "sequential", FailurePolicy: "stop"}
 	if group.PowerRestore != nil {
@@ -1069,7 +1069,7 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 			}
 			thresholdsReady = true
 		case "?":
-			fmt.Fprintln(output, "Aide: le seuil bas réarme la surveillance; le seuil haut, strictement supérieur, autorise le démarrage lorsque le secteur est stable.")
+			printFieldHelp(output, "Seuils batterie")
 		default:
 			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
@@ -1139,7 +1139,7 @@ func chooseDuration(reader *bufio.Reader, output io.Writer, presets []time.Durat
 	for {
 		choice := prompt(reader, output, "> ")
 		if choice == "?" {
-			fmt.Fprintln(output, fieldHelp("durée"))
+			printFieldHelp(output, "durée")
 			continue
 		}
 		if index, err := strconv.Atoi(choice); err == nil && index >= 1 && index <= len(presets) {
@@ -1388,7 +1388,7 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 		case "4":
 			return errors.New("serveur NUT non enregistré")
 		case "?":
-			fmt.Fprintln(output, "Aide: réessayez après une erreur temporaire, modifiez l'adresse/port, choisissez un autre serveur ou reportez sans bloquer l'installation.")
+			printFieldHelp(output, "Erreur de connexion NUT")
 		default:
 			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
@@ -1776,7 +1776,7 @@ func prompt(reader *bufio.Reader, output io.Writer, text string) string {
 		if value != "?" || strings.TrimSpace(text) == ">" {
 			return value
 		}
-		fmt.Fprintln(output, fieldHelp(text))
+		printFieldHelp(output, text)
 	}
 }
 
@@ -1813,6 +1813,8 @@ func fieldHelp(label string) string {
 		return "Aide: adresse IPv4 actuelle de la machine, par exemple 192.168.1.20. Elle sert à l'unicast et aux contrôles de disponibilité."
 	case strings.Contains(key, "machines du groupe"):
 		return "Aide: machines réveillées par « wol wake --group GROUPE ». Elles peuvent aussi avoir leurs propres dépendances obligatoires."
+	case key == "machines" || strings.HasPrefix(key, "machines [") || strings.HasPrefix(key, "machines (-"):
+		return "Aide: identifiants de machines existantes, séparés par des virgules. Utilisez uniquement les valeurs affichées comme disponibles."
 	case strings.Contains(key, "groupes"):
 		return "Aide: groupes auxquels appartient cette machine, séparés par des virgules. Un groupe permet « wol wake --group GROUPE » et peut porter une politique de reprise NUT."
 	case strings.Contains(key, "dépendances"):
@@ -1839,6 +1841,8 @@ func fieldHelp(label string) string {
 		return "Aide: pause entre deux contrôles de disponibilité. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
 	case strings.Contains(key, "nombre maximal de vérifications"):
 		return "Aide: limite le nombre de contrôles; 0 laisse le timeout fixer la limite. « hérité » signifie la valeur globale effective."
+	case key == "nombre maximal" || strings.HasPrefix(key, "nombre maximal ["):
+		return "Aide: limite le nombre de contrôles après le réveil; 0 laisse le timeout fixer la limite. « hérité » signifie la valeur globale effective."
 	case strings.Contains(key, "nouveaux magic packets"):
 		return "Aide: nombre de nouveaux envois WoL autorisés après un échec complet de vérification. 0 n'envoie aucun nouveau paquet; ce réglage est distinct des nouvelles tentatives de contrôle."
 	case strings.Contains(key, "ordre de démarrage"):
@@ -1849,6 +1853,8 @@ func fieldHelp(label string) string {
 		return "Aide: pause entre deux reprises après échec, par exemple 30s, 2m ou 1m30s."
 	case strings.Contains(key, "seuil bas"):
 		return "Aide: niveau de batterie qui réarme la surveillance après une coupure observée; il doit rester inférieur au seuil haut."
+	case strings.Contains(key, "seuils batterie"):
+		return "Aide: le seuil bas réarme la surveillance; le seuil haut, strictement supérieur, autorise le démarrage lorsque le secteur est stable."
 	case strings.Contains(key, "seuil haut"):
 		return "Aide: niveau minimal de batterie autorisant le réveil après retour stable du secteur; il doit dépasser le seuil bas."
 	case strings.Contains(key, "stabilité secteur"):
@@ -1879,7 +1885,9 @@ func fieldHelp(label string) string {
 		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
 	case strings.Contains(key, "durée") || strings.Contains(key, "intervalle"):
 		return "Aide: utilisez une durée Go comme 30s, 2m ou 1m30s."
-	case strings.Contains(key, "nut") || strings.Contains(key, "ups") || strings.Contains(key, "starttls"):
+	case strings.Contains(key, "erreur de connexion nut"):
+		return "Aide: réessayez après une erreur temporaire, modifiez l'adresse ou le port, choisissez un autre serveur ou reportez sans bloquer l'installation."
+	case strings.Contains(key, "nut") || strings.Contains(key, "ups") || strings.Contains(key, "starttls") || strings.Contains(key, "tls"):
 		return "Aide: NUT (Network UPS Tools) lit l'état d'un onduleur. OL=secteur présent, OB=sur batterie, LB=batterie faible, FSD=arrêt forcé. STARTTLS chiffre la connexion; WoL Manager ne commande jamais l'onduleur."
 	case strings.Contains(key, "priorité"):
 		return "Aide: les groupes sont traités par priorité croissante: 1 avant 10. Deux groupes ne peuvent pas partager la même priorité."

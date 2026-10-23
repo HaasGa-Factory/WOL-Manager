@@ -165,6 +165,50 @@ func TestCompleteRootHelpFitsSupportedWidths(t *testing.T) {
 	}
 }
 
+func TestDetailedAndInteractiveHelpShareVisualIdentity(t *testing.T) {
+	var command bytes.Buffer
+	renderCommandHelpTopic(&command, "wake", commandHelp["wake"], helpRenderOptions{mode: colorTrueColor, width: 80})
+	for _, expected := range []string{"AIDE WAKE", "UTILISATION", "OPTIONS", "38;2;34;211;238"} {
+		if !strings.Contains(command.String(), expected) {
+			t.Errorf("aide de commande sans %q:\n%s", expected, command.String())
+		}
+	}
+
+	for topic := range contextHelpPages {
+		for _, width := range []int{60, 80, 120, 160} {
+			var output bytes.Buffer
+			renderContextHelp(&output, topic, helpRenderOptions{mode: colorNone, width: width})
+			text := output.String()
+			if !strings.Contains(text, "WoL Manager — AIDE") || !strings.Contains(text, "Astuce") {
+				t.Errorf("aide contextuelle %q incomplète à %d colonnes:\n%s", topic, width, text)
+			}
+			if strings.Contains(text, "\x1b[") {
+				t.Errorf("ANSI dans l'aide contextuelle texte %q", topic)
+			}
+			for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+				if got := visibleWidth(line); got > width {
+					t.Errorf("aide %q à %d colonnes: ligne de %d colonnes: %q", topic, width, got, line)
+				}
+			}
+		}
+	}
+}
+
+func TestFieldHelpUsesModernRendererWithoutChangingGuidance(t *testing.T) {
+	var output bytes.Buffer
+	renderFieldHelp(&output, "Adresse MAC", helpRenderOptions{mode: colorNone, width: 60})
+	text := output.String()
+	normalized := strings.Join(strings.Fields(text), " ")
+	for _, expected := range []string{"WoL Manager — AIDE CONTEXTUELLE", "DESCRIPTION", "02:00:00:00:00:01", "Astuce", "ne modifie jamais la valeur"} {
+		if !strings.Contains(normalized, expected) {
+			t.Errorf("aide de champ sans %q:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "\x1b[") {
+		t.Fatal("ANSI dans l'aide de champ sans couleur")
+	}
+}
+
 func TestNoColorArgumentIsGlobalAndRemovedBeforeParsing(t *testing.T) {
 	for _, args := range [][]string{{"--no-color", "--help"}, {"wake", "--no-color", "--help"}} {
 		filtered, disabled := presentationArgs(args)
