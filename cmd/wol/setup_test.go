@@ -180,19 +180,21 @@ func TestEveryConfigurationSubmenuShowsModernHelpAndReturnsUnchanged(t *testing.
 	tests := []struct {
 		name string
 		want string
-		run  func(*bufio.Reader, io.Writer, *Config) bool
+		run  func(*bufio.Reader, io.Writer, *Config, bool) bool
 	}{
 		{name: "networks", want: "AIDE RÉSEAUX", run: manageNetworks},
 		{name: "machines", want: "AIDE MACHINES", run: manageServers},
 		{name: "groups", want: "AIDE GROUPES", run: manageGroups},
-		{name: "nut", want: "AIDE NUT ET UPS", run: configureNUT},
+		{name: "nut", want: "AIDE NUT ET UPS", run: func(reader *bufio.Reader, output io.Writer, cfg *Config, _ bool) bool {
+			return configureNUT(reader, output, cfg)
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := testConfig(t)
 			cfg.UPS = map[string]UPSConfig{"main": {Address: "127.0.0.1:3493"}}
 			var output bytes.Buffer
-			if changed := test.run(bufio.NewReader(strings.NewReader("?\n4\n")), &output, cfg); changed {
+			if changed := test.run(bufio.NewReader(strings.NewReader("?\n4\n")), &output, cfg, false); changed {
 				t.Fatal("l'aide a modifié la configuration")
 			}
 			for _, expected := range []string{"WoL Manager", test.want, "Astuce"} {
@@ -201,6 +203,23 @@ func TestEveryConfigurationSubmenuShowsModernHelpAndReturnsUnchanged(t *testing.
 				}
 			}
 		})
+	}
+}
+
+func TestMachineSubmenuWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
+	cfg := testConfig(t)
+	var output strings.Builder
+	input := bufio.NewReader(strings.NewReader("2\nunknown\n\n4\n"))
+	if changed := manageServers(input, &output, cfg, true); changed {
+		t.Fatal("une machine inconnue a modifié la configuration")
+	}
+	text := output.String()
+	result := strings.Index(text, "Machine inconnue.")
+	view := strings.Index(text, "WoL Manager — MODIFIER UNE MACHINE")
+	pause := strings.Index(text, "Appuyez sur Entrée pour revenir au menu des machines")
+	redraw := strings.LastIndex(text, "WoL Manager — MACHINES")
+	if view < 0 || result < view || pause < result || redraw < pause {
+		t.Fatalf("ordre visuel incorrect après une action:\n%s", text)
 	}
 }
 

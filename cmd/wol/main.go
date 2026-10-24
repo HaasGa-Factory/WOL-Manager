@@ -541,7 +541,7 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 				return nil
 			}
 		case "6":
-			if err := setupWithIO(configPath, r, os.Stdout); err != nil {
+			if err := setupWithIOMode(configPath, r, os.Stdout, interactive); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				if !waitForMenuReturn(r, os.Stdout, interactive, "setup") {
 					return nil
@@ -624,12 +624,16 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	}
 }
 
-func waitForMenuReturn(reader *bufio.Reader, output io.Writer, interactive bool, helpTopic string) bool {
+func waitForMenuReturn(reader *bufio.Reader, output io.Writer, interactive bool, helpTopic string, destination ...string) bool {
 	if !interactive {
 		return false
 	}
+	target := "menu principal"
+	if len(destination) > 0 {
+		target = destination[0]
+	}
 	for {
-		fmt.Fprint(output, "\nAppuyez sur Entrée pour revenir au menu principal: ")
+		fmt.Fprintf(output, "\nAppuyez sur Entrée pour revenir au %s: ", target)
 		answer, err := reader.ReadString('\n')
 		if err != nil {
 			return false

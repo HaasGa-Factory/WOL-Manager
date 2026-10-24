@@ -20,10 +20,14 @@ import (
 )
 
 func setup(path string) error {
-	return setupWithIO(path, os.Stdin, os.Stdout)
+	return setupWithIOMode(path, os.Stdin, os.Stdout, isTerminalFile(os.Stdin) && isTerminalFile(os.Stdout))
 }
 
 func setupWithIO(path string, input io.Reader, output io.Writer) error {
+	return setupWithIOMode(path, input, output, false)
+}
+
+func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive bool) error {
 	reader := bufio.NewReader(input)
 	session, err := newConfigSession(path)
 	if err != nil {
@@ -74,11 +78,11 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 		})
 		switch prompt(reader, output, "> ") {
 		case "1":
-			session.changed = manageNetworks(reader, output, session.cfg) || session.changed
+			session.changed = manageNetworks(reader, output, session.cfg, interactive) || session.changed
 		case "2":
-			session.changed = manageServers(reader, output, session.cfg) || session.changed
+			session.changed = manageServers(reader, output, session.cfg, interactive) || session.changed
 		case "3":
-			session.changed = manageGroups(reader, output, session.cfg) || session.changed
+			session.changed = manageGroups(reader, output, session.cfg, interactive) || session.changed
 		case "4":
 			session.changed = configureNUT(reader, output, session.cfg) || session.changed
 		case "5":
@@ -230,7 +234,7 @@ func newConfigSession(path string) (*configSession, error) {
 	return &configSession{base: base, cfg: cfg, existing: existing}, nil
 }
 
-func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	changed := false
 	for {
 		fmt.Fprintln(output, "\nRéseaux WoL configurés :")
@@ -244,29 +248,32 @@ func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 		})
 		switch prompt(reader, output, "> ") {
 		case "1":
+			printInteractiveViewHeader(output, "AJOUTER UN RÉSEAU")
 			if addOrEditNetwork(reader, output, cfg, "") {
 				changed = true
 			}
 		case "2":
+			printInteractiveViewHeader(output, "MODIFIER UN RÉSEAU")
 			if addOrEditNetwork(reader, output, cfg, prompt(reader, output, "Identifiant du réseau à modifier: ")) {
 				changed = true
 			}
 		case "3":
+			printInteractiveViewHeader(output, "SUPPRIMER UN RÉSEAU")
 			id := prompt(reader, output, "Identifiant du réseau à supprimer: ")
 			if _, ok := cfg.Networks[id]; !ok {
 				fmt.Fprintln(output, "Réseau inconnu.")
-				continue
-			}
-			used := false
-			for serverID, server := range cfg.Servers {
-				if server.Network == id {
-					fmt.Fprintf(output, "Suppression refusée: réseau utilisé par la machine %s.\n", serverID)
-					used = true
+			} else {
+				used := false
+				for serverID, server := range cfg.Servers {
+					if server.Network == id {
+						fmt.Fprintf(output, "Suppression refusée: réseau utilisé par la machine %s.\n", serverID)
+						used = true
+					}
 				}
-			}
-			if !used && confirmPrompt(reader, output, "Supprimer le réseau "+id+" ?") {
-				delete(cfg.Networks, id)
-				changed = true
+				if !used && confirmPrompt(reader, output, "Supprimer le réseau "+id+" ?") {
+					delete(cfg.Networks, id)
+					changed = true
+				}
 			}
 		case "4":
 			return changed
@@ -274,6 +281,9 @@ func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			printContextHelp(output, "network")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if interactive && !waitForMenuReturn(reader, output, true, "network", "menu des réseaux") {
+			return changed
 		}
 	}
 }
@@ -362,7 +372,7 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 	return true
 }
 
-func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	changed := false
 	for {
 		fmt.Fprintln(output, "\nMachines configurées :")
@@ -376,24 +386,23 @@ func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 		})
 		switch prompt(reader, output, "> ") {
 		case "1":
+			printInteractiveViewHeader(output, "AJOUTER UNE MACHINE")
 			if addOrEditServer(reader, output, cfg, "") {
 				changed = true
 			}
 		case "2":
+			printInteractiveViewHeader(output, "MODIFIER UNE MACHINE")
 			if addOrEditServer(reader, output, cfg, prompt(reader, output, "Identifiant de la machine à modifier: ")) {
 				changed = true
 			}
 		case "3":
+			printInteractiveViewHeader(output, "SUPPRIMER UNE MACHINE")
 			id := prompt(reader, output, "Identifiant de la machine à supprimer: ")
 			if _, ok := cfg.Servers[id]; !ok {
 				fmt.Fprintln(output, "Machine inconnue.")
-				continue
-			}
-			if reason := serverDeleteBlocker(cfg, id); reason != "" {
+			} else if reason := serverDeleteBlocker(cfg, id); reason != "" {
 				fmt.Fprintln(output, "Suppression refusée:", reason)
-				continue
-			}
-			if confirmPrompt(reader, output, "Supprimer la machine "+id+" ?") {
+			} else if confirmPrompt(reader, output, "Supprimer la machine "+id+" ?") {
 				delete(cfg.Servers, id)
 				changed = true
 			}
@@ -403,6 +412,9 @@ func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			printContextHelp(output, "machine")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if interactive && !waitForMenuReturn(reader, output, true, "machine", "menu des machines") {
+			return changed
 		}
 	}
 }
@@ -479,7 +491,7 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 	return true
 }
 
-func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	changed := false
 	for {
 		fmt.Fprintln(output, "\nGroupes configurés :")
@@ -493,24 +505,23 @@ func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 		})
 		switch prompt(reader, output, "> ") {
 		case "1":
+			printInteractiveViewHeader(output, "AJOUTER UN GROUPE")
 			if addOrEditGroup(reader, output, cfg, "") {
 				changed = true
 			}
 		case "2":
+			printInteractiveViewHeader(output, "MODIFIER UN GROUPE")
 			if addOrEditGroup(reader, output, cfg, prompt(reader, output, "Identifiant du groupe à modifier: ")) {
 				changed = true
 			}
 		case "3":
+			printInteractiveViewHeader(output, "SUPPRIMER UN GROUPE")
 			id := prompt(reader, output, "Identifiant du groupe à supprimer: ")
 			if _, ok := cfg.Groups[id]; !ok {
 				fmt.Fprintln(output, "Groupe inconnu.")
-				continue
-			}
-			if reason := groupDeleteBlocker(cfg, id); reason != "" {
+			} else if reason := groupDeleteBlocker(cfg, id); reason != "" {
 				fmt.Fprintln(output, "Suppression refusée:", reason)
-				continue
-			}
-			if confirmPrompt(reader, output, "Supprimer le groupe "+id+" ?") {
+			} else if confirmPrompt(reader, output, "Supprimer le groupe "+id+" ?") {
 				delete(cfg.Groups, id)
 				changed = true
 			}
@@ -520,6 +531,9 @@ func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			printContextHelp(output, "group")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if interactive && !waitForMenuReturn(reader, output, true, "group", "menu des groupes") {
+			return changed
 		}
 	}
 }
@@ -579,14 +593,20 @@ func configSection(path, section string, input io.Reader, output io.Writer) erro
 		return err
 	}
 	reader := bufio.NewReader(input)
+	interactive := false
+	if inputFile, ok := input.(*os.File); ok {
+		if outputFile, ok := output.(*os.File); ok {
+			interactive = isTerminalFile(inputFile) && isTerminalFile(outputFile)
+		}
+	}
 	var changed bool
 	switch section {
 	case "network", "networks":
-		changed = manageNetworks(reader, output, session.cfg)
+		changed = manageNetworks(reader, output, session.cfg, interactive)
 	case "machine", "server", "servers":
-		changed = manageServers(reader, output, session.cfg)
+		changed = manageServers(reader, output, session.cfg, interactive)
 	case "group", "groups":
-		changed = manageGroups(reader, output, session.cfg)
+		changed = manageGroups(reader, output, session.cfg, interactive)
 	case "nut", "ups":
 		changed = configureNUT(reader, output, session.cfg)
 	case "discovery":
