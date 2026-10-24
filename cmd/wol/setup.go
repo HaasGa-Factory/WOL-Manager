@@ -375,8 +375,6 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	changed := false
 	for {
-		fmt.Fprintln(output, "\nMachines configurées :")
-		printServers(output, cfg.Servers)
 		printInteractiveMenu(output, "MACHINES", []helpRow{
 			{command: "[1] Ajouter", description: "Déclarer une machine à réveiller"},
 			{command: "[2] Modifier", description: "Modifier une machine existante"},
@@ -392,11 +390,15 @@ func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config, interact
 			}
 		case "2":
 			printInteractiveViewHeader(output, "MODIFIER UNE MACHINE")
+			fmt.Fprintln(output, "\nMachines configurées :")
+			printServers(output, cfg.Servers)
 			if addOrEditServer(reader, output, cfg, prompt(reader, output, "Identifiant de la machine à modifier: ")) {
 				changed = true
 			}
 		case "3":
 			printInteractiveViewHeader(output, "SUPPRIMER UNE MACHINE")
+			fmt.Fprintln(output, "\nMachines configurées :")
+			printServers(output, cfg.Servers)
 			id := prompt(reader, output, "Identifiant de la machine à supprimer: ")
 			if _, ok := cfg.Servers[id]; !ok {
 				fmt.Fprintln(output, "Machine inconnue.")

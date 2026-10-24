@@ -214,12 +214,34 @@ func TestMachineSubmenuWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
 		t.Fatal("une machine inconnue a modifié la configuration")
 	}
 	text := output.String()
+	menu := strings.Index(text, "WoL Manager — MACHINES")
 	result := strings.Index(text, "Machine inconnue.")
 	view := strings.Index(text, "WoL Manager — MODIFIER UNE MACHINE")
+	list := strings.Index(text, "Machines configurées :")
 	pause := strings.Index(text, "Appuyez sur Entrée pour revenir au menu des machines")
 	redraw := strings.LastIndex(text, "WoL Manager — MACHINES")
-	if view < 0 || result < view || pause < result || redraw < pause {
+	if menu < 0 || view < menu || list < view || result < list || pause < result || redraw < pause {
 		t.Fatalf("ordre visuel incorrect après une action:\n%s", text)
+	}
+}
+
+func TestMachineListIsShownOnlyWhenSelectingModifyOrDelete(t *testing.T) {
+	for name, input := range map[string]string{
+		"return": "4\n",
+		"modify": "2\nunknown\n4\n",
+		"delete": "3\nunknown\n4\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := testConfig(t)
+			var output strings.Builder
+			if changed := manageServers(bufio.NewReader(strings.NewReader(input)), &output, cfg, false); changed {
+				t.Fatal("la configuration a été modifiée")
+			}
+			hasList := strings.Contains(output.String(), "Machines configurées :")
+			if hasList != (name != "return") {
+				t.Fatalf("affichage inattendu de la liste pour %s:\n%s", name, output.String())
+			}
+		})
 	}
 }
 
