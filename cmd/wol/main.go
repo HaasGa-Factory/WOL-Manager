@@ -543,6 +543,9 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 		case "6":
 			if err := setupWithIO(configPath, r, os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
+				if !waitForMenuReturn(r, os.Stdout, interactive, "setup") {
+					return nil
+				}
 				continue
 			}
 			updated, err := LoadConfig(configPath)
