@@ -535,13 +535,26 @@ func TestDetailedSummaryContainsOperationalSettings(t *testing.T) {
 	cfg := testConfig(t)
 	var output strings.Builder
 	showConfigSummary(&output, cfg)
-	for _, expected := range []string{"Adresse source", "Transports", "Destination", "Contrôles", "Logique", "Attente initiale", "Délai maximal", "Dépendances", "Active", "SYNTHÈSE"} {
+	for _, expected := range []string{
+		"Adresse source", "Transports", "Destination", "Active",
+		"COMPORTEMENT EFFECTIF DU RÉVEIL", "Contrôles utilisés", "Magic Packets prévus",
+		"1 maximum (1 initial, aucun renvoi)", "Premier paquet", "seulement si la machine est injoignable",
+		"Première vérification", "immédiatement après l’envoi", "Vérifications suivantes", "toutes les 2 secondes",
+		"Temps d’attente maximal", "45 secondes", "Validation du démarrage", "dès qu’un contrôle réussit",
+		"Nombre maximal de contrôles", "sans limite dans les 45 secondes",
+		"Machines à démarrer avant", "Politique de sécurité UPS", "désactivée", "SYNTHÈSE",
+	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("résumé incomplet (%s):\n%s", expected, output.String())
 		}
 	}
+	for _, misleading := range []string{"Tentatives", "Nouveaux paquets", "Logique       : any", "UPS           : aucun"} {
+		if strings.Contains(output.String(), misleading) {
+			t.Fatalf("libellé brut ou trompeur encore affiché (%s):\n%s", misleading, output.String())
+		}
+	}
 	summary := wakeSummary(cfg, "two")
-	for _, expected := range []string{"un seul Magic Packet", "toutes les 2 secondes pendant 45 secondes maximum", "dès qu’un des contrôles configurés réussira", "Aucune autre machine", "Aucune politique UPS"} {
+	for _, expected := range []string{"si la machine n’est pas déjà joignable", "un seul Magic Packet", "toutes les 2 secondes pendant 45 secondes maximum", "dès qu’un des contrôles configurés réussira", "Aucune autre machine", "Aucune politique UPS"} {
 		if !strings.Contains(summary, expected) {
 			t.Fatalf("synthèse incomplète (%s):\n%s", expected, summary)
 		}

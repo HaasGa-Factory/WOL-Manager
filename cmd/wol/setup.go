@@ -723,9 +723,6 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 	printNetworks(output, cfg.Networks)
 	for _, id := range sortedKeys(cfg.Servers) {
 		s := cfg.Servers[id]
-		initial, timeout, interval := cfg.effectiveVerification(id)
-		attempts, retries := cfg.effectiveVerificationAttempts(id)
-		checks := formatChecks(cfg.effectiveChecks(id))
 		selected, destination := "aucun", "indisponible"
 		if plan, _ := transportPlan(cfg, id); len(plan) > 0 {
 			for _, d := range plan {
@@ -733,10 +730,6 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 					selected, destination = d.Name, emptyAs(d.Destination, "relais "+d.Relay)
 				}
 			}
-		}
-		ups := "aucun"
-		if p := cfg.effectiveUPS(id); p != nil {
-			ups = p.UPS
 		}
 		fmt.Fprintln(output)
 		printInformationBlock(output, "Machine "+id+" — "+emptyAs(s.Name, "sans nom"), []helpRow{
@@ -746,16 +739,9 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 			{command: "Réseau", description: s.Network},
 			{command: "Transport", description: selected},
 			{command: "Destination", description: destination},
-			{command: "Contrôles", description: checks},
-			{command: "Logique", description: cfg.effectiveCheckLogic(id)},
-			{command: "Attente initiale", description: initial.String()},
-			{command: "Délai maximal", description: timeout.String()},
-			{command: "Intervalle", description: interval.String()},
-			{command: "Tentatives", description: strconv.Itoa(attempts)},
-			{command: "Nouveaux paquets", description: strconv.Itoa(retries)},
-			{command: "Dépendances", description: emptyAs(strings.Join(cfg.dependencies(id), ", "), "aucune")},
-			{command: "UPS", description: ups},
 		})
+		fmt.Fprintln(output)
+		printInformationBlock(output, "COMPORTEMENT EFFECTIF DU RÉVEIL", wakeBehaviorRows(cfg, id))
 		renderHelpSection(output, helpSection{title: "SYNTHÈSE", text: []string{wakeSummary(cfg, id)}}, helpRenderOptions{
 			mode:  outputColorMode(output),
 			width: outputWidth(output),
@@ -854,6 +840,59 @@ func formatChecks(checks []Check) string {
 	return strings.Join(items, ",")
 }
 
+func wakeBehaviorRows(cfg *Config, id string) []helpRow {
+	initial, timeout, interval := cfg.effectiveVerification(id)
+	attempts, retries := cfg.effectiveVerificationAttempts(id)
+	checks := formatChecks(cfg.effectiveChecks(id))
+	_, checksDisabled := cfg.effectiveCheckPolicy(id)
+
+	packets := "1 maximum (1 initial, aucun renvoi)"
+	if retries > 0 {
+		renvois := fmt.Sprintf("%d renvois", retries)
+		if retries == 1 {
+			renvois = "1 renvoi"
+		}
+		packets = fmt.Sprintf("%d maximum (1 initial, %s)", retries+1, renvois)
+	}
+	rows := []helpRow{
+		{command: "Contrôles utilisés", description: checks},
+		{command: "Magic Packets prévus", description: packets},
+		{command: "Premier paquet", description: "seulement si la machine est injoignable"},
+	}
+	if checksDisabled {
+		rows = append(rows, helpRow{command: "Vérification du démarrage", description: "désactivée"})
+	} else {
+		firstCheck := "immédiatement après l’envoi"
+		if initial > 0 {
+			firstCheck = frenchDuration(initial) + " après l’envoi"
+		}
+		validation := "dès qu’un contrôle réussit"
+		if cfg.effectiveCheckLogic(id) == "all" {
+			validation = "lorsque tous les contrôles réussissent"
+		}
+		maxChecks := fmt.Sprintf("%d", attempts)
+		if attempts == 0 {
+			maxChecks = "sans limite dans les " + frenchDuration(timeout)
+		}
+		rows = append(rows,
+			helpRow{command: "Première vérification", description: firstCheck},
+			helpRow{command: "Vérifications suivantes", description: "toutes les " + frenchDuration(interval)},
+			helpRow{command: "Temps d’attente maximal", description: frenchDuration(timeout)},
+			helpRow{command: "Validation du démarrage", description: validation},
+			helpRow{command: "Nombre maximal de contrôles", description: maxChecks},
+		)
+	}
+	rows = append(rows, helpRow{
+		command:     "Machines à démarrer avant",
+		description: emptyAs(strings.Join(cfg.dependencies(id), ", "), "aucune"),
+	})
+	ups := "désactivée"
+	if policy := cfg.effectiveUPS(id); policy != nil {
+		ups = "activée via " + policy.UPS
+	}
+	return append(rows, helpRow{command: "Politique de sécurité UPS", description: ups})
+}
+
 func wakeSummary(cfg *Config, id string) string {
 	initial, timeout, interval := cfg.effectiveVerification(id)
 	attempts, retries := cfg.effectiveVerificationAttempts(id)
@@ -865,13 +904,13 @@ func wakeSummary(cfg *Config, id string) string {
 	}
 	parts := []string{}
 	if checksDisabled {
-		parts = append(parts, fmt.Sprintf("En pratique : WoL Manager tentera d’envoyer %s sans vérifier que la machine a démarré.", packets))
+		parts = append(parts, fmt.Sprintf("En pratique : si la machine n’est pas déjà joignable, WoL Manager tentera d’envoyer %s sans vérifier qu’elle a démarré.", packets))
 	} else {
 		firstCheck := "immédiatement"
 		if initial > 0 {
 			firstCheck = "après " + frenchDuration(initial)
 		}
-		parts = append(parts, fmt.Sprintf("En pratique : WoL Manager tentera d’envoyer %s, puis vérifiera la machine %s et recommencera toutes les %s pendant %s maximum.", packets, firstCheck, frenchDuration(interval), frenchDuration(timeout)))
+		parts = append(parts, fmt.Sprintf("En pratique : si la machine n’est pas déjà joignable, WoL Manager tentera d’envoyer %s, puis la vérifiera %s et recommencera toutes les %s pendant %s maximum.", packets, firstCheck, frenchDuration(interval), frenchDuration(timeout)))
 		if attempts == 0 {
 			parts = append(parts, "Le nombre de cycles de vérification n’a pas d’autre limite que ce délai.")
 		} else if attempts == 1 {
