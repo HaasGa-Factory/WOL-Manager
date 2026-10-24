@@ -331,6 +331,21 @@ func printInteractiveViewHeader(output io.Writer, title string) {
 	fmt.Fprintln(output)
 }
 
+func printInformationBlock(output io.Writer, title string, rows []helpRow) {
+	mode := outputColorMode(output)
+	width := 0
+	for _, row := range rows {
+		if current := visibleWidth(row.command); current > width {
+			width = current
+		}
+	}
+	fmt.Fprintf(output, "- %s\n", styledTextMode(title, styleCommand, mode))
+	for _, row := range rows {
+		padding := strings.Repeat(" ", width-visibleWidth(row.command))
+		fmt.Fprintf(output, "  %s%s : %s\n", styledTextMode(row.command, styleMuted, mode), padding, styledTextMode(row.description, styleDescription, mode))
+	}
+}
+
 var commandHelp = map[string]string{
 	"setup": `Usage: sudo wol [--config FILE] setup
 

@@ -705,11 +705,16 @@ func offerDryRun(reader *bufio.Reader, output io.Writer, cfg *Config) error {
 
 func showConfigSummary(output io.Writer, cfg *Config) {
 	fmt.Fprintf(output, "\nRésumé: %d réseau(x), %d machine(s), %d groupe(s), %d UPS.\n", len(cfg.Networks), len(cfg.Servers), len(cfg.Groups), len(cfg.UPS))
-	fmt.Fprintf(output, "- Découverte réseau: passive=%t active=%t CIDR=%s limite=%d débit=%g/s timeout=%s API_active=%t\n",
-		cfg.Discovery.PassiveEnabled, cfg.Discovery.ActiveEnabled,
-		emptyAs(strings.Join(cfg.Discovery.AllowedSubnets, ","), "aucun"),
-		cfg.Discovery.Safeguards.MaxPackets, cfg.Discovery.Safeguards.RatePPS,
-		cfg.Discovery.Safeguards.Timeout.Value(30*time.Second), cfg.API.ActiveDiscovery)
+	printInformationBlock(output, "Découverte réseau", []helpRow{
+		{command: "Passive", description: strconv.FormatBool(cfg.Discovery.PassiveEnabled)},
+		{command: "Active", description: strconv.FormatBool(cfg.Discovery.ActiveEnabled)},
+		{command: "CIDR autorisés", description: emptyAs(strings.Join(cfg.Discovery.AllowedSubnets, ", "), "aucun")},
+		{command: "Limite", description: strconv.Itoa(cfg.Discovery.Safeguards.MaxPackets)},
+		{command: "Débit", description: fmt.Sprintf("%g/s", cfg.Discovery.Safeguards.RatePPS)},
+		{command: "Timeout", description: cfg.Discovery.Safeguards.Timeout.Value(30 * time.Second).String()},
+		{command: "API active", description: strconv.FormatBool(cfg.API.ActiveDiscovery)},
+	})
+	fmt.Fprintln(output)
 	printNetworks(output, cfg.Networks)
 	for _, id := range sortedKeys(cfg.Servers) {
 		s := cfg.Servers[id]
@@ -728,24 +733,58 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 		if p := cfg.effectiveUPS(id); p != nil {
 			ups = p.UPS
 		}
-		fmt.Fprintf(output, "- machine %s (%s): active=%t ip=%s mac=%s réseau=%s transport=%s destination=%s contrôles=%s logique=%s délais(initial=%s timeout=%s interval=%s tentatives=%d nouveaux_paquets=%d) dépendances=%s UPS=%s\n", id, emptyAs(s.Name, "sans nom"), enabled(s), s.IP, s.MAC, s.Network, selected, destination, checks, cfg.effectiveCheckLogic(id), initial, timeout, interval, attempts, retries, emptyAs(strings.Join(cfg.dependencies(id), ","), "aucune"), ups)
+		fmt.Fprintln(output)
+		printInformationBlock(output, "Machine "+id+" — "+emptyAs(s.Name, "sans nom"), []helpRow{
+			{command: "Active", description: strconv.FormatBool(enabled(s))},
+			{command: "Adresse IP", description: s.IP},
+			{command: "Adresse MAC", description: s.MAC},
+			{command: "Réseau", description: s.Network},
+			{command: "Transport", description: selected},
+			{command: "Destination", description: destination},
+			{command: "Contrôles", description: checks},
+			{command: "Logique", description: cfg.effectiveCheckLogic(id)},
+			{command: "Attente initiale", description: initial.String()},
+			{command: "Délai maximal", description: timeout.String()},
+			{command: "Intervalle", description: interval.String()},
+			{command: "Tentatives", description: strconv.Itoa(attempts)},
+			{command: "Nouveaux paquets", description: strconv.Itoa(retries)},
+			{command: "Dépendances", description: emptyAs(strings.Join(cfg.dependencies(id), ", "), "aucune")},
+			{command: "UPS", description: ups},
+		})
+	}
+	if len(cfg.Groups) > 0 {
+		fmt.Fprintln(output)
 	}
 	printGroups(output, cfg.Groups)
 	for _, id := range sortedKeys(cfg.UPS) {
 		u := cfg.UPS[id]
-		fmt.Fprintf(output, "- UPS %s: serveur=%s identifiant_NUT=%s TLS=%t\n", id, u.Address, u.Name, u.TLS)
+		fmt.Fprintln(output)
+		printInformationBlock(output, "UPS "+id, []helpRow{
+			{command: "Serveur", description: u.Address},
+			{command: "Identifiant NUT", description: u.Name},
+			{command: "TLS", description: strconv.FormatBool(u.TLS)},
+		})
 	}
 }
 
 func printNetworks(output io.Writer, networks map[string]Network) {
-	for _, id := range sortedKeys(networks) {
+	for index, id := range sortedKeys(networks) {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		n := networks[id]
 		port := n.Port
 		portLabel := strconv.Itoa(port)
 		if port == 0 {
 			portLabel = "9 (valeur par défaut)"
 		}
-		fmt.Fprintf(output, "- réseau %s: %s interface=%s source=%s transports=%s port=%s\n", id, n.CIDR, emptyAs(n.Interface, "auto"), emptyAs(n.SourceIP, "auto"), strings.Join(enabledTransports(n), ","), portLabel)
+		printInformationBlock(output, "Réseau "+id, []helpRow{
+			{command: "CIDR", description: n.CIDR},
+			{command: "Interface", description: emptyAs(n.Interface, "auto")},
+			{command: "Adresse source", description: emptyAs(n.SourceIP, "auto")},
+			{command: "Transports", description: strings.Join(enabledTransports(n), ", ")},
+			{command: "Port WoL", description: portLabel},
+		})
 	}
 }
 
@@ -757,13 +796,30 @@ func printServers(output io.Writer, servers map[string]Server) {
 }
 
 func printGroups(output io.Writer, groups map[string]Group) {
-	for _, id := range sortedKeys(groups) {
-		g := groups[id]
-		fmt.Fprintf(output, "- groupe %s: priorité=%d machines=%s dépendances=%s", id, g.Priority, emptyAs(strings.Join(g.Servers, ","), "aucune"), emptyAs(strings.Join(g.Dependencies, ","), "aucune"))
-		if p := g.PowerRestore; p != nil {
-			fmt.Fprintf(output, " reprise_NUT(active=%t UPS=%s seuils=%s/%s stabilité=%s fréquence=%s mode=%s ordre=%s échec=%s retries=%d/%s)", p.Enabled, p.UPS, percent(p.LowBattery), percent(p.HighBattery), p.StableFor.Value(30*time.Second), p.PollInterval.Value(5*time.Second), defaultString(p.Mode, "sequential"), emptyAs(strings.Join(p.Order, ","), "groupe"), defaultString(p.FailurePolicy, "stop"), p.RetryLimit, p.RetryInterval.Value(10*time.Second))
+	for index, id := range sortedKeys(groups) {
+		if index > 0 {
+			fmt.Fprintln(output)
 		}
-		fmt.Fprintln(output)
+		g := groups[id]
+		rows := []helpRow{
+			{command: "Priorité", description: strconv.Itoa(g.Priority)},
+			{command: "Machines", description: emptyAs(strings.Join(g.Servers, ", "), "aucune")},
+			{command: "Dépendances", description: emptyAs(strings.Join(g.Dependencies, ", "), "aucune")},
+		}
+		if p := g.PowerRestore; p != nil {
+			rows = append(rows,
+				helpRow{command: "Reprise NUT", description: strconv.FormatBool(p.Enabled)},
+				helpRow{command: "UPS", description: p.UPS},
+				helpRow{command: "Seuils", description: percent(p.LowBattery) + " / " + percent(p.HighBattery)},
+				helpRow{command: "Stabilité", description: p.StableFor.Value(30 * time.Second).String()},
+				helpRow{command: "Fréquence", description: p.PollInterval.Value(5 * time.Second).String()},
+				helpRow{command: "Mode", description: defaultString(p.Mode, "sequential")},
+				helpRow{command: "Ordre", description: emptyAs(strings.Join(p.Order, ", "), "groupe")},
+				helpRow{command: "Échec", description: defaultString(p.FailurePolicy, "stop")},
+				helpRow{command: "Nouvelles tentatives", description: fmt.Sprintf("%d, toutes les %s", p.RetryLimit, p.RetryInterval.Value(10*time.Second))},
+			)
+		}
+		printInformationBlock(output, "Groupe "+id, rows)
 	}
 }
 

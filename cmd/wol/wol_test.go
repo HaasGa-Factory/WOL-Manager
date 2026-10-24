@@ -433,13 +433,33 @@ func TestHumanMenuPresentationAvoidsRawJSONAndNanoseconds(t *testing.T) {
 		[]Job{{ID: "job-1", Kind: "wake", Target: "two", State: "running"}},
 	)
 	text := output.String()
-	for _, expected := range []string{"délais=", "port=9", "stabilité=30s", "fréquence=5s", "batterie=75%", "état=running"} {
+	for _, expected := range []string{"Attente initiale", "Port WoL", "Stabilité", "30s", "Fréquence", "5s", "Batterie", "75%", "État", "running"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("%q absent de la sortie humaine:\n%s", expected, text)
 		}
 	}
 	if strings.Contains(text, "stable_for_ns") || strings.Contains(text, `{"`) {
 		t.Fatalf("sortie technique brute dans le menu:\n%s", text)
+	}
+}
+
+func TestNetworkInformationUsesIndentedLabels(t *testing.T) {
+	var output bytes.Buffer
+	printNetworks(&output, map[string]Network{"lan": {
+		CIDR: "192.168.1.0/24", Interface: "ens18", SourceIP: "192.168.1.231", AllowLocalBroadcast: true, AllowUnicast: true,
+	}})
+	text := output.String()
+	for _, expected := range []string{
+		"- Réseau lan",
+		"  CIDR           : 192.168.1.0/24",
+		"  Interface      : ens18",
+		"  Adresse source : 192.168.1.231",
+		"  Transports     : broadcast local, unicast",
+		"  Port WoL       : 9 (valeur par défaut)",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("%q absent de la présentation réseau:\n%s", expected, text)
+		}
 	}
 }
 
@@ -453,7 +473,7 @@ func TestHumanWakeResultsAvoidRawJSON(t *testing.T) {
 		Note:        "simulation: aucun paquet émis",
 	}})
 	text := output.String()
-	for _, expected := range []string{"two", "simulation, aucun paquet émis", "transport=local_broadcast", "destination=192.0.2.255:9", "vérifié=false"} {
+	for _, expected := range []string{"Résultat two", "simulation, aucun paquet émis", "Transport", "local_broadcast", "Destination", "192.0.2.255:9", "Vérifié", "false"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("%q absent de la sortie humaine: %s", expected, text)
 		}

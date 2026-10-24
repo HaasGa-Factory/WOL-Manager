@@ -643,7 +643,10 @@ func waitForMenuReturn(reader *bufio.Reader, output io.Writer, interactive bool,
 }
 
 func printWakeResults(output io.Writer, results []WakeResult) {
-	for _, result := range results {
+	for index, result := range results {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		packet := result.Packet
 		switch packet {
 		case "dry_run":
@@ -653,27 +656,38 @@ func printWakeResults(output io.Writer, results []WakeResult) {
 		case "not_sent":
 			packet = "aucun paquet émis"
 		}
-		fmt.Fprintf(output, "- %s: %s", result.Server, packet)
+		rows := []helpRow{{command: "Paquet", description: packet}}
 		if result.Transport != "" {
-			fmt.Fprintf(output, "; transport=%s", result.Transport)
+			rows = append(rows, helpRow{command: "Transport", description: result.Transport})
 		}
 		if result.Destination != "" {
-			fmt.Fprintf(output, "; destination=%s", result.Destination)
+			rows = append(rows, helpRow{command: "Destination", description: result.Destination})
 		}
-		fmt.Fprintf(output, "; vérifié=%t", result.Verified)
+		rows = append(rows, helpRow{command: "Vérifié", description: strconv.FormatBool(result.Verified)})
 		if result.Note != "" {
-			fmt.Fprintf(output, "; %s", result.Note)
+			rows = append(rows, helpRow{command: "Information", description: result.Note})
 		}
-		fmt.Fprintln(output)
+		printInformationBlock(output, "Résultat "+result.Server, rows)
 	}
 }
 
 func printMenuMachines(output io.Writer, c *Config) {
-	for _, id := range sortedKeys(c.Servers) {
+	for index, id := range sortedKeys(c.Servers) {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		s := c.Servers[id]
 		initial, timeout, interval := c.effectiveVerification(id)
-		fmt.Fprintf(output, "- %s — %s: IP=%s MAC=%s réseau=%s actif=%t contrôles=%s délais=%s/%s/%s\n",
-			id, emptyAs(s.Name, "sans nom"), s.IP, s.MAC, s.Network, enabled(s), formatChecks(c.effectiveChecks(id)), initial, timeout, interval)
+		printInformationBlock(output, "Machine "+id+" — "+emptyAs(s.Name, "sans nom"), []helpRow{
+			{command: "Adresse IP", description: s.IP},
+			{command: "Adresse MAC", description: s.MAC},
+			{command: "Réseau", description: s.Network},
+			{command: "Active", description: strconv.FormatBool(enabled(s))},
+			{command: "Contrôles", description: formatChecks(c.effectiveChecks(id))},
+			{command: "Attente initiale", description: initial.String()},
+			{command: "Délai maximal", description: timeout.String()},
+			{command: "Intervalle", description: interval.String()},
+		})
 	}
 }
 
@@ -682,17 +696,23 @@ func printMenuUPS(output io.Writer, statuses map[string]UPSStatus) {
 		fmt.Fprintln(output, "Aucun UPS NUT configuré.")
 		return
 	}
-	for _, id := range sortedKeys(statuses) {
+	for index, id := range sortedKeys(statuses) {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		status := statuses[id]
 		if status.Error != "" {
-			fmt.Fprintf(output, "- %s: erreur=%s\n", id, status.Error)
+			printInformationBlock(output, "UPS "+id, []helpRow{{command: "Erreur", description: status.Error}})
 			continue
 		}
 		battery := "inconnue"
 		if status.BatteryKnown {
 			battery = fmt.Sprintf("%.0f%%", status.Battery)
 		}
-		fmt.Fprintf(output, "- %s: état=%s batterie=%s\n", id, emptyAs(status.RawStatus, "inconnu"), battery)
+		printInformationBlock(output, "UPS "+id, []helpRow{
+			{command: "État", description: emptyAs(status.RawStatus, "inconnu")},
+			{command: "Batterie", description: battery},
+		})
 	}
 }
 
@@ -700,15 +720,43 @@ func printMenuAutomations(output io.Writer, plans []restorePlan, cycles []PowerC
 	if len(plans) == 0 {
 		fmt.Fprintln(output, "Aucune politique de reprise NUT configurée.")
 	}
+	printed := false
 	for _, plan := range plans {
-		fmt.Fprintf(output, "- groupe %s: UPS=%s mode=%s stabilité=%s fréquence=%s échec=%s tentatives=%d intervalle=%s\n",
-			plan.Group, plan.UPS, plan.Mode, plan.StableFor, plan.PollInterval, plan.FailurePolicy, plan.RetryLimit, plan.RetryInterval)
+		if printed {
+			fmt.Fprintln(output)
+		}
+		printInformationBlock(output, "Politique du groupe "+plan.Group, []helpRow{
+			{command: "UPS", description: plan.UPS},
+			{command: "Mode", description: plan.Mode},
+			{command: "Stabilité", description: plan.StableFor.String()},
+			{command: "Fréquence", description: plan.PollInterval.String()},
+			{command: "Échec", description: plan.FailurePolicy},
+			{command: "Tentatives", description: strconv.Itoa(plan.RetryLimit)},
+			{command: "Intervalle", description: plan.RetryInterval.String()},
+		})
+		printed = true
 	}
 	for _, cycle := range cycles {
-		fmt.Fprintf(output, "- cycle UPS %s: état=%s raison=%s batterie=%s\n", cycle.UPS, cycle.State, emptyAs(cycle.Reason, "aucune"), formatBattery(cycle))
+		if printed {
+			fmt.Fprintln(output)
+		}
+		printInformationBlock(output, "Cycle UPS "+cycle.UPS, []helpRow{
+			{command: "État", description: cycle.State},
+			{command: "Raison", description: emptyAs(cycle.Reason, "aucune")},
+			{command: "Batterie", description: formatBattery(cycle)},
+		})
+		printed = true
 	}
 	for _, job := range jobs {
-		fmt.Fprintf(output, "- tâche %s: type=%s cible=%s état=%s\n", job.ID, job.Kind, job.Target, job.State)
+		if printed {
+			fmt.Fprintln(output)
+		}
+		printInformationBlock(output, "Tâche "+job.ID, []helpRow{
+			{command: "Type", description: job.Kind},
+			{command: "Cible", description: job.Target},
+			{command: "État", description: job.State},
+		})
+		printed = true
 	}
 }
 

@@ -397,7 +397,7 @@ func TestChecksDisabledPersistsAndInheritanceRemainsDistinct(t *testing.T) {
 	}
 	var summary strings.Builder
 	showConfigSummary(&summary, reloaded)
-	if !strings.Contains(summary.String(), "contrôles=tcp:22") {
+	if !strings.Contains(summary.String(), "Contrôles") || !strings.Contains(summary.String(), "tcp:22") {
 		t.Fatalf("résumé de l'héritage incorrect:\n%s", summary.String())
 	}
 }
@@ -418,7 +418,7 @@ func TestNoChecksSkipsLogicAndVerificationQuestions(t *testing.T) {
 		}
 	}
 	showConfigSummary(&output, cfg)
-	if !strings.Contains(output.String(), "contrôles=aucun") {
+	if !strings.Contains(output.String(), "Contrôles") || !strings.Contains(output.String(), ": aucun") {
 		t.Fatalf("résumé sans contrôles=aucun:\n%s", output.String())
 	}
 }
@@ -445,7 +445,7 @@ func TestSummaryUsesEffectiveDefaultPort(t *testing.T) {
 	cfg.Networks["lan"] = network
 	var output strings.Builder
 	showConfigSummary(&output, cfg)
-	if !strings.Contains(output.String(), "port=9 (valeur par défaut)") || strings.Contains(output.String(), "port=0") {
+	if !strings.Contains(output.String(), "Port WoL") || !strings.Contains(output.String(), "9 (valeur par défaut)") || strings.Contains(output.String(), "Port WoL       : 0") {
 		t.Fatalf("port effectif absent du résumé:\n%s", output.String())
 	}
 }
@@ -506,7 +506,7 @@ func TestDetailedSummaryContainsOperationalSettings(t *testing.T) {
 	cfg := testConfig(t)
 	var output strings.Builder
 	showConfigSummary(&output, cfg)
-	for _, expected := range []string{"source=", "transports=", "destination=", "contrôles=", "logique=", "délais(initial=", "dépendances=", "active="} {
+	for _, expected := range []string{"Adresse source", "Transports", "Destination", "Contrôles", "Logique", "Attente initiale", "Délai maximal", "Dépendances", "Active"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("résumé incomplet (%s):\n%s", expected, output.String())
 		}
