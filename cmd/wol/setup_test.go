@@ -248,6 +248,35 @@ func TestQuestionMarkNeverChangesInteractiveDefaults(t *testing.T) {
 	}
 }
 
+func TestGuidedValuesUseReadableVerticalSections(t *testing.T) {
+	var output strings.Builder
+	printValueList(&output, "RÉSEAUX DISPONIBLES", []string{"lan", "serveurs"})
+	_ = promptKnownIDs(bufio.NewReader(strings.NewReader("lab\n")), &output, "Groupes", nil, map[string]bool{"lab": true, "maison": true})
+	_ = promptKnownIDs(bufio.NewReader(strings.NewReader("nas\n")), &output, "Dépendances machines", nil, map[string]bool{"nas": true})
+	_, _ = promptChecks(bufio.NewReader(strings.NewReader("\n")), &output, nil, false)
+
+	text := output.String()
+	for _, expected := range []string{
+		"RÉSEAUX DISPONIBLES",
+		"- lan\n- serveurs",
+		"GROUPES DISPONIBLES",
+		"- lab\n- maison",
+		"MACHINES DISPONIBLES",
+		"Vérification après réveil",
+		"Valeur actuelle : hériter",
+		"VÉRIFICATION APRÈS RÉVEIL",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("%q absent de la présentation guidée:\n%s", expected, text)
+		}
+	}
+	for _, dense := range []string{"Réseaux disponibles: lan", "Valeurs disponibles: lab", "ICMP: ping simple mais parfois bloqué. TCP:"} {
+		if strings.Contains(text, dense) {
+			t.Fatalf("présentation compacte encore présente (%q):\n%s", dense, text)
+		}
+	}
+}
+
 func TestGuidedDiscoveryExplainsAndConfiguresBothLocks(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Discovery.AllowedSubnets = []string{"192.168.10.0/24"}
@@ -431,7 +460,7 @@ func TestOfferDryRunUsesNumberOrIdentifier(t *testing.T) {
 			if err := offerDryRun(bufio.NewReader(strings.NewReader(input)), &output, cfg); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(output.String(), "[2] two — Two") || !strings.Contains(output.String(), "two:") {
+			if !strings.Contains(output.String(), "MACHINES DISPONIBLES") || !strings.Contains(output.String(), "[2] two") || !strings.Contains(output.String(), "Two") || !strings.Contains(output.String(), "two:") {
 				t.Fatalf("sélection guidée absente:\n%s", output.String())
 			}
 		})
@@ -506,9 +535,15 @@ func TestDetailedSummaryContainsOperationalSettings(t *testing.T) {
 	cfg := testConfig(t)
 	var output strings.Builder
 	showConfigSummary(&output, cfg)
-	for _, expected := range []string{"Adresse source", "Transports", "Destination", "Contrôles", "Logique", "Attente initiale", "Délai maximal", "Dépendances", "Active"} {
+	for _, expected := range []string{"Adresse source", "Transports", "Destination", "Contrôles", "Logique", "Attente initiale", "Délai maximal", "Dépendances", "Active", "SYNTHÈSE"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("résumé incomplet (%s):\n%s", expected, output.String())
+		}
+	}
+	summary := wakeSummary(cfg, "two")
+	for _, expected := range []string{"un seul Magic Packet", "toutes les 2 secondes pendant 45 secondes maximum", "dès qu’un des contrôles configurés réussira", "Aucune autre machine", "Aucune politique UPS"} {
+		if !strings.Contains(summary, expected) {
+			t.Fatalf("synthèse incomplète (%s):\n%s", expected, summary)
 		}
 	}
 }

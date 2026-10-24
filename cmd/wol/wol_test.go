@@ -270,8 +270,11 @@ func TestRealWakeSelectionRequiresExplicitKnownMachine(t *testing.T) {
 	if id, ok := selectMenuServer(bufio.NewReader(strings.NewReader("99\ntwo\n")), &output, cfg); !ok || id != "two" {
 		t.Fatalf("sélection explicite échouée: %q %t", id, ok)
 	}
-	if !strings.Contains(output.String(), "One") || !strings.Contains(output.String(), "Two") {
+	if !strings.Contains(output.String(), "MACHINES DISPONIBLES") || !strings.Contains(output.String(), "One") || !strings.Contains(output.String(), "Two") {
 		t.Fatalf("noms de machines absents: %s", output.String())
+	}
+	if strings.Contains(output.String(), "Machines disponibles:") {
+		t.Fatalf("ancien affichage compact encore présent: %s", output.String())
 	}
 }
 

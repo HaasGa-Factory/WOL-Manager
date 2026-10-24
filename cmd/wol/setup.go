@@ -326,12 +326,17 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 		}
 		fmt.Fprintln(output, "Adresse IPv4 invalide. Recommencez.")
 	}
-	fmt.Fprintln(output, "Transports: broadcast local (recommandé sur le même réseau), unicast (direct mais dépend d'ARP), broadcast dirigé (routé et plus risqué), relais (recommandé pour un réseau distant).")
+	printChoiceList(output, "TRANSPORTS DISPONIBLES", []helpRow{
+		{command: "Broadcast local", description: "Recommandé lorsque la machine est sur le même réseau"},
+		{command: "Unicast", description: "Envoi direct, mais dépend de la table ARP"},
+		{command: "Broadcast dirigé", description: "Traverse un routeur et présente davantage de risques"},
+		{command: "Relais", description: "Recommandé pour joindre un réseau distant"},
+	})
 	n.AllowLocalBroadcast = promptBool(reader, output, "Autoriser le broadcast local", valueOrDefault(n.AllowLocalBroadcast, !editing))
 	n.AllowUnicast = promptBool(reader, output, "Autoriser l'unicast", valueOrDefault(n.AllowUnicast, !editing))
 	n.AllowDirectedBroadcast = promptBool(reader, output, "Autoriser le broadcast dirigé", n.AllowDirectedBroadcast)
 	if len(cfg.Relays) > 0 {
-		fmt.Fprintln(output, "Relais disponibles:", strings.Join(sortedKeys(cfg.Relays), ", "))
+		printValueList(output, "RELAIS DISPONIBLES", sortedKeys(cfg.Relays))
 		for {
 			n.Relay = promptDefault(reader, output, "Identifiant du relais (facultatif)", n.Relay)
 			if n.Relay == "" {
@@ -434,7 +439,7 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		}
 		fmt.Fprintln(output, "Adresse IPv4 invalide. Recommencez.")
 	}
-	fmt.Fprintln(output, "Réseaux disponibles:", strings.Join(sortedKeys(cfg.Networks), ", "))
+	printValueList(output, "RÉSEAUX DISPONIBLES", sortedKeys(cfg.Networks))
 	for {
 		s.Network = promptDefault(reader, output, "Réseau", s.Network)
 		if _, ok := cfg.Networks[s.Network]; ok {
@@ -751,6 +756,10 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 			{command: "Dépendances", description: emptyAs(strings.Join(cfg.dependencies(id), ", "), "aucune")},
 			{command: "UPS", description: ups},
 		})
+		renderHelpSection(output, helpSection{title: "SYNTHÈSE", text: []string{wakeSummary(cfg, id)}}, helpRenderOptions{
+			mode:  outputColorMode(output),
+			width: outputWidth(output),
+		})
 	}
 	if len(cfg.Groups) > 0 {
 		fmt.Fprintln(output)
@@ -843,6 +852,52 @@ func formatChecks(checks []Check) string {
 		items = append(items, item)
 	}
 	return strings.Join(items, ",")
+}
+
+func wakeSummary(cfg *Config, id string) string {
+	initial, timeout, interval := cfg.effectiveVerification(id)
+	attempts, retries := cfg.effectiveVerificationAttempts(id)
+	_, checksDisabled := cfg.effectiveCheckPolicy(id)
+
+	packets := "un seul Magic Packet"
+	if retries > 0 {
+		packets = fmt.Sprintf("jusqu’à %d Magic Packets", retries+1)
+	}
+	parts := []string{}
+	if checksDisabled {
+		parts = append(parts, fmt.Sprintf("En pratique : WoL Manager tentera d’envoyer %s sans vérifier que la machine a démarré.", packets))
+	} else {
+		firstCheck := "immédiatement"
+		if initial > 0 {
+			firstCheck = "après " + frenchDuration(initial)
+		}
+		parts = append(parts, fmt.Sprintf("En pratique : WoL Manager tentera d’envoyer %s, puis vérifiera la machine %s et recommencera toutes les %s pendant %s maximum.", packets, firstCheck, frenchDuration(interval), frenchDuration(timeout)))
+		if attempts == 0 {
+			parts = append(parts, "Le nombre de cycles de vérification n’a pas d’autre limite que ce délai.")
+		} else if attempts == 1 {
+			parts = append(parts, "Il effectuera au maximum un cycle de vérification.")
+		} else {
+			parts = append(parts, fmt.Sprintf("Il effectuera au maximum %d cycles de vérification.", attempts))
+		}
+		if cfg.effectiveCheckLogic(id) == "all" {
+			parts = append(parts, "Le réveil sera confirmé seulement lorsque tous les contrôles configurés réussiront.")
+		} else {
+			parts = append(parts, "Le réveil sera confirmé dès qu’un des contrôles configurés réussira.")
+		}
+	}
+
+	dependencies := cfg.dependencies(id)
+	if len(dependencies) == 0 {
+		parts = append(parts, "Aucune autre machine ne doit être réveillée avant celle-ci.")
+	} else {
+		parts = append(parts, "WoL Manager réveillera d’abord : "+strings.Join(dependencies, ", ")+".")
+	}
+	if policy := cfg.effectiveUPS(id); policy == nil {
+		parts = append(parts, "Aucune politique UPS ne conditionne l’envoi.")
+	} else {
+		parts = append(parts, "L’envoi restera soumis à la politique UPS "+policy.UPS+".")
+	}
+	return strings.Join(parts, " ")
 }
 
 func readinessIssues(cfg *Config) []string {
@@ -1003,7 +1058,11 @@ func confirmPrompt(reader *bufio.Reader, output io.Writer, label string) bool {
 
 func promptKnownIDs[T any](reader *bufio.Reader, output io.Writer, label string, current []string, known map[string]T) []string {
 	if len(known) > 0 {
-		fmt.Fprintln(output, "Valeurs disponibles:", strings.Join(sortedKeys(known), ", "))
+		title := "MACHINES DISPONIBLES"
+		if strings.HasPrefix(strings.ToLower(label), "groupes") {
+			title = "GROUPES DISPONIBLES"
+		}
+		printValueList(output, title, sortedKeys(known))
 	}
 	for {
 		value := promptDefault(reader, output, label+" (- pour vider)", strings.Join(current, ","))
@@ -1038,8 +1097,7 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check, curre
 	} else if len(current) > 0 {
 		currentText = formatChecks(current)
 	}
-	fmt.Fprintf(output, "Vérification après réveil actuelle: %s\n", currentText)
-	fmt.Fprintln(output, "ICMP: ping simple mais parfois bloqué. TCP: vérifie un port ouvert (22/80/443). ARP: présence locale, preuve plus faible. Aucune: paquet envoyé sans confirmation de démarrage.")
+	printInformationBlock(output, "Vérification après réveil", []helpRow{{command: "Valeur actuelle", description: currentText}})
 	for {
 		printInteractiveMenu(output, "VÉRIFICATION APRÈS RÉVEIL", []helpRow{
 			{command: "[1] ICMP", description: "Vérifier la réponse au ping"},
@@ -1141,7 +1199,7 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		policy = *group.PowerRestore
 		policy.Enabled = true
 	}
-	fmt.Fprintln(output, "UPS disponibles:", strings.Join(sortedKeys(cfg.UPS), ", "))
+	printValueList(output, "UPS DISPONIBLES", sortedKeys(cfg.UPS))
 	for {
 		policy.UPS = promptDefault(reader, output, "UPS", policy.UPS)
 		if _, ok := cfg.UPS[policy.UPS]; ok {
@@ -1520,14 +1578,11 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 }
 
 func selectNUTDevices(reader *bufio.Reader, output io.Writer, serverID string, server UPSConfig, devices []NUTDevice, configured map[string]UPSConfig) error {
-	fmt.Fprintln(output, "UPS disponibles :")
+	rows := make([]helpRow, 0, len(devices))
 	for i, device := range devices {
-		fmt.Fprintf(output, "[%d] %s", i+1, device.Name)
-		if device.Description != "" {
-			fmt.Fprintf(output, " — %s", device.Description)
-		}
-		fmt.Fprintln(output)
+		rows = append(rows, helpRow{command: fmt.Sprintf("[%d] %s", i+1, device.Name), description: device.Description})
 	}
+	printChoiceList(output, "UPS DISPONIBLES", rows)
 	var indices []int
 	for {
 		selection := prompt(reader, output, "Sélectionnez un ou plusieurs UPS (ex. 1,2 ou tous): ")

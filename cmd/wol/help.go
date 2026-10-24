@@ -346,6 +346,21 @@ func printInformationBlock(output io.Writer, title string, rows []helpRow) {
 	}
 }
 
+func printValueList(output io.Writer, title string, values []string) {
+	rows := make([]helpRow, 0, len(values))
+	for _, value := range values {
+		rows = append(rows, helpRow{command: "- " + value})
+	}
+	printChoiceList(output, title, rows)
+}
+
+func printChoiceList(output io.Writer, title string, rows []helpRow) {
+	renderHelpSection(output, helpSection{title: title, rows: rows}, helpRenderOptions{
+		mode:  outputColorMode(output),
+		width: outputWidth(output),
+	})
+}
+
 var commandHelp = map[string]string{
 	"setup": `Usage: sudo wol [--config FILE] setup
 

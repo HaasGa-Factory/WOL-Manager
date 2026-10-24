@@ -776,10 +776,11 @@ func selectMenuServer(reader *bufio.Reader, output io.Writer, c *Config) (string
 		fmt.Fprintln(output, "Aucune machine configurée.")
 		return "", false
 	}
-	fmt.Fprintln(output, "Machines disponibles:")
+	rows := make([]helpRow, 0, len(ids))
 	for i, id := range ids {
-		fmt.Fprintf(output, "[%d] %s — %s\n", i+1, id, emptyAs(c.Servers[id].Name, "sans nom"))
+		rows = append(rows, helpRow{command: fmt.Sprintf("[%d] %s", i+1, id), description: emptyAs(c.Servers[id].Name, "sans nom")})
 	}
+	printChoiceList(output, "MACHINES DISPONIBLES", rows)
 	for {
 		value := prompt(reader, output, "Choisissez un numéro ou un identifiant (Entrée=annuler): ")
 		if value == "?" || value == "aide" || value == "help" {
