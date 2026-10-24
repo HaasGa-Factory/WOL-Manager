@@ -488,6 +488,7 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		return false
 	}
 	fmt.Fprintf(output, "Machine %s prête.\n", id)
+	showServerSummary(output, cfg, id)
 	return true
 }
 
@@ -741,31 +742,21 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 	})
 	fmt.Fprintln(output)
 	printNetworks(output, cfg.Networks)
-	for _, id := range sortedKeys(cfg.Servers) {
-		s := cfg.Servers[id]
-		selected, destination := "aucun", "indisponible"
-		if plan, _ := transportPlan(cfg, id); len(plan) > 0 {
-			for _, d := range plan {
-				if d.State == "selected" {
-					selected, destination = d.Name, emptyAs(d.Destination, "relais "+d.Relay)
-				}
+	if len(cfg.Servers) > 0 {
+		fmt.Fprintln(output)
+		rows := make([]helpRow, 0, len(cfg.Servers))
+		for _, id := range sortedKeys(cfg.Servers) {
+			s := cfg.Servers[id]
+			state := "active"
+			if !enabled(s) {
+				state = "inactive"
 			}
+			rows = append(rows, helpRow{
+				command:     id,
+				description: fmt.Sprintf("%s — %s — réseau %s — %s", emptyAs(s.Name, "sans nom"), s.IP, s.Network, state),
+			})
 		}
-		fmt.Fprintln(output)
-		printInformationBlock(output, "Machine "+id+" — "+emptyAs(s.Name, "sans nom"), []helpRow{
-			{command: "Active", description: strconv.FormatBool(enabled(s))},
-			{command: "Adresse IP", description: s.IP},
-			{command: "Adresse MAC", description: s.MAC},
-			{command: "Réseau", description: s.Network},
-			{command: "Transport", description: selected},
-			{command: "Destination", description: destination},
-		})
-		fmt.Fprintln(output)
-		printInformationBlock(output, "COMPORTEMENT EFFECTIF DU RÉVEIL", wakeBehaviorRows(cfg, id))
-		renderHelpSection(output, helpSection{title: "SYNTHÈSE", text: []string{wakeSummary(cfg, id)}}, helpRenderOptions{
-			mode:  outputColorMode(output),
-			width: outputWidth(output),
-		})
+		printInformationBlock(output, "Machines configurées", rows)
 	}
 	if len(cfg.Groups) > 0 {
 		fmt.Fprintln(output)
@@ -780,6 +771,36 @@ func showConfigSummary(output io.Writer, cfg *Config) {
 			{command: "TLS", description: strconv.FormatBool(u.TLS)},
 		})
 	}
+}
+
+func showServerSummary(output io.Writer, cfg *Config, id string) {
+	s, ok := cfg.Servers[id]
+	if !ok {
+		return
+	}
+	selected, destination := "aucun", "indisponible"
+	if plan, _ := transportPlan(cfg, id); len(plan) > 0 {
+		for _, d := range plan {
+			if d.State == "selected" {
+				selected, destination = d.Name, emptyAs(d.Destination, "relais "+d.Relay)
+			}
+		}
+	}
+	fmt.Fprintln(output)
+	printInformationBlock(output, "Machine "+id+" — "+emptyAs(s.Name, "sans nom"), []helpRow{
+		{command: "Active", description: strconv.FormatBool(enabled(s))},
+		{command: "Adresse IP", description: s.IP},
+		{command: "Adresse MAC", description: s.MAC},
+		{command: "Réseau", description: s.Network},
+		{command: "Transport", description: selected},
+		{command: "Destination", description: destination},
+	})
+	fmt.Fprintln(output)
+	printInformationBlock(output, "COMPORTEMENT EFFECTIF DU RÉVEIL", wakeBehaviorRows(cfg, id))
+	renderHelpSection(output, helpSection{title: "SYNTHÈSE", text: []string{wakeSummary(cfg, id)}}, helpRenderOptions{
+		mode:  outputColorMode(output),
+		width: outputWidth(output),
+	})
 }
 
 func printNetworks(output io.Writer, networks map[string]Network) {

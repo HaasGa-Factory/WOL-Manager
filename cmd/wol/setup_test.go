@@ -444,7 +444,7 @@ func TestChecksDisabledPersistsAndInheritanceRemainsDistinct(t *testing.T) {
 		t.Fatalf("héritage TCP 22 incorrect: %#v disabled=%t", checks, disabled)
 	}
 	var summary strings.Builder
-	showConfigSummary(&summary, reloaded)
+	showServerSummary(&summary, reloaded, "two")
 	if !strings.Contains(summary.String(), "Contrôles") || !strings.Contains(summary.String(), "tcp:22") {
 		t.Fatalf("résumé de l'héritage incorrect:\n%s", summary.String())
 	}
@@ -465,9 +465,14 @@ func TestNoChecksSkipsLogicAndVerificationQuestions(t *testing.T) {
 			t.Fatalf("question %q posée malgré Aucune:\n%s", unexpected, output.String())
 		}
 	}
-	showConfigSummary(&output, cfg)
 	if !strings.Contains(output.String(), "Contrôles") || !strings.Contains(output.String(), ": aucun") {
 		t.Fatalf("résumé sans contrôles=aucun:\n%s", output.String())
+	}
+	if !strings.Contains(output.String(), "Machine two —") || !strings.Contains(output.String(), "SYNTHÈSE") {
+		t.Fatalf("synthèse de la machine modifiée absente:\n%s", output.String())
+	}
+	if strings.Contains(output.String(), "Machine one —") {
+		t.Fatalf("la synthèse d'une autre machine a été affichée:\n%s", output.String())
 	}
 }
 
@@ -553,9 +558,9 @@ func TestReadinessRejectsEnabledMachineWithoutTransport(t *testing.T) {
 func TestDetailedSummaryContainsOperationalSettings(t *testing.T) {
 	cfg := testConfig(t)
 	var output strings.Builder
-	showConfigSummary(&output, cfg)
+	showServerSummary(&output, cfg, "two")
 	for _, expected := range []string{
-		"Adresse source", "Transports", "Destination", "Active",
+		"Adresse IP", "Adresse MAC", "Réseau", "Transport", "Destination", "Active",
 		"COMPORTEMENT EFFECTIF DU RÉVEIL", "Contrôles utilisés", "Magic Packets prévus",
 		"1 maximum (1 initial, aucun renvoi)", "Premier paquet", "seulement si la machine est injoignable",
 		"Première vérification", "immédiatement après l’envoi", "Vérifications suivantes", "toutes les 2 secondes",
@@ -576,6 +581,23 @@ func TestDetailedSummaryContainsOperationalSettings(t *testing.T) {
 	for _, expected := range []string{"si la machine n’est pas déjà joignable", "un seul Magic Packet", "toutes les 2 secondes pendant 45 secondes maximum", "dès qu’un des contrôles configurés réussira", "Aucune autre machine", "Aucune politique UPS"} {
 		if !strings.Contains(summary, expected) {
 			t.Fatalf("synthèse incomplète (%s):\n%s", expected, summary)
+		}
+	}
+}
+
+func TestConfigSummaryKeepsMachineListCompact(t *testing.T) {
+	cfg := testConfig(t)
+	var output strings.Builder
+	showConfigSummary(&output, cfg)
+
+	for _, expected := range []string{"Machines configurées", "one", "One", "127.0.0.1", "two", "Two", "127.0.0.2"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("liste compacte incomplète (%s):\n%s", expected, output.String())
+		}
+	}
+	for _, unexpected := range []string{"COMPORTEMENT EFFECTIF DU RÉVEIL", "SYNTHÈSE", "Magic Packets prévus"} {
+		if strings.Contains(output.String(), unexpected) {
+			t.Fatalf("le résumé final contient encore le détail de chaque machine (%s):\n%s", unexpected, output.String())
 		}
 	}
 }
