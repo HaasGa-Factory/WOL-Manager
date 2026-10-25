@@ -2205,7 +2205,7 @@ func fieldHelp(label string) string {
 	case strings.Contains(key, "batterie minimale"):
 		return "Aide: charge minimale requise avant le réveil, entre 0 et 100 %. La valeur 0 désactive ce critère sans supposer qu'une mesure absente vaut zéro."
 	case strings.Contains(key, "autonomie minimale"):
-		return "Aide: autonomie NUT battery.runtime minimale en secondes. La valeur 0 désactive ce critère; une mesure requise mais absente bloque le réveil."
+		return "Aide: durée minimale pendant laquelle l’onduleur estime pouvoir encore alimenter les appareils en cas de coupure. Exemple : 600 exige au moins 10 minutes d’autonomie avant d’autoriser le réveil. Saisissez 0 pour ignorer cette mesure. Si une valeur est exigée mais que l’onduleur ne fournit pas l’estimation, le réveil sera bloqué."
 	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "logique"):
 		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
 	case strings.Contains(key, "durée") || strings.Contains(key, "intervalle"):

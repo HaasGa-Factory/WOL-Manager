@@ -439,6 +439,15 @@ func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 	}
 }
 
+func TestFieldHelpExplainsUPSRuntime(t *testing.T) {
+	help := fieldHelp("Autonomie minimale (secondes) — 0 pour désactiver")
+	for _, expected := range []string{"alimenter", "600", "10 minutes", "Saisissez 0", "estimation", "bloqué"} {
+		if !strings.Contains(help, expected) {
+			t.Errorf("aide autonomie UPS sans %q: %s", expected, help)
+		}
+	}
+}
+
 func TestChecksDisabledPersistsAndInheritanceRemainsDistinct(t *testing.T) {
 	path := filepath.Join(testDir(t), "wol.yaml")
 	cfg := testConfig(t)
