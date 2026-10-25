@@ -20,6 +20,63 @@ Les états reconnus sont `OL`, `OB`, `LB`, `FSD` et `unknown`, ainsi que `batter
 
 Pour un serveur NUT distant, activer `tls: true` : le client négocie `STARTTLS`, vérifie le nom du serveur et accepte une CA privée via `ca_cert`. Une connexion distante en clair est refusée sauf `allow_insecure_remote: true`, réservé à un tunnel ou réseau administratif déjà protégé. Les identifiants sont lus depuis des fichiers privés.
 
+## Protection UPS et reprise automatique
+
+Ces deux fonctions sont complémentaires, mais différentes :
+
+- `ups_policy` est un verrou de sécurité vérifié avant chaque réveil, manuel ou automatique ;
+- `power_restore` décide si WoL Manager doit déclencher lui-même le réveil d'un groupe après une coupure réellement observée.
+
+```mermaid
+flowchart TD
+    subgraph MANUEL["RÉVEIL MANUEL"]
+        M1["Commande : wol wake --group GROUPE"]
+    end
+
+    subgraph AUTO["REPRISE AUTOMATIQUE APRÈS COUPURE"]
+        A1{"Reprise automatique activée ?"}
+        A2["Coupure observée : OB, LB ou FSD"]
+        A3["La batterie atteint le seuil bas<br/>Le cycle est réarmé"]
+        A4["Le secteur revient : OL"]
+        A5["Le secteur reste stable pendant<br/>la durée configurée"]
+        A6["La batterie atteint le seuil haut"]
+        A7["WoL Manager demande automatiquement<br/>le réveil du groupe"]
+
+        A1 -->|Oui| A2
+        A2 --> A3
+        A3 --> A4
+        A4 --> A5
+        A5 --> A6
+        A6 --> A7
+    end
+
+    subgraph SECURITE["VERROU DE SÉCURITÉ AVANT CHAQUE RÉVEIL"]
+        S1{"Politique UPS activée ?"}
+        S2{"UPS accessible ?"}
+        S3{"Secteur OL ?"}
+        S4{"Batterie au minimum requis ?"}
+        S5{"Autonomie suffisante ?<br/>0 = contrôle désactivé"}
+        OK["Magic Packet autorisé"]
+        STOP["Réveil bloqué<br/>Aucun paquet envoyé"]
+
+        S1 -->|Non| OK
+        S1 -->|Oui| S2
+        S2 -->|Non| STOP
+        S2 -->|Oui| S3
+        S3 -->|Non| STOP
+        S3 -->|Oui| S4
+        S4 -->|Non| STOP
+        S4 -->|Oui| S5
+        S5 -->|Non| STOP
+        S5 -->|Oui| OK
+    end
+
+    M1 --> S1
+    A7 --> S1
+```
+
+Exemple : avec une politique UPS exigeant 70 % de batterie et une reprise automatique configurée avec un seuil bas de 40 % et un seuil haut de 70 %, la coupure réarme le cycle à 40 %. Après le retour du secteur stable, atteindre 70 % déclenche la demande de reprise. La politique UPS contrôle alors une dernière fois les 70 % et l'état `OL` avant d'autoriser le Magic Packet.
+
 ## Reprise automatique V1.2
 
 Une reprise est possible uniquement après un cycle `OB`, `LB` ou `FSD` réellement observé et enregistré. L'état `OL` initial au lancement ne crée jamais de cycle. Le seuil bas réarme le groupe ; le seuil haut et la durée `stable_for` l'autorisent ensuite. `OB`, `LB`, `FSD`, une erreur NUT, un état inconnu ou une batterie requise mais absente interdisent tout nouveau réveil automatique.
