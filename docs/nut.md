@@ -36,18 +36,24 @@ flowchart TD
     subgraph AUTO["REPRISE AUTOMATIQUE APRÈS COUPURE"]
         A1{"Reprise automatique activée ?"}
         A2["Coupure observée : OB, LB ou FSD"]
-        A3["La batterie atteint le seuil bas<br/>Le cycle est réarmé"]
-        A4["Le secteur revient : OL"]
-        A5["Le secteur reste stable pendant<br/>la durée configurée"]
-        A6["La batterie atteint le seuil haut"]
-        A7["WoL Manager demande automatiquement<br/>le réveil du groupe"]
+        A3{"Batterie ≤ seuil bas,<br/>état LB/FSD ou seuil bas = 0 ?"}
+        A4["Groupe réarmé"]
+        A5["Groupe non réarmé<br/>Aucun réveil automatique pour ce cycle"]
+        A6["Le secteur revient : OL"]
+        A7["Le secteur reste stable pendant<br/>la durée configurée"]
+        A8["La batterie atteint le seuil haut"]
+        A9["WoL Manager demande automatiquement<br/>le réveil du groupe"]
+        OFF["Aucune reprise automatique"]
 
         A1 -->|Oui| A2
+        A1 -->|Non| OFF
         A2 --> A3
-        A3 --> A4
-        A4 --> A5
-        A5 --> A6
+        A3 -->|Oui| A4
+        A3 -->|Non| A5
+        A4 --> A6
         A6 --> A7
+        A7 --> A8
+        A8 --> A9
     end
 
     subgraph SECURITE["VERROU DE SÉCURITÉ AVANT CHAQUE RÉVEIL"]
@@ -72,10 +78,10 @@ flowchart TD
     end
 
     M1 --> S1
-    A7 --> S1
+    A9 --> S1
 ```
 
-Exemple : avec une politique UPS exigeant 70 % de batterie et une reprise automatique configurée avec un seuil bas de 40 % et un seuil haut de 70 %, la coupure réarme le cycle à 40 %. Après le retour du secteur stable, atteindre 70 % déclenche la demande de reprise. La politique UPS contrôle alors une dernière fois les 70 % et l'état `OL` avant d'autoriser le Magic Packet.
+Exemple : avec une politique UPS exigeant 70 % de batterie et une reprise automatique configurée avec un seuil bas de 40 % et un seuil haut de 70 %, la coupure réarme le cycle uniquement si la batterie atteint 40 % ou moins, ou si NUT signale `LB` ou `FSD`. Une coupure plus courte qui se termine au-dessus de 40 % ne provoque aucun réveil automatique. Configurer le seuil bas à 0 % réarme dès toute coupure observée. Après le retour du secteur stable, atteindre 70 % déclenche la demande de reprise. La politique UPS contrôle alors une dernière fois les 70 % et l'état `OL` avant d'autoriser le Magic Packet.
 
 ## Reprise automatique V1.2
 
