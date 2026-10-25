@@ -624,6 +624,55 @@ func TestConfigSummaryKeepsMachineListCompact(t *testing.T) {
 	}
 }
 
+func TestGuidedUPSSafetyPolicySupportsGroupAndMachineOverride(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "ups"}
+
+	group := cfg.Groups["core"]
+	group.Servers = []string{"one", "two"}
+	var groupOutput strings.Builder
+	group.UPS = promptUPSSafetyPolicy(
+		bufio.NewReader(strings.NewReader("o\nups-main\n\n40\n600\n")),
+		&groupOutput, cfg, group.UPS, "ce groupe",
+	)
+	cfg.Groups["core"] = group
+
+	inherited := cfg.effectiveUPS("two")
+	if inherited == nil || inherited.UPS != "ups-main" || !inherited.RequireOnline || inherited.MinBattery != 40 || inherited.MinRuntime != 600 {
+		t.Fatalf("politique de groupe non héritée: %#v", inherited)
+	}
+
+	server := cfg.Servers["one"]
+	var serverOutput strings.Builder
+	server.UPS = promptUPSSafetyPolicy(
+		bufio.NewReader(strings.NewReader("o\nups-main\nn\n80\n0\n")),
+		&serverOutput, cfg, server.UPS, "cette machine",
+	)
+	cfg.Servers["one"] = server
+
+	direct := cfg.effectiveUPS("one")
+	if direct == nil || direct.UPS != "ups-main" || direct.RequireOnline || direct.MinBattery != 80 || direct.MinRuntime != 0 {
+		t.Fatalf("surcharge machine incorrecte: %#v", direct)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("configuration UPS guidée invalide: %v", err)
+	}
+
+	var summary strings.Builder
+	showServerSummary(&summary, cfg, "one")
+	showServerSummary(&summary, cfg, "two")
+	for _, expected := range []string{"définie pour la machine", "héritée d’un groupe"} {
+		if !strings.Contains(summary.String(), expected) {
+			t.Fatalf("source de la politique UPS absente (%s):\n%s", expected, summary.String())
+		}
+	}
+	for _, output := range []string{groupOutput.String(), serverOutput.String()} {
+		if !strings.Contains(output, "UPS DISPONIBLES") || !strings.Contains(output, "ne commande jamais l'onduleur") {
+			t.Fatalf("assistant UPS incomplet:\n%s", output)
+		}
+	}
+}
+
 func TestWriteGlobalVerificationPreservesOtherGlobalSettings(t *testing.T) {
 	directory := testDir(t)
 	path := filepath.Join(directory, "wol.yaml")

@@ -64,6 +64,17 @@ wol wake truenas --verification-delay 90s
 
 Deux groupes ne peuvent pas partager la même priorité. Cette règle rend les surcharges déterministes. Les listes `servers` d'un groupe et `groups` d'un serveur sont réunies sans doublon.
 
+## Sécurité UPS avant réveil
+
+Les assistants `sudo wol config group` et `sudo wol config machine` permettent d'appliquer une
+politique NUT avant chaque réveil. Elle peut exiger le secteur `OL`, une charge minimale et une
+autonomie minimale. Une mesure requise mais absente ou un état inconnu bloque le Magic Packet au
+lieu d'être interprété comme une valeur sûre.
+
+Une politique de groupe est héritée par ses machines. Une politique définie directement sur une
+machine la remplace. Ce contrôle `ups_policy` reste distinct de `power_restore` : le premier protège
+chaque réveil, tandis que le second orchestre la reprise d'un groupe après une coupure observée.
+
 ## Reprise automatique après coupure
 
 La politique se configure dans l'assistant de groupe. Exemple administrateur équivalent :

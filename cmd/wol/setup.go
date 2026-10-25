@@ -479,6 +479,7 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		}
 		s.Verification = verification
 	}
+	s.UPS = promptUPSSafetyPolicy(reader, output, cfg, s.UPS, "cette machine")
 	cfg.Servers[id] = s
 	if err := cfg.Validate(); err != nil {
 		if editing {
@@ -575,6 +576,7 @@ func addOrEditGroup(reader *bufio.Reader, output io.Writer, cfg *Config, id stri
 	}
 	g.Servers = promptKnownIDs(reader, output, "Machines du groupe (virgules, facultatif)", g.Servers, cfg.Servers)
 	g.Dependencies = promptKnownIDs(reader, output, "Dépendances machines (virgules, facultatif)", g.Dependencies, cfg.Servers)
+	g.UPS = promptUPSSafetyPolicy(reader, output, cfg, g.UPS, "ce groupe")
 	g.PowerRestore = promptPowerRestore(reader, output, cfg, g)
 	cfg.Groups[id] = g
 	if err := cfg.Validate(); err != nil {
@@ -844,10 +846,18 @@ func printGroups(output io.Writer, groups map[string]Group) {
 			{command: "Machines", description: emptyAs(strings.Join(g.Servers, ", "), "aucune")},
 			{command: "Dépendances", description: emptyAs(strings.Join(g.Dependencies, ", "), "aucune")},
 		}
+		if p := g.UPS; p != nil {
+			rows = append(rows,
+				helpRow{command: "Sécurité UPS", description: "activée via " + p.UPS},
+				helpRow{command: "Secteur requis", description: strconv.FormatBool(p.RequireOnline)},
+				helpRow{command: "Batterie minimale", description: fmt.Sprintf("%d%%", p.MinBattery)},
+				helpRow{command: "Autonomie minimale", description: fmt.Sprintf("%ds", p.MinRuntime)},
+			)
+		}
 		if p := g.PowerRestore; p != nil {
 			rows = append(rows,
-				helpRow{command: "Reprise NUT", description: strconv.FormatBool(p.Enabled)},
-				helpRow{command: "UPS", description: p.UPS},
+				helpRow{command: "Reprise après coupure", description: strconv.FormatBool(p.Enabled)},
+				helpRow{command: "UPS de reprise", description: p.UPS},
 				helpRow{command: "Seuils", description: percent(p.LowBattery) + " / " + percent(p.HighBattery)},
 				helpRow{command: "Stabilité", description: p.StableFor.Value(30 * time.Second).String()},
 				helpRow{command: "Fréquence", description: p.PollInterval.Value(5 * time.Second).String()},
@@ -931,7 +941,11 @@ func wakeBehaviorRows(cfg *Config, id string) []helpRow {
 	})
 	ups := "désactivée"
 	if policy := cfg.effectiveUPS(id); policy != nil {
-		ups = "activée via " + policy.UPS
+		source := "héritée d’un groupe"
+		if cfg.Servers[id].UPS != nil {
+			source = "définie pour la machine"
+		}
+		ups = fmt.Sprintf("activée via %s (%s)", policy.UPS, source)
 	}
 	return append(rows, helpRow{command: "Politique de sécurité UPS", description: ups})
 }
@@ -1263,6 +1277,32 @@ func promptCheckLogic(reader *bufio.Reader, output io.Writer, current string) st
 		}
 		fmt.Fprintln(output, "Logique invalide: saisissez any ou all. Recommencez.")
 	}
+}
+
+func promptUPSSafetyPolicy(reader *bufio.Reader, output io.Writer, cfg *Config, current *UPSPolicy, scope string) *UPSPolicy {
+	if len(cfg.UPS) == 0 {
+		return current
+	}
+	if !promptBool(reader, output, "Appliquer une politique de sécurité UPS à "+scope+" ?", current != nil) {
+		return nil
+	}
+	policy := UPSPolicy{RequireOnline: true}
+	if current != nil {
+		policy = *current
+	}
+	printFieldHelp(output, "Politique de sécurité UPS")
+	printValueList(output, "UPS DISPONIBLES", sortedKeys(cfg.UPS))
+	for {
+		policy.UPS = promptDefault(reader, output, "UPS de sécurité", policy.UPS)
+		if _, ok := cfg.UPS[policy.UPS]; ok {
+			break
+		}
+		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
+	}
+	policy.RequireOnline = promptBool(reader, output, "Exiger le secteur OL avant le réveil ?", policy.RequireOnline)
+	policy.MinBattery = promptIntRange(reader, output, "Batterie minimale (%) — 0 pour désactiver", policy.MinBattery, 0, 100)
+	policy.MinRuntime = promptIntRange(reader, output, "Autonomie minimale (secondes) — 0 pour désactiver", policy.MinRuntime, 0, 7*24*60*60)
+	return &policy
 }
 
 func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, group Group) *PowerRestorePolicy {
@@ -2142,6 +2182,14 @@ func fieldHelp(label string) string {
 		return "Aide: autorise un diagnostic borné des seuls CIDR configurés. Chaque appel CLI exige encore --allow-active-scan."
 	case strings.Contains(key, "reprise automatique nut"):
 		return "Aide: après un cycle de coupure réellement observé, WoL Manager attend le retour secteur stable et le seuil batterie avant de réveiller ce groupe. Aucun ordre électrique n'est envoyé à l'UPS."
+	case strings.Contains(key, "politique de sécurité ups"):
+		return "Aide: cette protection vérifie l'état NUT avant chaque réveil. Une politique de machine remplace celle héritée du groupe; elle ne commande jamais l'onduleur."
+	case strings.Contains(key, "secteur ol"):
+		return "Aide: exige l'état NUT OL (secteur présent) avant d'autoriser le Magic Packet. Un état inconnu, OB, LB ou FSD bloque le réveil."
+	case strings.Contains(key, "batterie minimale"):
+		return "Aide: charge minimale requise avant le réveil, entre 0 et 100 %. La valeur 0 désactive ce critère sans supposer qu'une mesure absente vaut zéro."
+	case strings.Contains(key, "autonomie minimale"):
+		return "Aide: autonomie NUT battery.runtime minimale en secondes. La valeur 0 désactive ce critère; une mesure requise mais absente bloque le réveil."
 	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "logique"):
 		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
 	case strings.Contains(key, "durée") || strings.Contains(key, "intervalle"):
