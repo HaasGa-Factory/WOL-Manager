@@ -666,6 +666,20 @@ func TestGuidedUPSSafetyPolicySupportsGroupAndMachineOverride(t *testing.T) {
 			t.Fatalf("source de la politique UPS absente (%s):\n%s", expected, summary.String())
 		}
 	}
+	for _, test := range []struct {
+		id       string
+		expected []string
+	}{
+		{"one", []string{"définie pour la machine", "secteur OL non exigé", "batterie minimale 80 %", "autonomie minimale désactivée"}},
+		{"two", []string{"héritée d’un groupe", "secteur OL requis", "batterie minimale 40 %", "autonomie minimale 600 secondes"}},
+	} {
+		text := wakeSummary(cfg, test.id)
+		for _, expected := range test.expected {
+			if !strings.Contains(text, expected) {
+				t.Fatalf("détail UPS absent pour %s (%s):\n%s", test.id, expected, text)
+			}
+		}
+	}
 	for _, output := range []string{groupOutput.String(), serverOutput.String()} {
 		if !strings.Contains(output, "UPS DISPONIBLES") || !strings.Contains(output, "ne commande jamais l'onduleur") {
 			t.Fatalf("assistant UPS incomplet:\n%s", output)

@@ -893,6 +893,26 @@ func formatChecks(checks []Check) string {
 	return strings.Join(items, ",")
 }
 
+func upsPolicyDetails(cfg *Config, id string, policy *UPSPolicy) string {
+	source := "héritée d’un groupe"
+	if cfg.Servers[id].UPS != nil {
+		source = "définie pour la machine"
+	}
+	online := "secteur OL non exigé"
+	if policy.RequireOnline {
+		online = "secteur OL requis"
+	}
+	battery := "seuil batterie désactivé"
+	if policy.MinBattery > 0 {
+		battery = fmt.Sprintf("batterie minimale %d %%", policy.MinBattery)
+	}
+	runtime := "autonomie minimale désactivée"
+	if policy.MinRuntime > 0 {
+		runtime = fmt.Sprintf("autonomie minimale %d secondes", policy.MinRuntime)
+	}
+	return strings.Join([]string{source, online, battery, runtime}, ", ")
+}
+
 func wakeBehaviorRows(cfg *Config, id string) []helpRow {
 	initial, timeout, interval := cfg.effectiveVerification(id)
 	attempts, retries := cfg.effectiveVerificationAttempts(id)
@@ -941,11 +961,7 @@ func wakeBehaviorRows(cfg *Config, id string) []helpRow {
 	})
 	ups := "désactivée"
 	if policy := cfg.effectiveUPS(id); policy != nil {
-		source := "héritée d’un groupe"
-		if cfg.Servers[id].UPS != nil {
-			source = "définie pour la machine"
-		}
-		ups = fmt.Sprintf("activée via %s (%s)", policy.UPS, source)
+		ups = fmt.Sprintf("activée via %s (%s)", policy.UPS, upsPolicyDetails(cfg, id, policy))
 	}
 	return append(rows, helpRow{command: "Politique de sécurité UPS", description: ups})
 }
@@ -991,7 +1007,7 @@ func wakeSummary(cfg *Config, id string) string {
 	if policy := cfg.effectiveUPS(id); policy == nil {
 		parts = append(parts, "Aucune politique UPS ne conditionne l’envoi.")
 	} else {
-		parts = append(parts, "L’envoi restera soumis à la politique UPS "+policy.UPS+".")
+		parts = append(parts, fmt.Sprintf("L’envoi restera soumis à la politique UPS %s (%s).", policy.UPS, upsPolicyDetails(cfg, id, policy)))
 	}
 	return strings.Join(parts, " ")
 }
