@@ -26,6 +26,20 @@ type UPSStatus struct {
 	Error        string  `json:"error,omitempty"`
 }
 
+type upsRevalidationError struct{ cause error }
+
+func (e *upsRevalidationError) Error() string { return e.cause.Error() }
+func (e *upsRevalidationError) Unwrap() error { return e.cause }
+
+func upsRevalidationErrorf(format string, args ...any) error {
+	return &upsRevalidationError{cause: fmt.Errorf(format, args...)}
+}
+
+func needsUPSRevalidation(err error) bool {
+	var target *upsRevalidationError
+	return errors.As(err, &target)
+}
+
 type NUTDevice struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -267,22 +281,26 @@ func checkUPSPolicy(ctx context.Context, c *Config, id string) error {
 	}
 	s := nutStatus(ctx, p.UPS, u)
 	if s.Error != "" || s.State == "unknown" {
-		return fmt.Errorf("politique UPS invérifiable: %s", s.Error)
+		reason := s.Error
+		if reason == "" {
+			reason = "état NUT inconnu"
+		}
+		return upsRevalidationErrorf("politique UPS invérifiable: %s", reason)
 	}
 	if p.RequireOnline && s.State != "OL" {
-		return fmt.Errorf("politique UPS: secteur requis, état %s", s.State)
+		return upsRevalidationErrorf("politique UPS: secteur requis, état %s", s.State)
 	}
 	if p.MinBattery > 0 && !s.BatteryKnown {
-		return errors.New("politique UPS: mesure battery.charge absente ou invalide")
+		return upsRevalidationErrorf("politique UPS: mesure battery.charge absente ou invalide")
 	}
 	if p.MinBattery > 0 && s.Battery < float64(p.MinBattery) {
-		return fmt.Errorf("politique UPS: batterie %.0f%% < %d%%", s.Battery, p.MinBattery)
+		return upsRevalidationErrorf("politique UPS: batterie %.0f%% < %d%%", s.Battery, p.MinBattery)
 	}
 	if p.MinRuntime > 0 && !s.RuntimeKnown {
-		return errors.New("politique UPS: mesure battery.runtime absente ou invalide")
+		return upsRevalidationErrorf("politique UPS: mesure battery.runtime absente ou invalide")
 	}
 	if p.MinRuntime > 0 && s.Runtime < p.MinRuntime {
-		return fmt.Errorf("politique UPS: autonomie %ds < %ds", s.Runtime, p.MinRuntime)
+		return upsRevalidationErrorf("politique UPS: autonomie %ds < %ds", s.Runtime, p.MinRuntime)
 	}
 	return nil
 }

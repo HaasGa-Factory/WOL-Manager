@@ -1346,23 +1346,28 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
 	}
 	printInteractiveMenu(output, "SEUILS DE BATTERIE", []helpRow{
-		{command: "[1] 40 / 70 %", description: "Réarmement à 40 %, démarrage à 70 %"},
-		{command: "[2] 20 / 80 %", description: "Réarmement à 20 %, démarrage à 80 %"},
-		{command: "[3] Personnalisés", description: "Saisir les deux seuils manuellement"},
+		{command: "[1] 0 / 70 %", description: "Toute coupure observée, démarrage à 70 % (recommandé)"},
+		{command: "[2] 40 / 70 %", description: "Avancé : réarmement à 40 %, démarrage à 70 %"},
+		{command: "[3] 20 / 80 %", description: "Avancé : réarmement à 20 %, démarrage à 80 %"},
+		{command: "[4] Personnalisés", description: "Avancé : saisir les deux seuils manuellement"},
 		{command: "[?] Aide", description: "Expliquer les seuils bas et haut"},
 	})
-	low, high := 40, 70
+	low, high := defaultPowerRestoreLowBattery, defaultPowerRestoreHighBattery
 	if policy.LowBattery != nil && policy.HighBattery != nil {
 		low, high = *policy.LowBattery, *policy.HighBattery
 	}
 	thresholdsReady := false
 	for !thresholdsReady {
 		switch prompt(reader, output, "> ") {
-		case "", "1":
+		case "":
 			thresholdsReady = true
+		case "1":
+			low, high, thresholdsReady = 0, 70, true
 		case "2":
-			low, high, thresholdsReady = 20, 80, true
+			low, high, thresholdsReady = 40, 70, true
 		case "3":
+			low, high, thresholdsReady = 20, 80, true
+		case "4":
 			for {
 				low = promptIntRange(reader, output, "Seuil bas (%)", low, 0, 99)
 				high = promptIntRange(reader, output, "Seuil haut (%)", high, 1, 100)

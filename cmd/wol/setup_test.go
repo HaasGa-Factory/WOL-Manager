@@ -696,6 +696,32 @@ func TestGuidedUPSSafetyPolicySupportsGroupAndMachineOverride(t *testing.T) {
 	}
 }
 
+func TestNewPowerRestorePolicyDefaultsToAnyObservedOutage(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "main"}
+	group := cfg.Groups["core"]
+	group.Servers = []string{"one", "two"}
+	var output strings.Builder
+
+	policy := promptPowerRestore(
+		bufio.NewReader(strings.NewReader("o\nups-main\n\n\n\n\n\n\n")),
+		&output,
+		cfg,
+		group,
+	)
+	if policy == nil || policy.LowBattery == nil || policy.HighBattery == nil {
+		t.Fatalf("politique de reprise absente ou incomplète: %#v", policy)
+	}
+	if *policy.LowBattery != 0 || *policy.HighBattery != 70 {
+		t.Fatalf("seuils guidés = %d/%d, attendu 0/70", *policy.LowBattery, *policy.HighBattery)
+	}
+	for _, expected := range []string{"[1] 0 / 70 %", "Toute coupure observée", "recommandé"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("aide du défaut 0/70 absente (%s):\n%s", expected, output.String())
+		}
+	}
+}
+
 func TestWriteGlobalVerificationPreservesOtherGlobalSettings(t *testing.T) {
 	directory := testDir(t)
 	path := filepath.Join(directory, "wol.yaml")

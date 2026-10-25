@@ -118,6 +118,11 @@ type VerificationConfig struct {
 	PacketRetries *int      `yaml:"packet_retries,omitempty"`
 }
 
+const (
+	defaultPowerRestoreLowBattery  = 0
+	defaultPowerRestoreHighBattery = 70
+)
+
 type PowerRestorePolicy struct {
 	Enabled       bool     `yaml:"enabled"`
 	UPS           string   `yaml:"ups"`

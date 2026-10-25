@@ -29,59 +29,29 @@ Ces deux fonctions sont complémentaires, mais différentes :
 
 ```mermaid
 flowchart TD
-    subgraph MANUEL["RÉVEIL MANUEL"]
-        M1["Commande : wol wake --group GROUPE"]
-    end
+    P["Surveillance permanente de l'UPS"]
+    C{"Conditions automatiques satisfaites ?"}
+    W["Cycle en attente<br/>Aucun paquet envoyé"]
+    R["Reprendre uniquement les machines nécessaires"]
+    S{"Dernier contrôle UPS<br/>avant le Magic Packet"}
+    OK["Magic Packet autorisé"]
+    B["Suspendre la reprise<br/>Conserver l'état du cycle"]
+    F["Échec fonctionnel définitif"]
 
-    subgraph AUTO["REPRISE AUTOMATIQUE APRÈS COUPURE"]
-        A1{"Reprise automatique activée ?"}
-        A2["Coupure observée : OB, LB ou FSD"]
-        A3{"Batterie ≤ seuil bas,<br/>état LB/FSD ou seuil bas = 0 ?"}
-        A4["Groupe réarmé"]
-        A5["Groupe non réarmé<br/>Aucun réveil automatique pour ce cycle"]
-        A6["Le secteur revient : OL"]
-        A7["Le secteur reste stable pendant<br/>la durée configurée"]
-        A8["La batterie atteint le seuil haut"]
-        A9["WoL Manager demande automatiquement<br/>le réveil du groupe"]
-        OFF["Aucune reprise automatique"]
-
-        A1 -->|Oui| A2
-        A1 -->|Non| OFF
-        A2 --> A3
-        A3 -->|Oui| A4
-        A3 -->|Non| A5
-        A4 --> A6
-        A6 --> A7
-        A7 --> A8
-        A8 --> A9
-    end
-
-    subgraph SECURITE["VERROU DE SÉCURITÉ AVANT CHAQUE RÉVEIL"]
-        S1{"Politique UPS activée ?"}
-        S2{"UPS accessible ?"}
-        S3{"Secteur OL ?"}
-        S4{"Batterie au minimum requis ?"}
-        S5{"Autonomie suffisante ?<br/>0 = contrôle désactivé"}
-        OK["Magic Packet autorisé"]
-        STOP["Réveil bloqué<br/>Aucun paquet envoyé"]
-
-        S1 -->|Non| OK
-        S1 -->|Oui| S2
-        S2 -->|Non| STOP
-        S2 -->|Oui| S3
-        S3 -->|Non| STOP
-        S3 -->|Oui| S4
-        S4 -->|Non| STOP
-        S4 -->|Oui| S5
-        S5 -->|Non| STOP
-        S5 -->|Oui| OK
-    end
-
-    M1 --> S1
-    A9 --> S1
+    P --> C
+    C -->|Non| W
+    W -->|"Nouvelle lecture après poll_interval"| P
+    C -->|Oui| R
+    R --> S
+    S -->|UPS sûr| OK
+    S -->|"UPS inaccessible, batterie insuffisante,<br/>secteur absent ou mesure inconnue"| B
+    B -->|"Nouvelle lecture après poll_interval"| P
+    R -->|"Configuration invalide ou<br/>erreur non récupérable"| F
 ```
 
-Exemple : avec une politique UPS exigeant 70 % de batterie et une reprise automatique configurée avec un seuil bas de 40 % et un seuil haut de 70 %, la coupure réarme le cycle uniquement si la batterie atteint 40 % ou moins, ou si NUT signale `LB` ou `FSD`. Une coupure plus courte qui se termine au-dessus de 40 % ne provoque aucun réveil automatique. Configurer le seuil bas à 0 % réarme dès toute coupure observée. Après le retour du secteur stable, atteindre 70 % déclenche la demande de reprise. La politique UPS contrôle alors une dernière fois les 70 % et l'état `OL` avant d'autoriser le Magic Packet.
+Pendant une reprise automatique, un refus UPS temporaire remet le cycle en attente : aucun nouveau Magic Packet n'est envoyé et l'UPS est relu après `poll_interval`. Les groupes déjà terminés restent enregistrés et seules les machines encore nécessaires sont revalidées. Une erreur de configuration ou d'exécution non récupérable reste terminale. Pour un réveil manuel, un refus UPS termine simplement la commande en erreur ; aucune boucle automatique n'est créée.
+
+Pour toute nouvelle politique créée par l'assistant, le réglage recommandé et sélectionné par défaut est 0 % / 70 % : toute coupure observée réarme le groupe, puis la reprise attend 70 % de batterie. Les seuils bas supérieurs à 0 % restent disponibles comme réglages avancés afin d'ignorer volontairement les coupures courtes.
 
 ## Reprise automatique V1.2
 

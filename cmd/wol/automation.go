@@ -77,7 +77,7 @@ func (g *PowerGate) AllowUPS(ups string) error {
 	reason := g.blocked[ups]
 	g.mu.RUnlock()
 	if reason != "" {
-		return fmt.Errorf("réveil suspendu pour UPS %s: %s", ups, reason)
+		return upsRevalidationErrorf("réveil suspendu pour UPS %s: %s", ups, reason)
 	}
 	return nil
 }
@@ -118,7 +118,7 @@ func (c *Config) restorePlans() []restorePlan {
 			continue
 		}
 		p := group.PowerRestore
-		low, high := 40, 70
+		low, high := defaultPowerRestoreLowBattery, defaultPowerRestoreHighBattery
 		if p.LowBattery != nil {
 			low = *p.LowBattery
 		}
@@ -401,6 +401,11 @@ func (m *AutomationManager) finishCycle(ups string, plans []restorePlan, runErr 
 	} else if errors.Is(runErr, context.Canceled) {
 		cycle.State = "outage"
 		cycle.Reason = "séquence suspendue par une nouvelle coupure"
+	} else if needsUPSRevalidation(runErr) {
+		cycle.State = "waiting"
+		cycle.StableSince = nil
+		cycle.Reason = "reprise suspendue; nouvelle vérification NUT requise: " + runErr.Error()
+		m.gate.Block(ups, cycle.Reason)
 	} else {
 		cycle.State = "failed"
 		cycle.Reason = runErr.Error()
@@ -422,11 +427,35 @@ func (m *AutomationManager) runPlans(ctx context.Context, ups string, plans []re
 		engine.coordinator = coordinator
 		result, err := engine.wakeRestoreGroup(ctx, plan)
 		all = append(all, result...)
-		if err != nil && plan.FailurePolicy != "continue" && plan.FailurePolicy != "continue_retry" {
-			return all, fmt.Errorf("groupe %s: %w", plan.Group, err)
+		if err != nil {
+			if needsUPSRevalidation(err) || plan.FailurePolicy != "continue" && plan.FailurePolicy != "continue_retry" {
+				return all, fmt.Errorf("groupe %s: %w", plan.Group, err)
+			}
+			continue
+		}
+		if err := m.completePlan(ups, plan.ID); err != nil {
+			return all, err
 		}
 	}
 	return all, nil
+}
+
+func (m *AutomationManager) completePlan(ups, planID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cycle, ok := m.jobs.cycle(ups)
+	if !ok {
+		return errors.New("cycle électrique persistant introuvable")
+	}
+	if cycle.State == "outage" {
+		return context.Canceled
+	}
+	if cycle.CompletedGroups == nil {
+		cycle.CompletedGroups = map[string]bool{}
+	}
+	cycle.CompletedGroups[planID] = true
+	cycle.UpdatedAt = m.now()
+	return m.saveCycle(cycle)
 }
 
 func (m *AutomationManager) updateProgress(ups string, plan restorePlan, current, total int) error {

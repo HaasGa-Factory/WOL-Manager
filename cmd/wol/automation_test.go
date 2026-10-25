@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -38,6 +40,22 @@ func automationManagerForTest(t *testing.T, cfg *Config) (*AutomationManager, *J
 	}
 	manager := newAutomationManager(cfg, jobs, &Engine{cfg: cfg, audit: &Auditor{}})
 	return manager, jobs
+}
+
+func TestPowerRestoreDefaultsArmOnAnyObservedOutage(t *testing.T) {
+	cfg := testConfig(t)
+	group := cfg.Groups["core"]
+	group.PowerRestore = &PowerRestorePolicy{Enabled: true, UPS: "ups-main"}
+	cfg.Groups["core"] = group
+	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "main"}
+
+	plans := cfg.restorePlans()
+	if len(plans) != 1 {
+		t.Fatalf("une politique attendue, obtenu %#v", plans)
+	}
+	if plans[0].LowBattery != 0 || plans[0].HighBattery != 70 {
+		t.Fatalf("seuils par défaut = %d/%d, attendu 0/70", plans[0].LowBattery, plans[0].HighBattery)
+	}
 }
 
 func TestPowerRestoreThresholdsAndStablePower(t *testing.T) {
@@ -80,6 +98,86 @@ func TestPowerRestoreRequiresRecordedOutageAndKnownBattery(t *testing.T) {
 	cycle := PowerCycle{UPS: "ups-main", State: "waiting", StableSince: &stable, ArmedGroups: map[string]bool{"group.core": true}, CompletedGroups: map[string]bool{}}
 	if ready := manager.readyPlans(cycle, manager.plansForUPS("ups-main"), UPSStatus{State: "OL"}, now); len(ready) != 0 {
 		t.Fatal("batterie absente interprétée comme une mesure fiable")
+	}
+}
+
+func TestUPSSafetyBlockReturnsAutomaticCycleToWaiting(t *testing.T) {
+	cfg := automationConfig(t)
+	manager, jobs := automationManagerForTest(t, cfg)
+	now := time.Now().UTC()
+	stable := now.Add(-time.Minute)
+	cycle := PowerCycle{
+		UPS:             "ups-main",
+		State:           "running",
+		StableSince:     &stable,
+		ArmedGroups:     map[string]bool{"group.core": true},
+		CompletedGroups: map[string]bool{},
+	}
+	if err := jobs.setCycle(cycle); err != nil {
+		t.Fatal(err)
+	}
+	plans := manager.plansForUPS("ups-main")
+	err := fmt.Errorf("groupe core: %w", upsRevalidationErrorf("politique UPS: batterie 60%% < 70%%"))
+	if err := manager.finishCycle("ups-main", plans, err); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, _ := jobs.cycle("ups-main")
+	if stored.State != "waiting" || stored.StableSince != nil {
+		t.Fatalf("blocage UPS devenu terminal: %#v", stored)
+	}
+	if !strings.Contains(stored.Reason, "nouvelle vérification NUT") {
+		t.Fatalf("raison de revalidation absente: %q", stored.Reason)
+	}
+	if err := manager.gate.AllowUPS("ups-main"); !needsUPSRevalidation(err) {
+		t.Fatalf("verrou UPS non conservé: %v", err)
+	}
+
+	manager.handleStatus("ups-main", UPSStatus{State: "OL", Battery: 70, BatteryKnown: true}, now)
+	stored, _ = jobs.cycle("ups-main")
+	if stored.State != "waiting" || stored.StableSince == nil {
+		t.Fatalf("cycle non remis en surveillance: %#v", stored)
+	}
+	if ready := manager.readyPlans(stored, plans, UPSStatus{State: "OL", Battery: 70, BatteryKnown: true}, now.Add(31*time.Second)); len(ready) != 1 {
+		t.Fatalf("cycle non reprenable après revalidation: %#v", ready)
+	}
+}
+
+func TestPermanentRestoreErrorRemainsFailed(t *testing.T) {
+	cfg := automationConfig(t)
+	manager, jobs := automationManagerForTest(t, cfg)
+	if err := jobs.setCycle(PowerCycle{
+		UPS:             "ups-main",
+		State:           "running",
+		ArmedGroups:     map[string]bool{"group.core": true},
+		CompletedGroups: map[string]bool{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.finishCycle("ups-main", manager.plansForUPS("ups-main"), fmt.Errorf("configuration invalide")); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := jobs.cycle("ups-main")
+	if stored.State != "failed" {
+		t.Fatalf("erreur permanente rendue récupérable: %#v", stored)
+	}
+}
+
+func TestCompletedPlanSurvivesUPSSafetyRevalidation(t *testing.T) {
+	cfg := automationConfig(t)
+	manager, jobs := automationManagerForTest(t, cfg)
+	if err := jobs.setCycle(PowerCycle{UPS: "ups-main", State: "running", ArmedGroups: map[string]bool{"group.core": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.completePlan("ups-main", "group.core"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.finishCycle("ups-main", manager.plansForUPS("ups-main"), upsRevalidationErrorf("UPS temporairement indisponible")); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := jobs.cycle("ups-main")
+	if !stored.CompletedGroups["group.core"] || stored.State != "waiting" {
+		t.Fatalf("progression perdue pendant la revalidation: %#v", stored)
 	}
 }
 
