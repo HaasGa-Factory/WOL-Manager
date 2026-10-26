@@ -913,6 +913,83 @@ func upsPolicyDetails(cfg *Config, id string, policy *UPSPolicy) string {
 	return strings.Join([]string{source, online, battery, runtime}, ", ")
 }
 
+func printSetupExplanation(output io.Writer, title string, paragraphs ...string) {
+	printInteractiveViewHeader(output, title)
+	renderHelpSection(output, helpSection{title: "DESCRIPTION", text: paragraphs}, helpRenderOptions{mode: outputColorMode(output), width: clampWidth(outputWidth(output))})
+}
+
+func printUPSSafetySummary(output io.Writer, cfg *Config, policy UPSPolicy) {
+	online := "non exigé"
+	if policy.RequireOnline {
+		online = "obligatoire"
+	}
+	battery := "non contrôlée"
+	if policy.MinBattery > 0 {
+		battery = fmt.Sprintf("%d %%", policy.MinBattery)
+	}
+	runtime := "non contrôlée"
+	if policy.MinRuntime > 0 {
+		runtime = frenchDuration(time.Duration(policy.MinRuntime) * time.Second)
+	}
+	printInformationBlock(output, "PROTECTION AVANT CHAQUE MAGIC PACKET", []helpRow{
+		{command: "UPS consulté", description: policy.UPS},
+		{command: "Serveur NUT", description: cfg.UPS[policy.UPS].Address},
+		{command: "Secteur présent OL", description: online},
+		{command: "Charge minimale", description: battery},
+		{command: "Autonomie minimale", description: runtime},
+	})
+	checks := []string{"que le serveur NUT est accessible"}
+	if policy.RequireOnline {
+		checks = append(checks, "que le secteur est présent")
+	}
+	if policy.MinBattery > 0 {
+		checks = append(checks, fmt.Sprintf("que la batterie atteint au moins %d %%", policy.MinBattery))
+	}
+	if policy.MinRuntime > 0 {
+		checks = append(checks, "que l’autonomie estimée atteint au moins "+frenchDuration(time.Duration(policy.MinRuntime)*time.Second))
+	}
+	renderHelpSection(output, helpSection{title: "EN PRATIQUE", text: []string{"Avant chaque Magic Packet, WoL Manager vérifiera " + strings.Join(checks, ", ") + ". Si une condition n’est pas respectée, aucun paquet ne sera envoyé."}}, helpRenderOptions{mode: outputColorMode(output), width: clampWidth(outputWidth(output))})
+}
+
+func printPowerRestoreSummary(output io.Writer, policy PowerRestorePolicy) {
+	low, high := defaultPowerRestoreLowBattery, defaultPowerRestoreHighBattery
+	if policy.LowBattery != nil {
+		low = *policy.LowBattery
+	}
+	if policy.HighBattery != nil {
+		high = *policy.HighBattery
+	}
+	rearm := "après toute coupure OB, LB ou FSD"
+	if low > 0 {
+		rearm = fmt.Sprintf("à %d %% ou sur état LB/FSD", low)
+	}
+	mode := "séquentiel"
+	if policy.Mode == "parallel" {
+		mode = "parallèle"
+	}
+	failure := map[string]string{
+		"stop":           "arrêter la séquence",
+		"continue":       "continuer les machines indépendantes",
+		"retry":          "retenter la machine en échec",
+		"continue_retry": "continuer et retenter en parallèle",
+	}[policy.FailurePolicy]
+	printInformationBlock(output, "REPRISE AUTOMATIQUE APRÈS COUPURE", []helpRow{
+		{command: "UPS surveillé", description: policy.UPS},
+		{command: "Coupure reconnue", description: "OB, LB ou FSD"},
+		{command: "Réarmement", description: rearm},
+		{command: "Charge de démarrage", description: fmt.Sprintf("%d %%", high)},
+		{command: "Stabilité du secteur", description: frenchDuration(policy.StableFor.Value(30 * time.Second))},
+		{command: "Vérification NUT", description: "toutes les " + frenchDuration(policy.PollInterval.Value(5*time.Second))},
+		{command: "Mode de démarrage", description: mode},
+		{command: "En cas d’échec", description: failure},
+	})
+	rearmText := "Toute coupure réellement observée préparera la reprise."
+	if low > 0 {
+		rearmText = fmt.Sprintf("Une coupure courte sera ignorée si la batterie ne descend pas à %d %%, sauf état LB ou FSD.", low)
+	}
+	renderHelpSection(output, helpSection{title: "EN PRATIQUE", text: []string{fmt.Sprintf("%s Après le retour du secteur OL, WoL Manager attendra %s de stabilité et une charge d’au moins %d %% avant de commencer la reprise. Les protections configurées seront revérifiées avant chaque Magic Packet.", rearmText, frenchDuration(policy.StableFor.Value(30*time.Second)), high)}}, helpRenderOptions{mode: outputColorMode(output), width: clampWidth(outputWidth(output))})
+}
+
 func wakeBehaviorRows(cfg *Config, id string) []helpRow {
 	initial, timeout, interval := cfg.effectiveVerification(id)
 	attempts, retries := cfg.effectiveVerificationAttempts(id)
@@ -1299,6 +1376,11 @@ func promptUPSSafetyPolicy(reader *bufio.Reader, output io.Writer, cfg *Config, 
 	if len(cfg.UPS) == 0 {
 		return current
 	}
+	printSetupExplanation(output, "SÉCURITÉ AVANT RÉVEIL",
+		"Cette politique est vérifiée juste avant chaque envoi de Magic Packet.",
+		"Si une condition exigée n’est pas respectée, aucun paquet n’est envoyé. Elle protège les réveils manuels et automatiques.",
+		"Elle ne détecte pas les coupures : la reprise après coupure est configurée séparément.",
+	)
 	if !promptBool(reader, output, "Appliquer une politique de sécurité UPS à "+scope+" ?", current != nil) {
 		return nil
 	}
@@ -1315,9 +1397,10 @@ func promptUPSSafetyPolicy(reader *bufio.Reader, output io.Writer, cfg *Config, 
 		}
 		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
 	}
-	policy.RequireOnline = promptBool(reader, output, "Exiger le secteur OL avant le réveil ?", policy.RequireOnline)
-	policy.MinBattery = promptIntRange(reader, output, "Batterie minimale (%) — 0 pour désactiver", policy.MinBattery, 0, 100)
-	policy.MinRuntime = promptIntRange(reader, output, "Autonomie minimale (secondes) — 0 pour désactiver", policy.MinRuntime, 0, 7*24*60*60)
+	policy.RequireOnline = promptBool(reader, output, "Exiger que le secteur soit présent avant le réveil ?", policy.RequireOnline)
+	policy.MinBattery = promptIntRange(reader, output, "Charge minimale avant chaque Magic Packet (%) — 0 = ne pas contrôler", policy.MinBattery, 0, 100)
+	policy.MinRuntime = promptIntRange(reader, output, "Autonomie minimale avant chaque Magic Packet (secondes) — 0 = ne pas contrôler", policy.MinRuntime, 0, 7*24*60*60)
+	printUPSSafetySummary(output, cfg, policy)
 	return &policy
 }
 
@@ -1326,11 +1409,15 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		fmt.Fprintln(output, "Reprise automatique indisponible: aucun UPS NUT configuré.")
 		return group.PowerRestore
 	}
+	printSetupExplanation(output, "REPRISE AUTOMATIQUE APRÈS COUPURE",
+		"Cette fonction surveille l’état NUT de l’onduleur.",
+		"Une coupure est enregistrée uniquement lorsque NUT annonce OB, LB ou FSD. Un serveur NUT inaccessible correspond à un état inconnu, pas à une coupure confirmée.",
+		"Après le retour du secteur OL, WoL Manager attend la stabilité configurée et la charge de démarrage avant de reprendre uniquement les machines nécessaires.",
+	)
 	enabled := group.PowerRestore != nil && group.PowerRestore.Enabled
 	if !promptBool(reader, output, "Activer la reprise automatique NUT pour ce groupe ?", enabled) {
 		return nil
 	}
-	printFieldHelp(output, "Reprise automatique NUT")
 	fmt.Fprintln(output, "Le mode sequential attend chaque machine et ses dépendances; parallel autorise les machines indépendantes sans contourner leurs prérequis.")
 	policy := PowerRestorePolicy{Enabled: true, Mode: "sequential", FailurePolicy: "stop"}
 	if group.PowerRestore != nil {
@@ -1345,12 +1432,12 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		}
 		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
 	}
-	printInteractiveMenu(output, "SEUILS DE BATTERIE", []helpRow{
-		{command: "[1] 0 / 70 %", description: "Toute coupure observée, démarrage à 70 % (recommandé)"},
-		{command: "[2] 40 / 70 %", description: "Avancé : réarmement à 40 %, démarrage à 70 %"},
-		{command: "[3] 20 / 80 %", description: "Avancé : réarmement à 20 %, démarrage à 80 %"},
+	printInteractiveMenu(output, "RÉARMEMENT ET CHARGE DE DÉMARRAGE", []helpRow{
+		{command: "[1] Toute coupure", description: "Réarmer sur OB, LB ou FSD; reprendre à 70 % (recommandé)"},
+		{command: "[2] 40 / 70 %", description: "Avancé : réarmer à 40 %, reprendre à 70 %"},
+		{command: "[3] 20 / 80 %", description: "Avancé : réarmer à 20 %, reprendre à 80 %"},
 		{command: "[4] Personnalisés", description: "Avancé : saisir les deux seuils manuellement"},
-		{command: "[?] Aide", description: "Expliquer les seuils bas et haut"},
+		{command: "[?] Aide", description: "Expliquer le réarmement et la charge de démarrage"},
 	})
 	low, high := defaultPowerRestoreLowBattery, defaultPowerRestoreHighBattery
 	if policy.LowBattery != nil && policy.HighBattery != nil {
@@ -1369,8 +1456,8 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 			low, high, thresholdsReady = 20, 80, true
 		case "4":
 			for {
-				low = promptIntRange(reader, output, "Seuil bas (%)", low, 0, 99)
-				high = promptIntRange(reader, output, "Seuil haut (%)", high, 1, 100)
+				low = promptIntRange(reader, output, "Seuil avancé de réarmement (%)", low, 0, 99)
+				high = promptIntRange(reader, output, "Charge minimale pour commencer la reprise (%)", high, 1, 100)
 				if high > low {
 					break
 				}
@@ -1429,6 +1516,7 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 			fmt.Fprintln(output, "Intervalle invalide. Utilisez 30s, 2m ou 1m30s.")
 		}
 	}
+	printPowerRestoreSummary(output, policy)
 	return &policy
 }
 
@@ -2173,12 +2261,12 @@ func fieldHelp(label string) string {
 		return "Aide: nombre de reprises après un échec de serveur. 0 désactive effectivement retry; une nouvelle politique retry propose 3 par défaut."
 	case strings.Contains(key, "intervalle entre tentatives"):
 		return "Aide: pause entre deux reprises après échec, par exemple 30s, 2m ou 1m30s."
-	case strings.Contains(key, "seuil bas"):
-		return "Aide: niveau de batterie qui réarme la surveillance après une coupure observée; il doit rester inférieur au seuil haut."
+	case strings.Contains(key, "seuil bas") || strings.Contains(key, "seuil avancé de réarmement"):
+		return "Aide: réglage avancé. Le groupe est réarmé si la batterie atteint ce niveau pendant une coupure; les états LB et FSD le réarment toujours. La valeur 0 signifie que toute coupure OB, LB ou FSD est retenue."
 	case strings.Contains(key, "seuils batterie"):
-		return "Aide: le seuil bas réarme la surveillance; le seuil haut, strictement supérieur, autorise le démarrage lorsque le secteur est stable."
-	case strings.Contains(key, "seuil haut"):
-		return "Aide: niveau minimal de batterie autorisant le réveil après retour stable du secteur; il doit dépasser le seuil bas."
+		return "Aide: le réarmement décide si une coupure doit préparer une reprise. Le choix recommandé retient toute coupure OB, LB ou FSD. La charge de démarrage est le niveau minimal attendu après le retour stable du secteur."
+	case strings.Contains(key, "seuil haut") || strings.Contains(key, "charge minimale pour commencer"):
+		return "Aide: charge minimale autorisant le réveil automatique après le retour stable du secteur; elle doit dépasser le seuil avancé de réarmement."
 	case strings.Contains(key, "stabilité secteur"):
 		return "Aide: durée pendant laquelle l'état OL doit rester stable avant tout nouveau réveil, par exemple 30s ou 5m."
 	case strings.Contains(key, "fréquence nut"):
@@ -2202,15 +2290,15 @@ func fieldHelp(label string) string {
 	case strings.Contains(key, "découverte active"):
 		return "Aide: autorise un diagnostic borné des seuls CIDR configurés. Chaque appel CLI exige encore --allow-active-scan."
 	case strings.Contains(key, "reprise automatique nut"):
-		return "Aide: après un cycle de coupure réellement observé, WoL Manager attend le retour secteur stable et le seuil batterie avant de réveiller ce groupe. Aucun ordre électrique n'est envoyé à l'UPS."
+		return "Aide: après une coupure OB, LB ou FSD réellement observée, WoL Manager attend le retour du secteur OL, sa stabilité et la charge de démarrage avant de réveiller ce groupe. Un serveur NUT inaccessible n'est pas considéré comme une coupure confirmée."
 	case strings.Contains(key, "politique de sécurité ups"):
-		return "Aide: cette protection vérifie l'état NUT avant chaque réveil. Une politique de machine remplace celle héritée du groupe; elle ne commande jamais l'onduleur."
-	case strings.Contains(key, "secteur ol"):
+		return "Aide: cette protection vérifie l'état NUT avant chaque réveil. Une politique définie pour une machine remplace celle héritée de son groupe."
+	case strings.Contains(key, "secteur ol") || strings.Contains(key, "secteur soit présent"):
 		return "Aide: exige l'état NUT OL (secteur présent) avant d'autoriser le Magic Packet. Un état inconnu, OB, LB ou FSD bloque le réveil."
-	case strings.Contains(key, "batterie minimale"):
-		return "Aide: charge minimale requise avant le réveil, entre 0 et 100 %. La valeur 0 désactive ce critère sans supposer qu'une mesure absente vaut zéro."
+	case strings.Contains(key, "batterie minimale") || strings.Contains(key, "charge minimale avant chaque"):
+		return "Aide: charge vérifiée juste avant chaque Magic Packet. Par exemple, 70 bloque le réveil sous 70 %. La valeur 0 ignore cette mesure; si un seuil est exigé mais que battery.charge est absente, le réveil est bloqué."
 	case strings.Contains(key, "autonomie minimale"):
-		return "Aide: durée minimale pendant laquelle l’onduleur estime pouvoir encore alimenter les appareils en cas de coupure. Exemple : 600 exige au moins 10 minutes d’autonomie avant d’autoriser le réveil. Saisissez 0 pour ignorer cette mesure. Si une valeur est exigée mais que l’onduleur ne fournit pas l’estimation, le réveil sera bloqué."
+		return "Aide: estimation de la durée pendant laquelle l’onduleur peut encore alimenter les appareils, vérifiée juste avant chaque Magic Packet. Exemple : 600 exige au moins 10 minutes d’autonomie. Saisissez 0 pour ignorer cette mesure; si une valeur est exigée mais que battery.runtime est absente, le réveil est bloqué."
 	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "logique"):
 		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
 	case strings.Contains(key, "durée") || strings.Contains(key, "intervalle"):

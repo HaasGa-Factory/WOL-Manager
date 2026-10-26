@@ -559,6 +559,9 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			id, ok := selectMenuServer(r, os.Stdout, c)
 			if !ok {
 				fmt.Println("Simulation annulée: aucune machine sélectionnée.")
+				if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+					return nil
+				}
 				continue
 			}
 			dryEngine := &Engine{cfg: c, audit: e.audit, dry: true, noWait: true}
@@ -572,10 +575,16 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 					printWakeResults(os.Stdout, v)
 				}
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+				return nil
+			}
 		case "8":
 			id, ok := selectMenuServer(r, os.Stdout, c)
 			if !ok {
 				fmt.Println("Réveil annulé: aucune machine sélectionnée.")
+				if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+					return nil
+				}
 				continue
 			}
 			if _, disabled := c.effectiveCheckPolicy(id); disabled {
@@ -588,6 +597,9 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			fmt.Printf("État courant de %s: %s\n", id, status.State)
 			if !confirmPrompt(r, os.Stdout, "Envoyer réellement un paquet WoL à "+id+" ?") {
 				fmt.Println("Réveil annulé.")
+				if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+					return nil
+				}
 				continue
 			}
 			v, err := e.wakeTree(context.Background(), id, map[string]bool{})
@@ -599,6 +611,9 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 				} else {
 					printWakeResults(os.Stdout, v)
 				}
+			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+				return nil
 			}
 		case "9":
 			printInteractiveViewHeader(os.Stdout, "AUTOMATISMES")

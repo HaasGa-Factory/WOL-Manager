@@ -427,7 +427,7 @@ func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 		"Mode (sequential=un par un)":              {"indépendantes en parallèle"},
 		"Échec (stop/continue/retry)":              {"stop bloque", "continue_retry"},
 		"Limite maximale de paquets":               {"plafond de paquets"},
-		"Activer la reprise automatique NUT":       {"cycle de coupure", "Aucun ordre électrique"},
+		"Activer la reprise automatique NUT":       {"OB, LB ou FSD", "inaccessible", "pas considéré comme une coupure"},
 	}
 	for label, fragments := range cases {
 		help := fieldHelp(label)
@@ -690,8 +690,15 @@ func TestGuidedUPSSafetyPolicySupportsGroupAndMachineOverride(t *testing.T) {
 		}
 	}
 	for _, output := range []string{groupOutput.String(), serverOutput.String()} {
-		if !strings.Contains(output, "UPS DISPONIBLES") || !strings.Contains(output, "ne commande jamais l'onduleur") {
-			t.Fatalf("assistant UPS incomplet:\n%s", output)
+		for _, expected := range []string{"SÉCURITÉ AVANT RÉVEIL", "juste avant chaque envoi", "ne détecte pas les coupures", "UPS DISPONIBLES", "PROTECTION AVANT CHAQUE MAGIC PACKET", "Serveur NUT", "EN PRATIQUE"} {
+			if !strings.Contains(output, expected) {
+				t.Fatalf("assistant UPS incomplet (%s):\n%s", expected, output)
+			}
+		}
+		for _, unexpected := range []string{"Commande électrique", "commande électrique", "ordre électrique"} {
+			if strings.Contains(output, unexpected) {
+				t.Fatalf("mention UPS inutile conservée (%s):\n%s", unexpected, output)
+			}
 		}
 	}
 }
@@ -715,10 +722,13 @@ func TestNewPowerRestorePolicyDefaultsToAnyObservedOutage(t *testing.T) {
 	if *policy.LowBattery != 0 || *policy.HighBattery != 70 {
 		t.Fatalf("seuils guidés = %d/%d, attendu 0/70", *policy.LowBattery, *policy.HighBattery)
 	}
-	for _, expected := range []string{"[1] 0 / 70 %", "Toute coupure observée", "recommandé"} {
+	for _, expected := range []string{"REPRISE AUTOMATIQUE APRÈS COUPURE", "OB, LB ou FSD", "inaccessible", "[1] Toute coupure", "reprendre à 70 %", "recommandé", "Charge de démarrage", "Vérification NUT", "EN PRATIQUE"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("aide du défaut 0/70 absente (%s):\n%s", expected, output.String())
 		}
+	}
+	if strings.Contains(output.String(), "ordre électrique") || strings.Contains(output.String(), "Commande électrique") {
+		t.Fatalf("mention UPS inutile conservée:\n%s", output.String())
 	}
 }
 

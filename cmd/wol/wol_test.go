@@ -395,6 +395,52 @@ func TestRedirectedMenuPrintsOneViewWithoutRedrawingMainMenu(t *testing.T) {
 	}
 }
 
+func TestRedirectedMenuWakeWithoutMachineDoesNotRedraw(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Servers = map[string]Server{}
+	for _, choice := range []string{"7", "8"} {
+		t.Run(choice, func(t *testing.T) {
+			inputReader, inputWriter, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			outputReader, outputWriter, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldInput, oldOutput := os.Stdin, os.Stdout
+			os.Stdin, os.Stdout = inputReader, outputWriter
+			t.Cleanup(func() {
+				os.Stdin, os.Stdout = oldInput, oldOutput
+				_ = inputReader.Close()
+				_ = outputReader.Close()
+			})
+			if _, err := inputWriter.WriteString(choice + "\n"); err != nil {
+				t.Fatal(err)
+			}
+			_ = inputWriter.Close()
+			if err := menu("", cfg, &Engine{cfg: cfg, audit: &Auditor{}}, false); err != nil {
+				t.Fatal(err)
+			}
+			_ = outputWriter.Close()
+			text, err := io.ReadAll(outputReader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plain := string(text)
+			if strings.Count(plain, "WoL Manager — MENU PRINCIPAL") != 1 {
+				t.Fatalf("le menu principal ne doit pas être réaffiché:\n%s", plain)
+			}
+			if !strings.Contains(plain, "Aucune machine configurée.") || !strings.Contains(plain, "aucune machine sélectionnée") {
+				t.Fatalf("le résultat d'annulation est incomplet:\n%s", plain)
+			}
+			if strings.Contains(plain, "Appuyez sur Entrée") {
+				t.Fatalf("une sortie redirigée ne doit pas attendre:\n%s", plain)
+			}
+		})
+	}
+}
+
 func TestDisabledChecksReturnUnknownImmediately(t *testing.T) {
 	cfg := testConfig(t)
 	server := cfg.Servers["two"]
