@@ -66,14 +66,15 @@ Deux groupes ne peuvent pas partager la même priorité. Cette règle rend les s
 
 ## Sécurité UPS avant réveil
 
-Les assistants `sudo wol config group` et `sudo wol config machine` permettent d'appliquer une
-politique NUT avant chaque réveil. Elle peut exiger le secteur `OL`, une charge minimale et une
+L'assistant `sudo wol config group` permet d'appliquer une politique NUT avant chaque réveil des
+machines du groupe. Elle peut exiger le secteur `OL`, une charge minimale et une
 autonomie minimale. Une mesure requise mais absente ou un état inconnu bloque le Magic Packet au
 lieu d'être interprété comme une valeur sûre.
 
-Une politique de groupe est héritée par ses machines. Une politique définie directement sur une
-machine la remplace. Ce contrôle `ups_policy` reste distinct de `power_restore` : le premier protège
-chaque réveil, tandis que le second orchestre la reprise d'un groupe après une coupure observée.
+Une machine seule peut être placée dans un groupe dédié. Si une machine appartient à plusieurs
+groupes, leurs politiques UPS doivent être identiques afin d'éviter toute ambiguïté. Ce contrôle
+`ups_policy` reste distinct de `power_restore` : le premier protège chaque réveil, tandis que le
+second orchestre la reprise d'un groupe après une coupure observée.
 
 ## Reprise automatique après coupure
 

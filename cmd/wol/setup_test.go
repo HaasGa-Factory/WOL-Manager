@@ -440,11 +440,38 @@ func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 }
 
 func TestFieldHelpExplainsUPSRuntime(t *testing.T) {
-	help := fieldHelp("Autonomie minimale (secondes) — 0 pour désactiver")
-	for _, expected := range []string{"alimenter", "600", "10 minutes", "Saisissez 0", "estimation", "bloqué"} {
+	help := fieldHelp("Autonomie minimale — 0 pour désactiver")
+	for _, expected := range []string{"alimenter", "30m", "nombre seul en secondes", "0 ignore", "estimation", "bloqué"} {
 		if !strings.Contains(help, expected) {
 			t.Errorf("aide autonomie UPS sans %q: %s", expected, help)
 		}
+	}
+}
+
+func TestPromptDurationSecondsRangeAcceptsReadableAndLegacyValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		current int
+		want    int
+	}{
+		{name: "minutes", input: "30m\n", want: 1800},
+		{name: "combined", input: "1h30m\n", want: 5400},
+		{name: "legacy seconds", input: "1800\n", want: 1800},
+		{name: "keep current", input: "\n", current: 600, want: 600},
+		{name: "invalid then valid", input: "demain\n10m\n", want: 600},
+		{name: "help then duration", input: "?\n30m\n", want: 1800},
+		{name: "too precise then valid", input: "500ms\n30m\n", want: 1800},
+		{name: "too long then valid", input: "8d\n30m\n", want: 1800},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output strings.Builder
+			got := promptDurationSecondsRange(bufio.NewReader(strings.NewReader(test.input)), &output, "Autonomie minimale", test.current, 7*24*time.Hour)
+			if got != test.want {
+				t.Fatalf("durée convertie = %d, attendu %d; sortie:\n%s", got, test.want, output.String())
+			}
+		})
 	}
 }
 
@@ -633,35 +660,24 @@ func TestConfigSummaryKeepsMachineListCompact(t *testing.T) {
 	}
 }
 
-func TestGuidedUPSSafetyPolicySupportsGroupAndMachineOverride(t *testing.T) {
+func TestGuidedUPSSafetyPolicyIsInheritedFromGroup(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "ups"}
 
 	group := cfg.Groups["core"]
 	group.Servers = []string{"one", "two"}
-	var groupOutput strings.Builder
+	var output strings.Builder
 	group.UPS = promptUPSSafetyPolicy(
-		bufio.NewReader(strings.NewReader("o\nups-main\n\n40\n600\n")),
-		&groupOutput, cfg, group.UPS, "ce groupe",
+		bufio.NewReader(strings.NewReader("o\nups-main\n\n40\n30m\n")),
+		&output, cfg, group.UPS, "ce groupe",
 	)
 	cfg.Groups["core"] = group
 
-	inherited := cfg.effectiveUPS("two")
-	if inherited == nil || inherited.UPS != "ups-main" || !inherited.RequireOnline || inherited.MinBattery != 40 || inherited.MinRuntime != 600 {
-		t.Fatalf("politique de groupe non héritée: %#v", inherited)
-	}
-
-	server := cfg.Servers["one"]
-	var serverOutput strings.Builder
-	server.UPS = promptUPSSafetyPolicy(
-		bufio.NewReader(strings.NewReader("o\nups-main\nn\n80\n0\n")),
-		&serverOutput, cfg, server.UPS, "cette machine",
-	)
-	cfg.Servers["one"] = server
-
-	direct := cfg.effectiveUPS("one")
-	if direct == nil || direct.UPS != "ups-main" || direct.RequireOnline || direct.MinBattery != 80 || direct.MinRuntime != 0 {
-		t.Fatalf("surcharge machine incorrecte: %#v", direct)
+	for _, id := range []string{"one", "two"} {
+		inherited := cfg.effectiveUPS(id)
+		if inherited == nil || inherited.UPS != "ups-main" || !inherited.RequireOnline || inherited.MinBattery != 40 || inherited.MinRuntime != 1800 {
+			t.Fatalf("politique de groupe non héritée par %s: %#v", id, inherited)
+		}
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("configuration UPS guidée invalide: %v", err)
@@ -670,36 +686,78 @@ func TestGuidedUPSSafetyPolicySupportsGroupAndMachineOverride(t *testing.T) {
 	var summary strings.Builder
 	showServerSummary(&summary, cfg, "one")
 	showServerSummary(&summary, cfg, "two")
-	for _, expected := range []string{"définie pour la machine", "héritée d’un groupe"} {
+	for _, expected := range []string{"héritée d’un groupe", "secteur OL requis", "batterie minimale 40 %", "autonomie minimale 1800 secondes"} {
 		if !strings.Contains(summary.String(), expected) {
-			t.Fatalf("source de la politique UPS absente (%s):\n%s", expected, summary.String())
+			t.Fatalf("politique UPS de groupe absente (%s):\n%s", expected, summary.String())
 		}
 	}
-	for _, test := range []struct {
-		id       string
-		expected []string
-	}{
-		{"one", []string{"définie pour la machine", "secteur OL non exigé", "batterie minimale 80 %", "autonomie minimale désactivée"}},
-		{"two", []string{"héritée d’un groupe", "secteur OL requis", "batterie minimale 40 %", "autonomie minimale 600 secondes"}},
-	} {
-		text := wakeSummary(cfg, test.id)
-		for _, expected := range test.expected {
-			if !strings.Contains(text, expected) {
-				t.Fatalf("détail UPS absent pour %s (%s):\n%s", test.id, expected, text)
-			}
+	for _, expected := range []string{"SÉCURITÉ AVANT RÉVEIL", "juste avant chaque envoi", "ne détecte pas les coupures", "UPS DISPONIBLES", "PROTECTION AVANT CHAQUE MAGIC PACKET", "Serveur NUT", "EN PRATIQUE"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("assistant UPS incomplet (%s):\n%s", expected, output.String())
 		}
 	}
-	for _, output := range []string{groupOutput.String(), serverOutput.String()} {
-		for _, expected := range []string{"SÉCURITÉ AVANT RÉVEIL", "juste avant chaque envoi", "ne détecte pas les coupures", "UPS DISPONIBLES", "PROTECTION AVANT CHAQUE MAGIC PACKET", "Serveur NUT", "EN PRATIQUE"} {
-			if !strings.Contains(output, expected) {
-				t.Fatalf("assistant UPS incomplet (%s):\n%s", expected, output)
-			}
+	for _, unexpected := range []string{"Commande électrique", "commande électrique", "ordre électrique"} {
+		if strings.Contains(output.String(), unexpected) {
+			t.Fatalf("mention UPS inutile conservée (%s):\n%s", unexpected, output.String())
 		}
-		for _, unexpected := range []string{"Commande électrique", "commande électrique", "ordre électrique"} {
-			if strings.Contains(output, unexpected) {
-				t.Fatalf("mention UPS inutile conservée (%s):\n%s", unexpected, output)
-			}
-		}
+	}
+}
+
+func TestDifferentGroupUPSPoliciesForSameMachineAreRejected(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "ups"}
+	first := cfg.Groups["core"]
+	first.UPS = &UPSPolicy{UPS: "ups-main", RequireOnline: true, MinBattery: 40}
+	cfg.Groups["core"] = first
+	cfg.Groups["other"] = Group{
+		Priority: 20,
+		Servers:  []string{"one"},
+		UPS:      &UPSPolicy{UPS: "ups-main", RequireOnline: true, MinBattery: 70},
+	}
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "plusieurs groupes définissent des politiques UPS différentes") {
+		t.Fatalf("conflit de politiques UPS non refusé: %v", err)
+	}
+
+	second := cfg.Groups["other"]
+	second.UPS = &UPSPolicy{UPS: "ups-main", RequireOnline: true, MinBattery: 40}
+	cfg.Groups["other"] = second
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("politiques UPS identiques refusées: %v", err)
+	}
+	policy := cfg.effectiveUPS("one")
+	if policy == nil || policy.MinBattery != 40 {
+		t.Fatalf("politique UPS de groupe non résolue: %#v", policy)
+	}
+}
+
+func TestMachineUPSPolicyIsNotPartOfTheConfigurationSchema(t *testing.T) {
+	data := `version: 1
+networks:
+  lan:
+    cidr: 192.168.1.0/24
+    allow_unicast: true
+groups: {}
+servers:
+  one:
+    name: One
+    mac: "02:00:00:00:00:01"
+    ip: 192.168.1.10
+    network: lan
+    ups_policy:
+      ups: ups-main
+      require_online: true
+ups:
+  ups-main:
+    address: 127.0.0.1:3493
+    name: main
+relays: {}
+automations: []
+`
+	_, err := loadConfigData([]byte(data))
+	if err == nil || !strings.Contains(err.Error(), "field ups_policy not found") {
+		t.Fatalf("ups_policy a été accepté sur une machine: %v", err)
 	}
 }
 

@@ -24,8 +24,11 @@ Pour un serveur NUT distant, activer `tls: true` : le client négocie `STARTTLS`
 
 Ces deux fonctions sont complémentaires, mais différentes :
 
-- `ups_policy` est un verrou de sécurité vérifié avant chaque réveil, manuel ou automatique ;
+- `ups_policy`, configuré sur un groupe, est un verrou de sécurité vérifié avant chaque réveil de ses machines, manuel ou automatique ;
 - `power_restore` décide si WoL Manager doit déclencher lui-même le réveil d'un groupe après une coupure réellement observée.
+
+Une machine seule peut utiliser un groupe dédié. Une machine ne peut pas hériter de politiques UPS
+différentes depuis plusieurs groupes.
 
 ```mermaid
 flowchart TD

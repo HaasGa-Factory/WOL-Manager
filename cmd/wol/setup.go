@@ -479,7 +479,6 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		}
 		s.Verification = verification
 	}
-	s.UPS = promptUPSSafetyPolicy(reader, output, cfg, s.UPS, "cette machine")
 	cfg.Servers[id] = s
 	if err := cfg.Validate(); err != nil {
 		if editing {
@@ -893,11 +892,8 @@ func formatChecks(checks []Check) string {
 	return strings.Join(items, ",")
 }
 
-func upsPolicyDetails(cfg *Config, id string, policy *UPSPolicy) string {
+func upsPolicyDetails(policy *UPSPolicy) string {
 	source := "héritée d’un groupe"
-	if cfg.Servers[id].UPS != nil {
-		source = "définie pour la machine"
-	}
 	online := "secteur OL non exigé"
 	if policy.RequireOnline {
 		online = "secteur OL requis"
@@ -1038,7 +1034,7 @@ func wakeBehaviorRows(cfg *Config, id string) []helpRow {
 	})
 	ups := "désactivée"
 	if policy := cfg.effectiveUPS(id); policy != nil {
-		ups = fmt.Sprintf("activée via %s (%s)", policy.UPS, upsPolicyDetails(cfg, id, policy))
+		ups = fmt.Sprintf("activée via %s (%s)", policy.UPS, upsPolicyDetails(policy))
 	}
 	return append(rows, helpRow{command: "Politique de sécurité UPS", description: ups})
 }
@@ -1084,7 +1080,7 @@ func wakeSummary(cfg *Config, id string) string {
 	if policy := cfg.effectiveUPS(id); policy == nil {
 		parts = append(parts, "Aucune politique UPS ne conditionne l’envoi.")
 	} else {
-		parts = append(parts, fmt.Sprintf("L’envoi restera soumis à la politique UPS %s (%s).", policy.UPS, upsPolicyDetails(cfg, id, policy)))
+		parts = append(parts, fmt.Sprintf("L’envoi restera soumis à la politique UPS %s (%s).", policy.UPS, upsPolicyDetails(policy)))
 	}
 	return strings.Join(parts, " ")
 }
@@ -1399,7 +1395,7 @@ func promptUPSSafetyPolicy(reader *bufio.Reader, output io.Writer, cfg *Config, 
 	}
 	policy.RequireOnline = promptBool(reader, output, "Exiger que le secteur soit présent avant le réveil ?", policy.RequireOnline)
 	policy.MinBattery = promptIntRange(reader, output, "Charge minimale avant chaque Magic Packet (%) — 0 = ne pas contrôler", policy.MinBattery, 0, 100)
-	policy.MinRuntime = promptIntRange(reader, output, "Autonomie minimale avant chaque Magic Packet (secondes) — 0 = ne pas contrôler", policy.MinRuntime, 0, 7*24*60*60)
+	policy.MinRuntime = promptDurationSecondsRange(reader, output, "Autonomie minimale avant chaque Magic Packet — 0 = ne pas contrôler", policy.MinRuntime, 7*24*time.Hour)
 	printUPSSafetySummary(output, cfg, policy)
 	return &policy
 }
@@ -1527,6 +1523,25 @@ func promptIntRange(reader *bufio.Reader, output io.Writer, label string, curren
 			return value
 		}
 		fmt.Fprintf(output, "Valeur invalide: saisissez un nombre entre %d et %d.\n", min, max)
+	}
+}
+
+func promptDurationSecondsRange(reader *bufio.Reader, output io.Writer, label string, current int, max time.Duration) int {
+	shown := "0"
+	maxSeconds := int(max / time.Second)
+	if current > 0 {
+		shown = (time.Duration(current) * time.Second).String()
+	}
+	for {
+		raw := promptDefault(reader, output, label+" (exemples: 10m, 30m, 1h; nombre seul = secondes)", shown)
+		if seconds, err := strconv.Atoi(raw); err == nil && seconds >= 0 && seconds <= maxSeconds {
+			return seconds
+		}
+		value, err := time.ParseDuration(raw)
+		if err == nil && value >= 0 && value <= max && value%time.Second == 0 {
+			return int(value / time.Second)
+		}
+		fmt.Fprintf(output, "Durée invalide. Utilisez 30m, 1h, 1h30m ou un nombre de secondes entre 0 et %d.\n", maxSeconds)
 	}
 }
 
@@ -1897,11 +1912,6 @@ func removeConfiguredUPS(reader *bufio.Reader, output io.Writer, cfg *Config) {
 	for _, index := range selection {
 		id := ids[index]
 		blocked := ""
-		for serverID, server := range cfg.Servers {
-			if server.UPS != nil && server.UPS.UPS == id {
-				blocked = "politique UPS de la machine " + serverID
-			}
-		}
 		for groupID, group := range cfg.Groups {
 			if group.UPS != nil && group.UPS.UPS == id {
 				blocked = "politique UPS du groupe " + groupID
@@ -2292,13 +2302,13 @@ func fieldHelp(label string) string {
 	case strings.Contains(key, "reprise automatique nut"):
 		return "Aide: après une coupure OB, LB ou FSD réellement observée, WoL Manager attend le retour du secteur OL, sa stabilité et la charge de démarrage avant de réveiller ce groupe. Un serveur NUT inaccessible n'est pas considéré comme une coupure confirmée."
 	case strings.Contains(key, "politique de sécurité ups"):
-		return "Aide: cette protection vérifie l'état NUT avant chaque réveil. Une politique définie pour une machine remplace celle héritée de son groupe."
+		return "Aide: cette protection appartient au groupe et vérifie l'état NUT avant chaque réveil de ses machines. Pour une machine seule, créez un groupe ne contenant qu'elle."
 	case strings.Contains(key, "secteur ol") || strings.Contains(key, "secteur soit présent"):
 		return "Aide: exige l'état NUT OL (secteur présent) avant d'autoriser le Magic Packet. Un état inconnu, OB, LB ou FSD bloque le réveil."
 	case strings.Contains(key, "batterie minimale") || strings.Contains(key, "charge minimale avant chaque"):
 		return "Aide: charge vérifiée juste avant chaque Magic Packet. Par exemple, 70 bloque le réveil sous 70 %. La valeur 0 ignore cette mesure; si un seuil est exigé mais que battery.charge est absente, le réveil est bloqué."
 	case strings.Contains(key, "autonomie minimale"):
-		return "Aide: estimation de la durée pendant laquelle l’onduleur peut encore alimenter les appareils, vérifiée juste avant chaque Magic Packet. Exemple : 600 exige au moins 10 minutes d’autonomie. Saisissez 0 pour ignorer cette mesure; si une valeur est exigée mais que battery.runtime est absente, le réveil est bloqué."
+		return "Aide: estimation de la durée pendant laquelle l’onduleur peut encore alimenter les appareils, vérifiée juste avant chaque Magic Packet. Utilisez 10m, 30m, 1h ou un nombre seul en secondes; 0 ignore cette mesure. Si une valeur est exigée mais que battery.runtime est absente, le réveil est bloqué."
 	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "logique"):
 		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
 	case strings.Contains(key, "durée") || strings.Contains(key, "intervalle"):

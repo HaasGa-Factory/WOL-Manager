@@ -106,7 +106,6 @@ type Server struct {
 	Delay          Duration           `yaml:"delay" json:"-"`
 	Verification   VerificationConfig `yaml:"verification,omitempty" json:"-"`
 	CheckLogic     string             `yaml:"check_logic,omitempty" json:"-"`
-	UPS            *UPSPolicy         `yaml:"ups_policy" json:"-"`
 	Enabled        *bool              `yaml:"enabled" json:"enabled,omitempty"`
 }
 
@@ -408,13 +407,24 @@ func (c *Config) Validate() error {
 		}
 		checkVerification("server "+id+" verification", s.Verification)
 		checkLogic("server "+id, s.CheckLogic)
-		checkPolicy("server "+id, s.UPS)
 		if s.WakeRetries != nil && *s.WakeRetries < 0 {
 			problems = append(problems, "server "+id+": wake_retries négatif")
 		}
 		_, timeout, interval := c.effectiveVerification(id)
 		if interval > timeout {
 			problems = append(problems, "server "+id+": verification.interval ne peut pas dépasser verification.timeout")
+		}
+		var inherited *UPSPolicy
+		for _, group := range c.groupsFor(id) {
+			if group.UPS == nil {
+				continue
+			}
+			if inherited != nil && *inherited != *group.UPS {
+				problems = append(problems, "server "+id+": plusieurs groupes définissent des politiques UPS différentes")
+				break
+			}
+			copy := *group.UPS
+			inherited = &copy
 		}
 	}
 	priorities := map[int]string{}
@@ -756,10 +766,6 @@ func (c *Config) effectiveUPS(id string) *UPSPolicy {
 			q := *g.UPS
 			p = &q
 		}
-	}
-	if c.Servers[id].UPS != nil {
-		q := *c.Servers[id].UPS
-		p = &q
 	}
 	return p
 }

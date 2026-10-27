@@ -439,17 +439,17 @@ Les relais, contrôles et temporisations réseau avancés restent disponibles da
 
 Actions: ajouter, modifier, supprimer ou revenir.
 Paramètres: identifiant, nom, MAC, IPv4, réseau, groupes, dépendances, contrôles, logique any/all
-délais de vérification et politique de sécurité UPS facultative.
+et délais de vérification.
 Contraintes: MAC, IPv4 et réseau valides; suppression refusée tant que la machine est référencée.
-Une politique UPS définie pour la machine remplace celle héritée de ses groupes.`,
+La protection UPS se configure sur un groupe; une machine seule peut utiliser un groupe dédié.`,
 	"config group": `Usage: sudo wol [--config FILE] config group
 
 Actions: ajouter, modifier, supprimer ou revenir.
 Paramètres: identifiant, priorité, machines, dépendances, sécurité UPS et reprise NUT facultatives.
-La sécurité UPS conditionne chaque réveil et peut être surchargée par une machine.
+La sécurité UPS conditionne chaque réveil des machines du groupe.
 La reprise configure UPS, seuils bas/haut, stabilité, fréquence, mode sequential/parallel,
 ordre, politique d'échec et tentatives.
-Contraintes: références existantes, priorité unique et seuil haut strictement supérieur au seuil bas.`,
+Contraintes: références existantes, priorité unique, politiques UPS cohérentes entre les groupes d'une même machine et seuil haut strictement supérieur au seuil bas.`,
 	"config nut": `Usage: sudo wol [--config FILE] config nut
 
 Actions: détecter localement, ajouter ou modifier un serveur, sélectionner ou supprimer des UPS et tester.
