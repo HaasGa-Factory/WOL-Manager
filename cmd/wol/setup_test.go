@@ -185,8 +185,8 @@ func TestEveryConfigurationSubmenuShowsModernHelpAndReturnsUnchanged(t *testing.
 		{name: "networks", want: "AIDE RÉSEAUX", run: manageNetworks},
 		{name: "machines", want: "AIDE MACHINES", run: manageServers},
 		{name: "groups", want: "AIDE GROUPES", run: manageGroups},
-		{name: "nut", want: "AIDE NUT ET UPS", run: func(reader *bufio.Reader, output io.Writer, cfg *Config, _ bool) bool {
-			return configureNUT(reader, output, cfg)
+		{name: "nut", want: "AIDE NUT ET UPS", run: func(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
+			return configureNUT(reader, output, cfg, interactive)
 		}},
 	}
 	for _, test := range tests {
@@ -222,6 +222,34 @@ func TestMachineSubmenuWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
 	redraw := strings.LastIndex(text, "WoL Manager — MACHINES")
 	if menu < 0 || view < menu || list < view || result < list || pause < result || redraw < pause {
 		t.Fatalf("ordre visuel incorrect après une action:\n%s", text)
+	}
+}
+
+func TestNUTTestWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-test"] = UPSConfig{Address: "127.0.0.1:1", Name: "ups", Timeout: Duration(time.Millisecond)}
+	var output strings.Builder
+	if changed := configureNUT(bufio.NewReader(strings.NewReader("3\n\n4\n")), &output, cfg, true); changed {
+		t.Fatal("le test NUT a modifié la configuration")
+	}
+	text := output.String()
+	result := strings.Index(text, "ups-test:")
+	pause := strings.Index(text, "Appuyez sur Entrée pour revenir au menu NUT")
+	redraw := strings.LastIndex(text, "WoL Manager — SERVEURS NUT ET UPS")
+	if result < 0 || pause < result || redraw < pause {
+		t.Fatalf("ordre visuel incorrect après le test NUT:\n%s", text)
+	}
+}
+
+func TestNUTTestDoesNotPauseWhenNonInteractive(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-test"] = UPSConfig{Address: "127.0.0.1:1", Name: "ups", Timeout: Duration(time.Millisecond)}
+	var output strings.Builder
+	if changed := configureNUT(bufio.NewReader(strings.NewReader("3\n4\n")), &output, cfg, false); changed {
+		t.Fatal("le test NUT a modifié la configuration")
+	}
+	if strings.Contains(output.String(), "Appuyez sur Entrée") {
+		t.Fatalf("pause présente en mode non interactif:\n%s", output.String())
 	}
 }
 
@@ -407,27 +435,27 @@ func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 		"Enregistrer cette configuration ?":      {"sauvegarde", "atomiquement"},
 		"Tester une machine en simulation WoL ?": {"aucun Magic Packet"},
 		"Machine à simuler":                      {"numéro affiché", "Entrée annule"},
-		"Envoyer réellement un paquet WoL à nas ?": {"émission réseau réelle"},
-		"Attente avant la première vérification":   {"délai après", "30s"},
-		"Durée maximale des vérifications":         {"temps total maximal", "2m"},
-		"Nombre maximal de vérifications":          {"nombre de contrôles", "timeout"},
-		"Nouveaux Magic Packets après échec":       {"nouveaux envois", "distinct"},
-		"Identifiant du serveur NUT":               {"serveur NUT", "ni d'une machine"},
-		"Identifiant du groupe":                    {"wol wake --group"},
-		"Adresse MAC":                              {"02:00:00:00:00:01"},
-		"Dépendances machines":                     {"réveillées et vérifiées avant"},
-		"Machines du groupe":                       {"wol wake --group"},
-		"Ordre de démarrage":                       {"ordre explicite", "prérequis"},
-		"Nombre maximal de nouvelles tentatives":   {"0 désactive", "3 par défaut"},
-		"Intervalle entre tentatives":              {"pause entre deux reprises", "30s"},
-		"Seuil bas (%)":                            {"réarme"},
-		"Seuil haut (%)":                           {"autorisant le réveil"},
-		"Stabilité secteur":                        {"état OL", "30s"},
-		"Fréquence NUT":                            {"lectures NUT"},
-		"Mode (sequential=un par un)":              {"indépendantes en parallèle"},
-		"Échec (stop/continue/retry)":              {"stop bloque", "continue_retry"},
-		"Limite maximale de paquets":               {"plafond de paquets"},
-		"Activer la reprise automatique NUT":       {"OB, LB ou FSD", "inaccessible", "pas considéré comme une coupure"},
+		"Envoyer réellement un paquet WoL à nas ?":                       {"émission réseau réelle"},
+		"Après le Magic Packet, attendre avant la première vérification": {"délai après", "30s"},
+		"Durée maximale des vérifications":                               {"temps total maximal", "2m"},
+		"Nombre maximal de vérifications":                                {"nombre de contrôles", "timeout"},
+		"Nouveaux Magic Packets après échec":                             {"nouveaux envois", "distinct"},
+		"Identifiant du serveur NUT":                                     {"serveur NUT", "ni d'une machine"},
+		"Identifiant du groupe":                                          {"wol wake --group"},
+		"Adresse MAC":                                                    {"02:00:00:00:00:01"},
+		"Dépendances machines":                                           {"réveillées et vérifiées avant"},
+		"Machines du groupe":                                             {"wol wake --group"},
+		"Ordre de démarrage":                                             {"ordre explicite", "prérequis"},
+		"Nombre maximal de nouvelles tentatives":                         {"0 désactive", "3 par défaut"},
+		"Intervalle entre tentatives":                                    {"pause entre deux reprises", "30s"},
+		"Seuil bas (%)":                                                  {"réarme"},
+		"Seuil haut (%)":                                                 {"autorisant le réveil"},
+		"Stabilité secteur":                                              {"état OL", "30s"},
+		"Fréquence NUT":                                                  {"lectures NUT"},
+		"Mode de démarrage":                                              {"Séquentiel", "Parallèle", "dépendances"},
+		"Comportement en cas d’échec":                                    {"Bloquer", "Continuer", "Retenter"},
+		"Limite maximale de paquets":                                     {"plafond de paquets"},
+		"Activer la reprise automatique NUT":                             {"OB, LB ou FSD", "inaccessible", "pas considéré comme une coupure"},
 	}
 	for label, fragments := range cases {
 		help := fieldHelp(label)
@@ -475,6 +503,28 @@ func TestPromptDurationSecondsRangeAcceptsReadableAndLegacyValues(t *testing.T) 
 	}
 }
 
+func TestPromptMenuValueUsesNumbersAndKeepsTheCurrentChoice(t *testing.T) {
+	rows := []helpRow{
+		{command: "[1] Séquentiel", description: "Un par un"},
+		{command: "[2] Parallèle", description: "Indépendants ensemble"},
+	}
+	var output strings.Builder
+	got := promptMenuValue(bufio.NewReader(strings.NewReader("2\n")), &output, "MODE", "sequential", "Mode de démarrage", []string{"sequential", "parallel"}, rows)
+	if got != "parallel" || !strings.Contains(output.String(), "[2] Parallèle") {
+		t.Fatalf("choix numérique non appliqué: %q\n%s", got, output.String())
+	}
+	output.Reset()
+	got = promptMenuValue(bufio.NewReader(strings.NewReader("\n")), &output, "MODE", "parallel", "Mode de démarrage", []string{"sequential", "parallel"}, rows)
+	if got != "parallel" || !strings.Contains(output.String(), "Choix [2]") {
+		t.Fatalf("choix actuel non conservé: %q\n%s", got, output.String())
+	}
+	output.Reset()
+	got = promptMenuValue(bufio.NewReader(strings.NewReader("?\n1\n")), &output, "MODE", "parallel", "Mode de démarrage", []string{"sequential", "parallel"}, rows)
+	if got != "sequential" || !strings.Contains(output.String(), "Parallèle lance ensemble") || !strings.Contains(output.String(), "dépendances") {
+		t.Fatalf("aide contextuelle ou choix après aide incorrect: %q\n%s", got, output.String())
+	}
+}
+
 func TestChecksDisabledPersistsAndInheritanceRemainsDistinct(t *testing.T) {
 	path := filepath.Join(testDir(t), "wol.yaml")
 	cfg := testConfig(t)
@@ -518,7 +568,7 @@ func TestNoChecksSkipsLogicAndVerificationQuestions(t *testing.T) {
 	if !cfg.Servers["two"].ChecksDisabled {
 		t.Fatal("le choix Aucune n'a pas activé checks_disabled")
 	}
-	for _, unexpected := range []string{"Logique des contrôles", "Attente avant la première vérification", "Durée maximale des vérifications"} {
+	for _, unexpected := range []string{"Logique des contrôles", "Après le Magic Packet, attendre avant la première vérification", "Durée maximale des vérifications"} {
 		if strings.Contains(output.String(), unexpected) {
 			t.Fatalf("question %q posée malgré Aucune:\n%s", unexpected, output.String())
 		}
@@ -780,7 +830,7 @@ func TestNewPowerRestorePolicyDefaultsToAnyObservedOutage(t *testing.T) {
 	if *policy.LowBattery != 0 || *policy.HighBattery != 70 {
 		t.Fatalf("seuils guidés = %d/%d, attendu 0/70", *policy.LowBattery, *policy.HighBattery)
 	}
-	for _, expected := range []string{"REPRISE AUTOMATIQUE APRÈS COUPURE", "OB, LB ou FSD", "inaccessible", "[1] Toute coupure", "reprendre à 70 %", "recommandé", "Charge de démarrage", "Vérification NUT", "EN PRATIQUE"} {
+	for _, expected := range []string{"REPRISE AUTOMATIQUE APRÈS COUPURE", "OB, LB ou FSD", "inaccessible", "[1] Toute coupure", "reprendre à 70 %", "recommandé", "Charge de démarrage", "Vérification NUT", "[1] Séquentiel", "[4] Continuer et retenter", "EN PRATIQUE"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("aide du défaut 0/70 absente (%s):\n%s", expected, output.String())
 		}

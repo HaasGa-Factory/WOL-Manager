@@ -50,7 +50,7 @@ func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive
 		for {
 			switch prompt(reader, output, "> ") {
 			case "1":
-				if configureNUT(reader, output, session.cfg) {
+				if configureNUT(reader, output, session.cfg, interactive) {
 					session.changed = true
 				}
 				break chooseNUT
@@ -84,7 +84,7 @@ func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive
 		case "3":
 			session.changed = manageGroups(reader, output, session.cfg, interactive) || session.changed
 		case "4":
-			session.changed = configureNUT(reader, output, session.cfg) || session.changed
+			session.changed = configureNUT(reader, output, session.cfg, interactive) || session.changed
 		case "5":
 			showConfigSummary(output, session.cfg)
 			if err := session.cfg.Validate(); err != nil {
@@ -128,7 +128,7 @@ func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive
 	}
 }
 
-func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	fmt.Fprintln(output, "NUT (Network UPS Tools) lit un onduleur sans le commander. OL=secteur présent, OB=sur batterie, LB=batterie faible, FSD=arrêt forcé. L'identifiant du serveur est un nom local WoL Manager; l'identifiant UPS est fourni par NUT.")
 	working := cfg.UPS
 	before, _ := yaml.Marshal(working)
@@ -166,6 +166,9 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			removeConfiguredUPS(reader, output, cfg)
 		case "3":
 			testConfiguredUPS(output, working)
+			if interactive && !waitForMenuReturn(reader, output, true, "nut", "menu NUT") {
+				return false
+			}
 		case "4":
 			after, _ := yaml.Marshal(working)
 			return !bytes.Equal(before, after)
@@ -612,7 +615,7 @@ func configSection(path, section string, input io.Reader, output io.Writer) erro
 	case "group", "groups":
 		changed = manageGroups(reader, output, session.cfg, interactive)
 	case "nut", "ups":
-		changed = configureNUT(reader, output, session.cfg)
+		changed = configureNUT(reader, output, session.cfg, interactive)
 	case "discovery":
 		changed = configureDiscovery(reader, output, session.cfg)
 	default:
@@ -1491,11 +1494,21 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		return group.PowerRestore
 	}
 	policy.PollInterval = pollInterval
-	policy.Mode = promptEnum(reader, output, "Mode (sequential=un par un / parallel=indépendants en parallèle)", defaultString(policy.Mode, "sequential"), "sequential", "parallel")
+	policy.Mode = promptMenuValue(reader, output, "MODE DE DÉMARRAGE", defaultString(policy.Mode, "sequential"), "Mode de démarrage", []string{"sequential", "parallel"}, []helpRow{
+		{command: "[1] Séquentiel", description: "Réveiller les machines une par une dans l’ordre configuré"},
+		{command: "[2] Parallèle", description: "Réveiller ensemble les machines indépendantes"},
+		{command: "[?] Aide", description: "Expliquer les dépendances dans chaque mode"},
+	})
 	if policy.Mode == "sequential" {
 		policy.Order = promptKnownIDs(reader, output, "Ordre de démarrage (virgules, facultatif)", policy.Order, cfg.Servers)
 	}
-	policy.FailurePolicy = promptEnum(reader, output, "Échec (stop=bloquer / continue=indépendants / retry=retenter / continue_retry=les deux)", defaultString(policy.FailurePolicy, "stop"), "stop", "continue", "retry", "continue_retry")
+	policy.FailurePolicy = promptMenuValue(reader, output, "COMPORTEMENT EN CAS D’ÉCHEC", defaultString(policy.FailurePolicy, "stop"), "Comportement en cas d’échec", []string{"stop", "continue", "retry", "continue_retry"}, []helpRow{
+		{command: "[1] Bloquer", description: "Arrêter la séquence au premier échec"},
+		{command: "[2] Continuer", description: "Poursuivre uniquement avec les machines indépendantes"},
+		{command: "[3] Retenter", description: "Réessayer la machine en échec avant de poursuivre"},
+		{command: "[4] Continuer et retenter", description: "Poursuivre les indépendantes et retenter en parallèle"},
+		{command: "[?] Aide", description: "Expliquer les quatre comportements"},
+	})
 	if policy.FailurePolicy == "retry" || policy.FailurePolicy == "continue_retry" {
 		retryDefault := policy.RetryLimit
 		if retryDefault == 0 {
@@ -1545,15 +1558,31 @@ func promptDurationSecondsRange(reader *bufio.Reader, output io.Writer, label st
 	}
 }
 
-func promptEnum(reader *bufio.Reader, output io.Writer, label, current string, allowed ...string) string {
-	for {
-		value := strings.ToLower(promptDefault(reader, output, label, current))
-		for _, candidate := range allowed {
-			if value == candidate {
-				return value
-			}
+func promptMenuValue(reader *bufio.Reader, output io.Writer, title, current, helpLabel string, values []string, rows []helpRow) string {
+	defaultChoice := 1
+	for index, value := range values {
+		if value == current {
+			defaultChoice = index + 1
+			break
 		}
-		fmt.Fprintln(output, "Valeur invalide. Choix autorisés:", strings.Join(allowed, ", "))
+	}
+	printInteractiveMenu(output, title, rows)
+	for {
+		fmt.Fprintf(output, "Choix [%d]: ", defaultChoice)
+		line, _ := reader.ReadString('\n')
+		answer := strings.TrimSpace(line)
+		if answer == "" {
+			return values[defaultChoice-1]
+		}
+		if answer == "?" {
+			printFieldHelp(output, helpLabel)
+			continue
+		}
+		choice, err := strconv.Atoi(answer)
+		if err == nil && choice >= 1 && choice <= len(values) {
+			return values[choice-1]
+		}
+		fmt.Fprintf(output, "Choix invalide. Saisissez un numéro entre 1 et %d.\n", len(values))
 	}
 }
 
@@ -1614,7 +1643,7 @@ func promptVerification(reader *bufio.Reader, output io.Writer, current Verifica
 		retriesFallback = "0 (aucun nouvel envoi)"
 	}
 	var err error
-	if current.InitialDelay, err = promptDurationOverride(reader, output, "Attente avant la première vérification", current.InitialDelay, true, initialFallback); err != nil {
+	if current.InitialDelay, err = promptDurationOverride(reader, output, "Après le Magic Packet, attendre avant la première vérification", current.InitialDelay, true, initialFallback); err != nil {
 		return current, err
 	}
 	if current.Timeout, err = promptDurationOverride(reader, output, "Durée maximale des vérifications", current.Timeout, false, timeoutFallback); err != nil {
@@ -2253,7 +2282,7 @@ func fieldHelp(label string) string {
 		return "Aide: traverse un routeur vers un autre sous-réseau; plus risqué et à activer seulement si le routeur est configuré pour cela."
 	case strings.Contains(key, "relais"):
 		return "Aide: un relais WoL authentifié envoie le paquet depuis le réseau distant; recommandé lorsque le broadcast routé est interdit."
-	case strings.Contains(key, "attente avant"):
+	case strings.Contains(key, "attente avant") || strings.Contains(key, "première vérification"):
 		return "Aide: délai après l'envoi du Magic Packet avant le premier contrôle. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
 	case strings.Contains(key, "durée maximale"):
 		return "Aide: temps total maximal consacré aux contrôles après l'attente initiale. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
@@ -2281,10 +2310,10 @@ func fieldHelp(label string) string {
 		return "Aide: durée pendant laquelle l'état OL doit rester stable avant tout nouveau réveil, par exemple 30s ou 5m."
 	case strings.Contains(key, "fréquence nut"):
 		return "Aide: intervalle entre deux lectures NUT en attente de conditions sûres; une petite valeur réagit plus vite mais interroge davantage le serveur."
-	case strings.Contains(key, "mode ("):
-		return "Aide: sequential réveille dans l'ordre et attend chaque validation; parallel lance seulement les machines indépendantes en parallèle."
-	case strings.Contains(key, "échec ("):
-		return "Aide: stop bloque la séquence; continue poursuit les indépendants; retry retente l'échec; continue_retry combine les deux."
+	case strings.Contains(key, "mode (") || strings.Contains(key, "mode de démarrage"):
+		return "Aide: Séquentiel réveille les machines dans l'ordre et attend chaque validation; Parallèle lance ensemble uniquement les machines dont les dépendances sont satisfaites."
+	case strings.Contains(key, "échec (") || strings.Contains(key, "comportement en cas d’échec"):
+		return "Aide: Bloquer arrête la séquence; Continuer poursuit les machines indépendantes; Retenter réessaie la machine en échec; Continuer et retenter combine les deux."
 	case strings.Contains(key, "timeout de découverte"):
 		return "Aide: durée maximale du diagnostic actif, par exemple 30s ou 2m. Elle limite le scan sans modifier le réseau."
 	case strings.Contains(key, "limite maximale de paquets"):
