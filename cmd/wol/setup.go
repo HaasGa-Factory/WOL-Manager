@@ -157,18 +157,19 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config, interacti
 			{command: "[5] Annuler", description: "Annuler uniquement les changements NUT"},
 			{command: "[?] Aide", description: "Afficher l’aide NUT et les états OL, OB, LB et FSD"},
 		})
+		waitAfterAction := false
 		switch prompt(reader, output, "> ") {
 		case "1":
+			waitAfterAction = true
 			if err := configureRemoteNUT(reader, output, working); err != nil {
 				fmt.Fprintf(output, "Configuration reportée: %v\n", err)
 			}
 		case "2":
+			waitAfterAction = true
 			removeConfiguredUPS(reader, output, cfg)
 		case "3":
+			waitAfterAction = true
 			testConfiguredUPS(output, working)
-			if interactive && !waitForMenuReturn(reader, output, true, "nut", "menu NUT") {
-				return false
-			}
 		case "4":
 			after, _ := yaml.Marshal(working)
 			return !bytes.Equal(before, after)
@@ -183,9 +184,13 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config, interacti
 			}
 			return false
 		case "?", "aide", "help":
+			waitAfterAction = true
 			printContextHelp(output, "nut")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if waitAfterAction && interactive && !waitForMenuReturn(reader, output, true, "nut", "menu NUT") {
+			return false
 		}
 	}
 }

@@ -287,8 +287,28 @@ WOL_TEST_APT_COUNT=206 run_installer "$PAYLOAD" "$ROOT_APT" amd64 --non-interact
 assert_contains "$WORK/apt-summary.log" "Mises à jour Debian disponibles (cache APT actuel): 206"
 assert_contains "$WORK/apt-summary.log" "Aucune mise à jour Debian n'a été installée"
 assert_not_contains "$WORK/apt-summary.log" "package-001/stable"
-APT_INSTALL_LOG=$(find "$ROOT_APT/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+APT_INSTALL_LOG=$(find "$ROOT_APT/var/log/wol-manager-installer" -type f -name 'install-*.log' -print -quit)
 assert_contains "$APT_INSTALL_LOG" "package-001/stable"
+
+echo "[sécurité installateur] journaux et sauvegardes root séparés"
+[[ $(stat -c %a "$ROOT_APT/var/log/wol-manager-installer") = 700 ]] || fail "répertoire de journaux installateur trop permissif"
+[[ $(stat -c %a "$ROOT_APT/var/lib/wol-manager-installer") = 700 ]] || fail "répertoire d'état installateur trop permissif"
+[[ $(stat -c %a "$ROOT_APT/var/lib/wol-manager-installer/backups") = 700 ]] || fail "répertoire de sauvegardes installateur trop permissif"
+[[ $(stat -c %u "$ROOT_APT/var/log/wol-manager-installer") = $(id -u) ]] || fail "mauvais propriétaire du répertoire de journaux installateur"
+[[ $(stat -c %u "$ROOT_APT/var/lib/wol-manager-installer/backups") = $(id -u) ]] || fail "mauvais propriétaire du répertoire de sauvegardes installateur"
+[[ ! -e "$ROOT_APT/var/lib/wol-manager/backups" ]] || fail "les sauvegardes root restent sous l'état du service"
+
+ROOT_LOG_LINK="$WORK/root-log-link"
+prepare_root "$ROOT_LOG_LINK" 13
+mkdir -p "$ROOT_LOG_LINK/var/log/wol-manager-installer"
+chmod 0700 "$ROOT_LOG_LINK/var/log/wol-manager-installer"
+LOG_SENTINEL="$WORK/log-sentinel"
+printf 'sentinelle-journal\n' >"$LOG_SENTINEL"
+ln -s "$LOG_SENTINEL" "$ROOT_LOG_LINK/var/log/wol-manager-installer/install-hostile.log"
+if ! (export WOL_TEST_TIMESTAMP=hostile; run_installer "$PAYLOAD" "$ROOT_LOG_LINK" amd64 --non-interactive --yes --service cli) >"$WORK/hostile-log.log" 2>&1; then
+  fail "un journal symbolique préexistant a empêché la création exclusive d'un autre journal"
+fi
+assert_contains "$LOG_SENTINEL" "sentinelle-journal"
 
 echo "[permissions] ajout idempotent de SUDO_USER au groupe client"
 ROOT_GROUP="$WORK/root-group"
@@ -376,6 +396,46 @@ run_update_from() {
   WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$MOCK_BIN:$PATH" \
   "$root/usr/local/lib/wol-manager/install.sh" --update "$@"
 }
+
+echo "[sécurité installateur] refus des emplacements de backup préexistants"
+ROOT_BACKUP_LINK="$WORK/root-backup-link"
+prepare_root "$ROOT_BACKUP_LINK" 13
+(export WOL_TEST_TIMESTAMP=initial; run_installer "$PAYLOAD" "$ROOT_BACKUP_LINK" amd64 --non-interactive --yes --service cli) >/dev/null
+BACKUP_SENTINEL="$WORK/backup-sentinel"
+mkdir -p "$BACKUP_SENTINEL"
+printf 'sentinelle-backup\n' >"$BACKUP_SENTINEL/keep"
+ln -s "$BACKUP_SENTINEL" "$ROOT_BACKUP_LINK/var/lib/wol-manager-installer/backups/install-hostile"
+if ! (export WOL_TEST_TIMESTAMP=hostile; run_update "$ROOT_BACKUP_LINK" main --yes --non-interactive) >"$WORK/hostile-backup.log" 2>&1; then
+  fail "un répertoire de backup symbolique préexistant a empêché une nouvelle sauvegarde exclusive"
+fi
+assert_contains "$BACKUP_SENTINEL/keep" "sentinelle-backup"
+
+ROOT_BACKUP_MODE="$WORK/root-backup-mode"
+prepare_root "$ROOT_BACKUP_MODE" 13
+(export WOL_TEST_TIMESTAMP=initial; run_installer "$PAYLOAD" "$ROOT_BACKUP_MODE" amd64 --non-interactive --yes --service cli) >/dev/null
+mkdir "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile"
+chmod 0777 "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile"
+if [ "$(id -u)" -eq 0 ]; then chown 65534 "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile"; fi
+if ! (export WOL_TEST_TIMESTAMP=hostile; run_update "$ROOT_BACKUP_MODE" main --yes --non-interactive) >"$WORK/open-backup.log" 2>&1; then
+  fail "un backup existant trop permissif a empêché une nouvelle sauvegarde exclusive"
+fi
+[[ $(stat -c %a "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile") = 777 ]] || fail "le backup hostile a été modifié"
+if [ "$(id -u)" -eq 0 ]; then
+  [[ $(stat -c %u "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile") = 65534 ]] || fail "le backup de mauvais propriétaire a été réutilisé"
+fi
+
+ROOT_BACKUP_FILE_LINK="$WORK/root-backup-file-link"
+prepare_root "$ROOT_BACKUP_FILE_LINK" 13
+(export WOL_TEST_TIMESTAMP=initial; run_installer "$PAYLOAD" "$ROOT_BACKUP_FILE_LINK" amd64 --non-interactive --yes --service cli) >/dev/null
+BIN_SENTINEL="$WORK/bin-sentinel"
+cp "$ROOT_BACKUP_FILE_LINK/usr/local/bin/wol" "$BIN_SENTINEL"
+BIN_SENTINEL_SHA=$(sha256sum "$BIN_SENTINEL" | awk '{print $1}')
+rm "$ROOT_BACKUP_FILE_LINK/usr/local/bin/wol"
+ln -s "$BIN_SENTINEL" "$ROOT_BACKUP_FILE_LINK/usr/local/bin/wol"
+if (export WOL_TEST_TIMESTAMP=hostile; run_update "$ROOT_BACKUP_FILE_LINK" main --yes --non-interactive) >"$WORK/hostile-backup-file.log" 2>&1; then
+  fail "une source de backup symbolique a été suivie"
+fi
+[[ $(sha256sum "$BIN_SENTINEL" | awk '{print $1}') = "$BIN_SENTINEL_SHA" ]] || fail "la sentinelle d'un backup symbolique a été modifiée"
 
 SUDO_USER=alice WOL_TEST_GROUP_LOG="$GROUP_LOG" run_update "$ROOT_GROUP" main --yes --non-interactive >"$WORK/group-update.log" 2>&1
 [[ $(grep -Fxc alice "$GROUP_LOG") = 1 ]] || fail "la mise à jour a dupliqué l'appartenance au groupe"
@@ -597,7 +657,7 @@ assert_file "$ROOT_ENABLE/etc/wol-manager/wol.yaml"
 assert_contains "$ROOT_ENABLE/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
 assert_file "$ROOT_ENABLE/systemd-state/enabled"
 assert_file "$ROOT_ENABLE/systemd-state/active"
-ENABLE_LOG=$(find "$ROOT_ENABLE/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+ENABLE_LOG=$(find "$ROOT_ENABLE/var/log/wol-manager-installer" -type f -name 'install-*.log' -print -quit)
 assert_file "$ENABLE_LOG"
 assert_not_contains "$ENABLE_LOG" 'test-only'
 
@@ -610,7 +670,7 @@ WOL_TEST_SYSTEMD=1 run_installer "$PAYLOAD" "$ROOT_ENABLE_EXISTING" amd64 --non-
 assert_contains "$ROOT_ENABLE_EXISTING/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
 assert_file "$ROOT_ENABLE_EXISTING/systemd-state/enabled"
 assert_file "$ROOT_ENABLE_EXISTING/systemd-state/active"
-EXISTING_LOG=$(find "$ROOT_ENABLE_EXISTING/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+EXISTING_LOG=$(find "$ROOT_ENABLE_EXISTING/var/log/wol-manager-installer" -type f -name 'install-*.log' -print -quit)
 assert_file "$EXISTING_LOG"
 assert_not_contains "$EXISTING_LOG" 'test-only'
 

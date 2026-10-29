@@ -253,6 +253,22 @@ func TestNUTTestDoesNotPauseWhenNonInteractive(t *testing.T) {
 	}
 }
 
+func TestNUTHelpWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-test"] = UPSConfig{Address: "127.0.0.1:1", Name: "ups", Timeout: Duration(time.Millisecond)}
+	var output strings.Builder
+	if changed := configureNUT(bufio.NewReader(strings.NewReader("?\n\n4\n")), &output, cfg, true); changed {
+		t.Fatal("l'aide NUT a modifié la configuration")
+	}
+	text := output.String()
+	help := strings.Index(text, "WoL Manager — AIDE NUT ET UPS")
+	pause := strings.Index(text, "Appuyez sur Entrée pour revenir au menu NUT")
+	redraw := strings.LastIndex(text, "WoL Manager — SERVEURS NUT ET UPS")
+	if help < 0 || pause < help || redraw < pause {
+		t.Fatalf("ordre visuel incorrect après l'aide NUT:\n%s", text)
+	}
+}
+
 func TestMachineListIsShownOnlyWhenSelectingModifyOrDelete(t *testing.T) {
 	for name, input := range map[string]string{
 		"return": "4\n",

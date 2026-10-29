@@ -45,9 +45,21 @@ type NUTDevice struct {
 	Description string `json:"description,omitempty"`
 }
 
+const (
+	maxNUTLineBytes     = 64 << 10
+	maxNUTListLines     = 4096
+	maxNUTResponseBytes = 4 << 20
+)
+
+var errNUTResponseLimit = errors.New("limite de réponse NUT dépassée")
+
 type nutConnection struct {
 	conn net.Conn
 	rw   *bufio.ReadWriter
+}
+
+func newNUTReadWriter(conn net.Conn) *bufio.ReadWriter {
+	return bufio.NewReadWriter(bufio.NewReaderSize(conn, maxNUTLineBytes+1), bufio.NewWriter(conn))
 }
 
 func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
@@ -58,7 +70,7 @@ func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
 		return nil, classifyNUTError(err)
 	}
 	_ = conn.SetDeadline(time.Now().Add(timeout))
-	n := &nutConnection{conn: conn, rw: bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))}
+	n := &nutConnection{conn: conn, rw: newNUTReadWriter(conn)}
 	if u.TLS {
 		line, err := n.one("STARTTLS")
 		if err != nil {
@@ -91,7 +103,7 @@ func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
 			return nil, fmt.Errorf("TLS NUT: %w", err)
 		}
 		n.conn = tlsConn
-		n.rw = bufio.NewReadWriter(bufio.NewReader(tlsConn), bufio.NewWriter(tlsConn))
+		n.rw = newNUTReadWriter(tlsConn)
 	}
 	if u.UsernameFile != "" {
 		user, userErr := readSecret(u.UsernameFile)
@@ -114,6 +126,18 @@ func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
 
 func (n *nutConnection) shutdown() { _ = n.conn.Close() }
 
+func (n *nutConnection) readLine() (string, int, error) {
+	line, err := n.rw.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) || len(line) > maxNUTLineBytes {
+		n.shutdown()
+		return "", 0, fmt.Errorf("%w: ligne supérieure à %d octets", errNUTResponseLimit, maxNUTLineBytes)
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	return strings.TrimSpace(string(line)), len(line), nil
+}
+
 func (n *nutConnection) one(command string) (string, error) {
 	if _, err := n.rw.WriteString(command + "\n"); err != nil {
 		return "", err
@@ -121,8 +145,8 @@ func (n *nutConnection) one(command string) (string, error) {
 	if err := n.rw.Flush(); err != nil {
 		return "", err
 	}
-	line, err := n.rw.ReadString('\n')
-	return strings.TrimSpace(line), err
+	line, _, err := n.readLine()
+	return line, err
 }
 
 func (n *nutConnection) list(command, begin, end string) ([]string, error) {
@@ -133,12 +157,21 @@ func (n *nutConnection) list(command, begin, end string) ([]string, error) {
 		return nil, err
 	}
 	var lines []string
+	totalBytes := 0
 	for {
-		line, err := n.rw.ReadString('\n')
+		line, lineBytes, err := n.readLine()
 		if err != nil {
 			return nil, classifyNUTError(err)
 		}
-		line = strings.TrimSpace(line)
+		totalBytes += lineBytes
+		if len(lines) >= maxNUTListLines {
+			n.shutdown()
+			return nil, fmt.Errorf("%w: plus de %d lignes", errNUTResponseLimit, maxNUTListLines)
+		}
+		if totalBytes > maxNUTResponseBytes {
+			n.shutdown()
+			return nil, fmt.Errorf("%w: plus de %d octets cumulés", errNUTResponseLimit, maxNUTResponseBytes)
+		}
 		if len(lines) == 0 && line != begin && !strings.HasPrefix(line, "ERR ") {
 			return nil, fmt.Errorf("réponse ne correspondant pas au protocole NUT: %q", line)
 		}
@@ -210,6 +243,9 @@ func nutStatus(ctx context.Context, id string, u UPSConfig) UPSStatus {
 }
 
 func classifyNUTError(err error) error {
+	if errors.Is(err, errNUTResponseLimit) {
+		return err
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return fmt.Errorf("timeout du serveur NUT: %w", err)
@@ -232,7 +268,7 @@ func nutResponseError(line string, err error) error {
 	case strings.Contains(line, "UNKNOWN-UPS"):
 		return errors.New("UPS inaccessible ou inconnu")
 	default:
-		return fmt.Errorf("erreur NUT: %s", line)
+		return errors.New("erreur retournée par le serveur NUT")
 	}
 }
 

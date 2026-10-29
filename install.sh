@@ -48,6 +48,29 @@ TOKENS_FILE=$(path /etc/wol-manager/secrets/tokens.json)
 RELEASE_CONFIG=$(path /etc/wol-manager/release.conf)
 STATE_DIR=$(path /var/lib/wol-manager)
 LOG_DIR=$(path /var/log/wol-manager)
+INSTALLER_STATE_DIR=$(path /var/lib/wol-manager-installer)
+INSTALLER_LOG_DIR=$(path /var/log/wol-manager-installer)
+BACKUP_ROOT="$INSTALLER_STATE_DIR/backups"
+
+expected_root_uid() {
+  if [ "$TEST_MODE" = 1 ]; then id -u; else printf '0\n'; fi
+}
+verify_root_directory() {
+  directory=$1
+  [ ! -L "$directory" ] || { echo "ERREUR: répertoire root interdit (lien symbolique): $directory" >&2; exit 1; }
+  [ -d "$directory" ] || { echo "ERREUR: répertoire root invalide: $directory" >&2; exit 1; }
+  [ "$(stat -c %u "$directory")" = "$(expected_root_uid)" ] || { echo "ERREUR: propriétaire inattendu pour $directory" >&2; exit 1; }
+  [ "$(stat -c %a "$directory")" = 700 ] || { echo "ERREUR: permissions inattendues pour $directory" >&2; exit 1; }
+}
+prepare_root_directory() {
+  directory=$1
+  [ ! -L "$directory" ] || { echo "ERREUR: répertoire root interdit (lien symbolique): $directory" >&2; exit 1; }
+  [ ! -e "$directory" ] || [ -d "$directory" ] || { echo "ERREUR: chemin root inattendu: $directory" >&2; exit 1; }
+  mkdir -p -- "$directory"
+  chmod 0700 "$directory"
+  [ "$TEST_MODE" = 1 ] || chown root:root "$directory"
+  verify_root_directory "$directory"
+}
 
 usage() {
   cat <<EOF
@@ -113,14 +136,16 @@ if [ "$TEST_MODE" != 1 ]; then
 fi
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+if [ "$TEST_MODE" = 1 ] && [ -n "${WOL_TEST_TIMESTAMP:-}" ]; then timestamp=$WOL_TEST_TIMESTAMP; fi
 if [ "$CHECK_ONLY" -eq 1 ] || [ "$ACTION" = version ]; then
-  LOG_FILE="${TMPDIR:-/tmp}/wol-manager-check-$timestamp.log"
+  LOG_FILE=$(umask 077; mktemp "${TMPDIR:-/tmp}/wol-manager-check-$timestamp.XXXXXX.log")
 else
-  mkdir -p "$LOG_DIR"
-  chmod 0750 "$LOG_DIR" 2>/dev/null || true
-  LOG_FILE="$LOG_DIR/install-$timestamp.log"
+  prepare_root_directory "$INSTALLER_LOG_DIR"
+  if ! LOG_FILE=$(umask 077; mktemp "$INSTALLER_LOG_DIR/install-$timestamp.XXXXXX.log"); then
+    echo "ERREUR: création exclusive du journal impossible: $LOG_FILE" >&2
+    exit 1
+  fi
 fi
-: >"$LOG_FILE"
 
 color_enabled() {
   [ "${NO_COLOR+x}" != x ] && [ -n "${TERM:-}" ] && [ "$TERM" != dumb ] && [ -t "$1" ]
@@ -511,23 +536,41 @@ create_account_and_dirs() {
   [ "$TEST_MODE" = 1 ] || chown wol-manager:wol-manager "$TOKENS_FILE"
 }
 backup_existing() {
-  BACKUP_DIR="$STATE_DIR/backups/install-$timestamp"
-  install -d -m 0750 "$BACKUP_DIR"
-  [ ! -e "$BIN" ] || cp -p "$BIN" "$BACKUP_DIR/wol"
-  [ ! -e "$UNIT" ] || cp -p "$UNIT" "$BACKUP_DIR/wol-manager.service"
-  [ ! -e "$HELPER" ] || cp -p "$HELPER" "$BACKUP_DIR/install.sh"
-  [ ! -e "$COMPLETION" ] || cp -p "$COMPLETION" "$BACKUP_DIR/bash-completion-wol"
-  [ ! -e "$RELEASE_CONFIG" ] || cp -p "$RELEASE_CONFIG" "$BACKUP_DIR/release.conf"
+  prepare_root_directory "$INSTALLER_STATE_DIR"
+  prepare_root_directory "$BACKUP_ROOT"
+  BACKUP_DIR=$(umask 077; mktemp -d "$BACKUP_ROOT/install-$timestamp.XXXXXX") || die "Création exclusive de la sauvegarde impossible sous $BACKUP_ROOT"
+  verify_root_directory "$BACKUP_DIR"
+  backup_file "$BIN" "$BACKUP_DIR/wol" 0755
+  backup_file "$UNIT" "$BACKUP_DIR/wol-manager.service" 0644
+  backup_file "$HELPER" "$BACKUP_DIR/install.sh" 0755
+  backup_file "$COMPLETION" "$BACKUP_DIR/bash-completion-wol" 0644
+  backup_file "$RELEASE_CONFIG" "$BACKUP_DIR/release.conf" 0640
   log "Sauvegarde créée: $BACKUP_DIR; configuration, secrets, données et journaux restent en place"
+}
+backup_file() {
+  source_file=$1 destination=$2 mode=$3
+  [ ! -L "$source_file" ] || die "Source de sauvegarde interdite (lien symbolique): $source_file"
+  [ ! -e "$source_file" ] && return 0
+  [ -f "$source_file" ] || die "Source de sauvegarde inattendue: $source_file"
+  install -m "$mode" "$source_file" "$destination"
+  [ "$TEST_MODE" = 1 ] || chown root:root "$destination"
+}
+verify_backup_file() {
+  backup_file_path=$1 expected_mode=$2
+  [ ! -L "$backup_file_path" ] || die "Sauvegarde interdite (lien symbolique): $backup_file_path"
+  [ -f "$backup_file_path" ] || die "Sauvegarde invalide: $backup_file_path"
+  [ "$(stat -c %u "$backup_file_path")" = "$(expected_root_uid)" ] || die "Propriétaire inattendu pour la sauvegarde: $backup_file_path"
+  [ "$(stat -c %a "$backup_file_path")" = "$expected_mode" ] || die "Permissions inattendues pour la sauvegarde: $backup_file_path"
 }
 rollback() {
   ROLLBACK_READY=0
   warn "Vérification en échec: restauration de l'installation précédente"
-  if [ -f "$BACKUP_DIR/wol" ]; then install -m 0755 "$BACKUP_DIR/wol" "$BIN"; else rm -f "$BIN"; fi
-  if [ -f "$BACKUP_DIR/wol-manager.service" ]; then install -m 0644 "$BACKUP_DIR/wol-manager.service" "$UNIT"; else rm -f "$UNIT"; fi
-  if [ -f "$BACKUP_DIR/install.sh" ]; then install -m 0755 "$BACKUP_DIR/install.sh" "$HELPER"; else rm -f "$HELPER"; fi
-  if [ -f "$BACKUP_DIR/bash-completion-wol" ]; then install -m 0644 "$BACKUP_DIR/bash-completion-wol" "$COMPLETION"; else rm -f "$COMPLETION"; fi
-  if [ -f "$BACKUP_DIR/release.conf" ]; then install -m 0640 "$BACKUP_DIR/release.conf" "$RELEASE_CONFIG"; else rm -f "$RELEASE_CONFIG"; fi
+  verify_root_directory "$BACKUP_DIR"
+  if [ -e "$BACKUP_DIR/wol" ] || [ -L "$BACKUP_DIR/wol" ]; then verify_backup_file "$BACKUP_DIR/wol" 755; install -m 0755 "$BACKUP_DIR/wol" "$BIN"; else rm -f "$BIN"; fi
+  if [ -e "$BACKUP_DIR/wol-manager.service" ] || [ -L "$BACKUP_DIR/wol-manager.service" ]; then verify_backup_file "$BACKUP_DIR/wol-manager.service" 644; install -m 0644 "$BACKUP_DIR/wol-manager.service" "$UNIT"; else rm -f "$UNIT"; fi
+  if [ -e "$BACKUP_DIR/install.sh" ] || [ -L "$BACKUP_DIR/install.sh" ]; then verify_backup_file "$BACKUP_DIR/install.sh" 755; install -m 0755 "$BACKUP_DIR/install.sh" "$HELPER"; else rm -f "$HELPER"; fi
+  if [ -e "$BACKUP_DIR/bash-completion-wol" ] || [ -L "$BACKUP_DIR/bash-completion-wol" ]; then verify_backup_file "$BACKUP_DIR/bash-completion-wol" 644; install -m 0644 "$BACKUP_DIR/bash-completion-wol" "$COMPLETION"; else rm -f "$COMPLETION"; fi
+  if [ -e "$BACKUP_DIR/release.conf" ] || [ -L "$BACKUP_DIR/release.conf" ]; then verify_backup_file "$BACKUP_DIR/release.conf" 640; install -m 0640 "$BACKUP_DIR/release.conf" "$RELEASE_CONFIG"; else rm -f "$RELEASE_CONFIG"; fi
   if [ ! -f "$BACKUP_DIR/install.sh" ]; then
     rm -rf -- "$HELPER_DIR"
     rm -f "$(path /usr/share/doc/wol-manager/wol.example.yaml)"

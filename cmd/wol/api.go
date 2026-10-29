@@ -38,6 +38,11 @@ type ctxKey int
 
 const principalKey ctxKey = 1
 
+const (
+	apiRateWindow     = time.Minute
+	maxAPIRateEntries = 4096
+)
+
 type rateEntry struct {
 	start time.Time
 	count int
@@ -50,6 +55,7 @@ type APIServer struct {
 	tokenPath   string
 	mu          sync.Mutex
 	rates       map[string]rateEntry
+	now         func() time.Time
 	automations *AutomationManager
 }
 
@@ -112,21 +118,39 @@ func (s *APIServer) middleware(next http.Handler) http.Handler {
 			return
 		}
 		key := p.ID + "|" + clientIP(r)
-		s.mu.Lock()
-		e := s.rates[key]
-		now := time.Now()
-		if now.Sub(e.start) >= time.Minute {
-			e = rateEntry{start: now}
-		}
-		e.count++
-		s.rates[key] = e
-		s.mu.Unlock()
-		if e.count > s.cfg.API.RatePerMinute {
+		if !s.allowRequest(key) {
 			writeError(w, http.StatusTooManyRequests, "rate_limited", "limite de requêtes atteinte")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, p)))
 	})
+}
+
+func (s *APIServer) allowRequest(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	if s.rates == nil {
+		s.rates = make(map[string]rateEntry)
+	}
+	for existingKey, entry := range s.rates {
+		if now.Sub(entry.start) >= apiRateWindow {
+			delete(s.rates, existingKey)
+		}
+	}
+	entry, exists := s.rates[key]
+	if !exists {
+		if len(s.rates) >= maxAPIRateEntries {
+			return false
+		}
+		entry.start = now
+	}
+	entry.count++
+	s.rates[key] = entry
+	return entry.count <= s.cfg.API.RatePerMinute
 }
 func need(w http.ResponseWriter, r *http.Request, permission string) bool {
 	p, _ := r.Context().Value(principalKey).(principal)
