@@ -38,6 +38,11 @@ Syntaxe générale : `wol [--config FILE] [--json] [--no-color] COMMANDE`.
 | `wol relay check ID` | disponibilité d'un relais |
 | `wol completion bash` | génère le script d'autocomplétion Bash |
 
+Depuis `1.2.2`, `sudo wol update` détecte les anciennes configurations `unicast`. Après vérification
+du manifeste, de sa signature et du binaire candidat, la commande propose une migration guidée avant
+le remplacement. Une annulation conserve l'ancien binaire et la configuration ; le mode
+`--non-interactive` refuse cette migration et demande une relance dans un terminal.
+
 `wol COMMANDE --help` affiche l'aide détaillée avant de charger la configuration. Cette aide ne
 nécessite donc ni privilèges, ni fichier YAML, ni accès au réseau. Les commandes composées acceptent
 la même forme, par exemple :

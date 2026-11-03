@@ -1,4 +1,21 @@
-# Diagnostics réseau
+# Diagnostics
+
+## Mise à jour refusée pour configuration incompatible
+
+Si `sudo wol update --channel dev` signale une configuration incompatible, consultez le journal
+indiqué par la commande. Depuis `1.2.2`, la présence de l'ancien transport `unicast` est reconnue :
+dans un terminal interactif, acceptez l'ouverture de la migration guidée, vérifiez qu'un broadcast
+ou relais utilisable reste configuré, puis confirmez le résumé. La configuration originale reçoit
+une sauvegarde datée avant l'écriture.
+
+Avec `--non-interactive`, cette migration est volontairement refusée sans modifier la configuration
+ni remplacer le binaire. Relancez alors la commande sans cette option :
+
+```sh
+sudo wol update --channel dev
+```
+
+## Diagnostics réseau
 
 La découverte passive lit interfaces, adresses et, sous Linux, `ip -j route` et `ip -j neigh`. Elle n'émet aucun paquet.
 

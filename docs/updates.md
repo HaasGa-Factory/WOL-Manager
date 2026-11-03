@@ -24,6 +24,18 @@ sudo wol update --channel dev
 
 Un avertissement BETA/DEV est affiché. Ce choix vaut uniquement pour cette commande : l'exécution suivante de `sudo wol update` revient automatiquement à `main`.
 
+### Migration guidée d'une ancienne configuration
+
+Depuis `1.2.2`, si la configuration utilise encore l'ancien transport `unicast`, le nouveau binaire
+signé est téléchargé et vérifié mais n'est pas installé immédiatement. L'installateur explique le
+changement et propose d'ouvrir son assistant de migration. Celui-ci retire uniquement les anciens
+champs `unicast` et `allow_unicast`, exige qu'un broadcast ou un relais utilisable reste configuré,
+affiche le résumé puis demande confirmation avant l'écriture atomique et la sauvegarde datée.
+
+La mise à jour ne reprend qu'après une nouvelle validation de la configuration migrée. Une annulation
+conserve l'ancien binaire. En mode `--non-interactive`, aucune migration n'est effectuée : relancez
+la commande dans un terminal avec `sudo wol update --channel dev`.
+
 ### Vérification de `main` depuis une version `dev`
 
 Pendant une transition, `dev` peut utiliser le manifeste de format 2 alors que `main` publie encore le format signé 1. Dans ce cas précis, `wol update --check` et `wol update --check --channel main` vérifient d'abord la signature du manifeste, expliquent que `main` ne peut pas remplacer la version `dev`, puis s'arrêtent sans modifier le binaire, l'installateur, la configuration, les secrets, le service ou le canal enregistré. Vérifiez temporairement le canal de développement avec :
@@ -53,13 +65,16 @@ sudo apt-get install --reinstall bash-completion
 
 L'installateur choisit l'architecture et télécharge le manifeste, sa signature, l'installateur et le binaire depuis le même commit de publication. Il n'existe aucun fallback de compilation côté client. Une erreur réseau, une branche absente ou un artefact indisponible est signalé sans modifier l'installation.
 
-La configuration, les jetons, secrets, données, politiques UPS, réseaux et relais ne sont pas modifiés. L'état activé/désactivé du service est conservé. Une tâche interrompue reste soumise à la revalidation du moteur existant.
+Hors migration guidée explicitement confirmée, la configuration, les jetons, secrets, données,
+politiques UPS, réseaux et relais ne sont pas modifiés. La migration `unicast` ne touche que les
+anciens champs de transport et conserve une sauvegarde datée. L'état activé/désactivé du service est
+conservé. Une tâche interrompue reste soumise à la revalidation du moteur existant.
 
 ## Installation atomique et rollback
 
 Avant remplacement, l'installateur valide le nouveau binaire et la configuration, puis sauvegarde le binaire, le service, l'installateur et les métadonnées sous `/var/lib/wol-manager/backups/`. Le remplacement du binaire utilise un fichier temporaire sur le même système de fichiers.
 
-Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces composants sont restaurés et l'ancien service est relancé lorsque possible. Aucune migration irréversible de données n'est exécutée dans cette Beta ; les données persistantes restent intactes. Le journal indique clairement si le rollback a été déclenché.
+Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces composants sont restaurés et l'ancien service est relancé lorsque possible. Aucune migration irréversible de données n'est exécutée dans cette Beta ; la migration confirmée de la configuration conserve sa sauvegarde datée et les données persistantes restent intactes. Le journal indique clairement si le rollback a été déclenché.
 
 ## Intégrité et provenance
 

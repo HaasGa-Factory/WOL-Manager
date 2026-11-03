@@ -29,6 +29,11 @@ conversion retire uniquement les références à l'unicast. Avant l'écriture at
 original reçoit une sauvegarde datée. Une configuration unicast uniquement doit donc recevoir un
 transport broadcast ou relais valide avant de pouvoir être enregistrée.
 
+Lors d'une mise à jour vers `1.2.2` ou une version ultérieure, `sudo wol update` utilise directement
+le binaire candidat déjà authentifié pour ouvrir ce même assistant. La mise à jour ne remplace le
+binaire installé qu'après enregistrement et nouvelle validation de la configuration. En mode non
+interactif, aucune conversion n'est tentée et aucun fichier n'est modifié.
+
 L'assistant couvre les paramètres usuels. Les réglages avancés de réseau et de machine — relais,
 ordre détaillé des transports, politiques UPS historiques, CA NUT privée et fichiers d'identifiants —
 restent disponibles dans le YAML. Cette limite est annoncée dans `wol config ... --help`; elle ne

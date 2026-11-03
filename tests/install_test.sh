@@ -119,6 +119,16 @@ if [ "\${1:-}" = completion ] && [ "\${2:-}" = bash ]; then
 fi
 if [ "\${1:-}" = --config ] && [ "\${3:-}" = setup ]; then
   mkdir -p "\$(dirname "\$2")"
+  if [ -f "\$2" ] && grep -Eq 'allow_unicast|unicast' "\$2"; then
+    if [ "\${WOL_TEST_AUTO_MIGRATE:-0}" != 1 ]; then
+      echo "migration unicast non confirmée" >&2
+      exit 1
+    fi
+    sed -e '/allow_unicast:/d' -e 's/, *unicast//g' -e 's/unicast, *//g' "\$2" >"\$2.migrated"
+    mv "\$2.migrated" "\$2"
+    echo "migration unicast confirmée"
+    exit 0
+  fi
   printf 'version: 1\n' >"\$2"
   exit 0
 fi
@@ -129,7 +139,14 @@ if [ "\${1:-}" = --config ] && [ "\${3:-}" = token ] && [ "\${4:-}" = create ]; 
   echo 'JETON (simulation): test-only'
   exit 0
 fi
-if [ "\${3:-}" = config ] && [ "\${4:-}" = check ]; then exit 0; fi
+if [ "\${3:-}" = config ] && [ "\${4:-}" = check ]; then
+  if [ -f "\$2" ] && grep -Eq 'allow_unicast|unicast' "\$2"; then
+    echo "global.transport_order: transport inconnu unicast" >&2
+    echo "allow_unicast n'est plus pris en charge; utilisez wol setup pour une migration confirmée" >&2
+    exit 1
+  fi
+  exit 0
+fi
 exit 0
 EOF
   chmod +x "$path"
@@ -229,13 +246,14 @@ PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.1"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.2"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
 assert_contains "$WORK/install-help.log" "main  version stable"
 assert_contains "$WORK/install-help.log" "dev   version de développement/BETA"
 assert_contains "$WORK/install-help.log" "paquet local signé"
+assert_contains "$WORK/install-help.log" "migration guidée"
 
 echo "[1/16] Debian 12 AMD64, binaire local, sans Go"
 ROOT12="$WORK/root12"
@@ -281,7 +299,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.2.1"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.2.2"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"
@@ -472,6 +490,40 @@ echo "[8/16] vérification main sans installation"
 run_update "$ROOT12" main --check --non-interactive >"$WORK/check.log"
 assert_contains "$WORK/check.log" "Mise à jour disponible"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "--check a modifié le binaire"
+
+echo "[migration update] ancienne configuration unicast"
+ROOT_LEGACY_UPDATE="$WORK/root-legacy-update"
+prepare_root "$ROOT_LEGACY_UPDATE" 13
+run_installer "$PAYLOAD" "$ROOT_LEGACY_UPDATE" amd64 --non-interactive --yes --service cli >/dev/null
+mkdir -p "$ROOT_LEGACY_UPDATE/etc/wol-manager"
+cat >"$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" <<'EOF'
+version: 1
+global:
+  transport_order: [local_broadcast, unicast]
+networks:
+  lan:
+    cidr: 192.0.2.0/24
+    interface: eth0
+    source_ip: 192.0.2.10
+    allow_local_broadcast: true
+    allow_unicast: true
+servers: {}
+groups: {}
+ups: {}
+EOF
+cp "$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" "$WORK/legacy-before.yaml"
+if run_update "$ROOT_LEGACY_UPDATE" main --yes --non-interactive >"$WORK/legacy-update-non-interactive.log" 2>&1; then
+  fail "une mise à jour non interactive a ignoré la migration unicast requise"
+fi
+assert_contains "$WORK/legacy-update-non-interactive.log" "migration guidée"
+cmp -s "$WORK/legacy-before.yaml" "$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" || fail "le refus non interactif a modifié la configuration"
+[[ $("$ROOT_LEGACY_UPDATE/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "le refus de migration a remplacé le binaire"
+
+WOL_TEST_AUTO_MIGRATE=1 run_update "$ROOT_LEGACY_UPDATE" main --yes >"$WORK/legacy-update-interactive.log" 2>&1
+assert_contains "$WORK/legacy-update-interactive.log" "migration guidée"
+assert_contains "$WORK/legacy-update-interactive.log" "Configuration migrée et validée"
+assert_not_contains "$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" "unicast"
+[[ $("$ROOT_LEGACY_UPDATE/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "la mise à jour après migration n'a pas remplacé le binaire"
 
 echo "[9/16] mise à jour main et préservation des données"
 mkdir -p "$ROOT12/etc/wol-manager/secrets" "$ROOT12/var/lib/wol-manager" "$ROOT12/var/log/wol-manager"

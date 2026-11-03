@@ -377,7 +377,9 @@ Options:
 
 Le manifeste signé et le SHA-256 sont vérifiés avant toute installation. Une mise à jour demande
 confirmation, sauvegarde le binaire, le remplace atomiquement et effectue un rollback en cas d'échec.
-Le canal dev n'est jamais mémorisé comme canal par défaut.`,
+Si une ancienne configuration unicast exige une migration, l'assistant signé demande une confirmation,
+crée une sauvegarde et revalide la configuration avant le remplacement. Le canal dev n'est jamais
+mémorisé comme canal par défaut.`,
 	"completion": `Usage: wol completion bash
 
 Génère le script d'autocomplétion Bash sur la sortie standard. L'installateur le déploie
