@@ -41,6 +41,7 @@ BIN=$(path /usr/local/bin/wol)
 HELPER_DIR=$(path /usr/local/lib/wol-manager)
 HELPER="$HELPER_DIR/install.sh"
 UNIT=$(path /etc/systemd/system/wol-manager.service)
+LOGROTATE=$(path /etc/logrotate.d/wol-manager)
 COMPLETION=$(path /etc/bash_completion.d/wol-manager)
 LEGACY_COMPLETION=$(path /usr/share/bash-completion/completions/wol)
 CONFIG=$(path /etc/wol-manager/wol.yaml)
@@ -510,7 +511,7 @@ create_account_and_dirs() {
     getent passwd wol-manager >/dev/null 2>&1 || useradd --system --gid wol-manager --home-dir /var/lib/wol-manager --shell /usr/sbin/nologin wol-manager
   fi
   install -d -m 0750 "$(path /etc/wol-manager)" "$(path /etc/wol-manager/secrets)" "$STATE_DIR" "$LOG_DIR"
-  install -d -m 0755 "$(path /usr/local/bin)" "$HELPER_DIR" "$HELPER_DIR/configs" "$HELPER_DIR/packaging/systemd" "$(path /usr/share/doc/wol-manager)" "$(dirname "$COMPLETION")"
+  install -d -m 0755 "$(path /usr/local/bin)" "$HELPER_DIR" "$HELPER_DIR/configs" "$HELPER_DIR/packaging/systemd" "$HELPER_DIR/packaging/logrotate" "$(path /usr/share/doc/wol-manager)" "$(dirname "$COMPLETION")" "$(dirname "$LOGROTATE")"
   [ "$SERVICE_MODE" = cli ] || install -d -m 0755 "$(path /etc/systemd/system)"
   if [ "$TEST_MODE" != 1 ]; then
     chown wol-manager:wol-manager "$STATE_DIR" "$LOG_DIR"
@@ -542,6 +543,7 @@ backup_existing() {
   verify_root_directory "$BACKUP_DIR"
   backup_file "$BIN" "$BACKUP_DIR/wol" 0755
   backup_file "$UNIT" "$BACKUP_DIR/wol-manager.service" 0644
+  backup_file "$LOGROTATE" "$BACKUP_DIR/logrotate-wol-manager" 0644
   backup_file "$HELPER" "$BACKUP_DIR/install.sh" 0755
   backup_file "$COMPLETION" "$BACKUP_DIR/bash-completion-wol" 0644
   backup_file "$RELEASE_CONFIG" "$BACKUP_DIR/release.conf" 0640
@@ -568,6 +570,7 @@ rollback() {
   verify_root_directory "$BACKUP_DIR"
   if [ -e "$BACKUP_DIR/wol" ] || [ -L "$BACKUP_DIR/wol" ]; then verify_backup_file "$BACKUP_DIR/wol" 755; install -m 0755 "$BACKUP_DIR/wol" "$BIN"; else rm -f "$BIN"; fi
   if [ -e "$BACKUP_DIR/wol-manager.service" ] || [ -L "$BACKUP_DIR/wol-manager.service" ]; then verify_backup_file "$BACKUP_DIR/wol-manager.service" 644; install -m 0644 "$BACKUP_DIR/wol-manager.service" "$UNIT"; else rm -f "$UNIT"; fi
+  if [ -e "$BACKUP_DIR/logrotate-wol-manager" ] || [ -L "$BACKUP_DIR/logrotate-wol-manager" ]; then verify_backup_file "$BACKUP_DIR/logrotate-wol-manager" 644; install -m 0644 "$BACKUP_DIR/logrotate-wol-manager" "$LOGROTATE"; else rm -f "$LOGROTATE"; fi
   if [ -e "$BACKUP_DIR/install.sh" ] || [ -L "$BACKUP_DIR/install.sh" ]; then verify_backup_file "$BACKUP_DIR/install.sh" 755; install -m 0755 "$BACKUP_DIR/install.sh" "$HELPER"; else rm -f "$HELPER"; fi
   if [ -e "$BACKUP_DIR/bash-completion-wol" ] || [ -L "$BACKUP_DIR/bash-completion-wol" ]; then verify_backup_file "$BACKUP_DIR/bash-completion-wol" 644; install -m 0644 "$BACKUP_DIR/bash-completion-wol" "$COMPLETION"; else rm -f "$COMPLETION"; fi
   if [ -e "$BACKUP_DIR/release.conf" ] || [ -L "$BACKUP_DIR/release.conf" ]; then verify_backup_file "$BACKUP_DIR/release.conf" 640; install -m 0640 "$BACKUP_DIR/release.conf" "$RELEASE_CONFIG"; else rm -f "$RELEASE_CONFIG"; fi
@@ -614,9 +617,11 @@ install_candidate() {
     install -m 0644 "$SCRIPT_DIR/packaging/release-public.pem" "$HELPER_DIR/packaging/release-public.pem"
     install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$HELPER_DIR/configs/wol.example.yaml"
     install -m 0644 "$SCRIPT_DIR/packaging/systemd/wol-manager.service" "$HELPER_DIR/packaging/systemd/wol-manager.service"
+    install -m 0644 "$SCRIPT_DIR/packaging/logrotate/wol-manager" "$HELPER_DIR/packaging/logrotate/wol-manager"
   fi
   install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$(path /usr/share/doc/wol-manager/wol.example.yaml)"
   [ "$SERVICE_MODE" = cli ] || install -m 0644 "$SCRIPT_DIR/packaging/systemd/wol-manager.service" "$UNIT"
+  install -m 0644 "$SCRIPT_DIR/packaging/logrotate/wol-manager" "$LOGROTATE"
   umask 027
   printf 'repository=%s\ndefault_channel=main\ninstalled_channel=%s\ninstalled_version=%s\nsource_revision=%s\npublication_commit=%s\n' \
     "$REPOSITORY" "$CHANNEL" "$CANDIDATE_VERSION" "$CANDIDATE_REVISION" "$PUBLICATION_COMMIT" >"$RELEASE_CONFIG"
@@ -667,6 +672,7 @@ run_setup_if_requested() {
 uninstall() {
   need_root
   if [ "$SYSTEMD" = yes ]; then systemctl disable --now wol-manager.service >>"$LOG_FILE" 2>&1 || true; rm -f "$UNIT"; systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true; fi
+  rm -f "$LOGROTATE"
   rm -f "$BIN" "$RELEASE_CONFIG" "$COMPLETION"
   rm -rf -- "$HELPER_DIR"
   log "Programme et service supprimés; configuration, secrets, données, journaux et sauvegardes conservés"
