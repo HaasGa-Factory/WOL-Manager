@@ -29,10 +29,11 @@ conversion retire uniquement les références à l'unicast. Avant l'écriture at
 original reçoit une sauvegarde datée. Une configuration unicast uniquement doit donc recevoir un
 transport broadcast ou relais valide avant de pouvoir être enregistrée.
 
-Lors d'une mise à jour vers `1.2.2` ou une version ultérieure, `sudo wol update` utilise directement
-le binaire candidat déjà authentifié pour ouvrir ce même assistant. La mise à jour ne remplace le
-binaire installé qu'après enregistrement et nouvelle validation de la configuration. En mode non
-interactif, aucune conversion n'est tentée et aucun fichier n'est modifié.
+Lorsque l'installateur système `1.2.3` est déjà en place, `sudo wol update` utilise directement le
+binaire candidat authentifié pour ouvrir ce même assistant. Une installation provenant de `1.2.1`
+doit auparavant remplacer uniquement l'ancien installateur système par le `dist/install.sh` signé
+du paquet `1.2.3`; la procédure complète est décrite dans `docs/updates.md`. La mise à jour ne
+remplace le binaire qu'après enregistrement et nouvelle validation de la configuration.
 
 L'assistant couvre les paramètres usuels. Les réglages avancés de réseau et de machine — relais,
 ordre détaillé des transports, politiques UPS historiques, CA NUT privée et fichiers d'identifiants —

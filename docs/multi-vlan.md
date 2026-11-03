@@ -3,7 +3,7 @@
 Une route IP ne constitue jamais une autorisation WoL.
 
 - `local_broadcast` exige une interface locale dans le CIDR cible et l'autorisation du réseau.
-- L'ancien transport `unicast` n'est plus opérationnel. `wol setup` propose une conversion confirmée et sauvegardée des anciennes configurations. Depuis `1.2.2`, `sudo wol update` ouvre ce même parcours avec le binaire candidat signé avant tout remplacement ; le mode non interactif refuse la migration sans modifier les fichiers.
+- L'ancien transport `unicast` n'est plus opérationnel. `wol setup` propose une conversion confirmée et sauvegardée des anciennes configurations. L'installateur système `1.2.3` ouvre ce même parcours pendant `sudo wol update`; une installation provenant de `1.2.1` doit d'abord amorcer cet installateur signé selon `docs/updates.md`.
 - `directed_broadcast` utilise le broadcast calculé du CIDR et exige `allow_directed_broadcast: true`.
 - `relay` est sélectionné uniquement pour le relais affecté au réseau.
 

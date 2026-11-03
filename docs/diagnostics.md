@@ -3,10 +3,37 @@
 ## Mise à jour refusée pour configuration incompatible
 
 Si `sudo wol update --channel dev` signale une configuration incompatible, consultez le journal
-indiqué par la commande. Depuis `1.2.2`, la présence de l'ancien transport `unicast` est reconnue :
-dans un terminal interactif, acceptez l'ouverture de la migration guidée, vérifiez qu'un broadcast
-ou relais utilisable reste configuré, puis confirmez le résumé. La configuration originale reçoit
-une sauvegarde datée avant l'écriture.
+indiqué par la commande. Si le journal mentionne `unicast` et que la commande suivante annonce
+l'installateur `1.2.1`, appliquez d'abord l'amorçage vérifié de `docs/updates.md` :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh --version
+```
+
+Ne copiez pas un `install.sh` non vérifié. Le fichier attendu est `dist/install.sh` du paquet `1.2.3`,
+après validation de la signature du manifeste avec la clé publique déjà installée et comparaison de
+son SHA-256 signé.
+
+Une fois l'installateur système `1.2.3` en place, relancez la mise à jour dans un terminal, acceptez
+l'ouverture de la migration guidée, vérifiez qu'un broadcast ou relais utilisable reste configuré,
+puis confirmez le résumé. La configuration originale reçoit une sauvegarde datée avant l'écriture.
+
+Si l'installateur `1.2.2` a déjà été copié et échoue parce que
+`packaging/logrotate/wol-manager` est absent, le paquet stable `WOL-Manager-main` ne contient pas ce
+fichier. Copiez le fichier depuis le paquet `dev` correspondant, vérifiez que son SHA-256 vaut
+`cead19ee7daf701832736c08859abe0199391d57270facc9baf65738ad87a500`, puis installez-le ainsi :
+
+```sh
+sudo install -d -o root -g root -m 0755 \
+  /usr/local/lib/wol-manager/packaging/logrotate
+sudo install -o root -g root -m 0644 \
+  ./packaging/logrotate/wol-manager \
+  /usr/local/lib/wol-manager/packaging/logrotate/wol-manager
+sudo wol update --channel dev
+```
+
+Le correctif `1.2.3` rend cette ressource optionnelle pendant la transition depuis l'ancien
+agencement, afin qu'une ressource auxiliaire manquante ne bloque plus le remplacement du binaire.
 
 Avec `--non-interactive`, cette migration est volontairement refusée sans modifier la configuration
 ni remplacer le binaire. Relancez alors la commande sans cette option :

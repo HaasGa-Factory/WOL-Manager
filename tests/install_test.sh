@@ -246,7 +246,7 @@ PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.2"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.3"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
@@ -299,7 +299,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.2.2"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.2.3"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"
@@ -524,6 +524,16 @@ assert_contains "$WORK/legacy-update-interactive.log" "migration guidée"
 assert_contains "$WORK/legacy-update-interactive.log" "Configuration migrée et validée"
 assert_not_contains "$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" "unicast"
 [[ $("$ROOT_LEGACY_UPDATE/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "la mise à jour après migration n'a pas remplacé le binaire"
+
+echo "[migration update] agencement 1.2.1 sans ressource logrotate embarquée"
+ROOT_LEGACY_LAYOUT="$WORK/root-legacy-layout"
+prepare_root "$ROOT_LEGACY_LAYOUT" 13
+run_installer "$PAYLOAD" "$ROOT_LEGACY_LAYOUT" amd64 --non-interactive --yes --service cli >/dev/null
+rm -f "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+rm -f "$ROOT_LEGACY_LAYOUT/etc/logrotate.d/wol-manager"
+run_update "$ROOT_LEGACY_LAYOUT" main --yes --non-interactive >"$WORK/legacy-layout-update.log" 2>&1
+assert_contains "$WORK/legacy-layout-update.log" "rotation Logrotate non installée"
+[[ $("$ROOT_LEGACY_LAYOUT/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "la ressource logrotate optionnelle a bloqué la mise à jour"
 
 echo "[9/16] mise à jour main et préservation des données"
 mkdir -p "$ROOT12/etc/wol-manager/secrets" "$ROOT12/var/lib/wol-manager" "$ROOT12/var/log/wol-manager"

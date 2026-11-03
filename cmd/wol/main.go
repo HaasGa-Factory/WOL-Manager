@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	version        = "1.2.2"
+	version        = "1.2.3"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )

@@ -23,7 +23,7 @@ Les images ci-dessous affichent la première page de chaque cartographie sur Git
 
 - Branche locale auditée : `dev`.
 - Commit `dev` audité avant les corrections d'aide : `6795b7f`.
-- Version du programme préparée : `1.2.2`, définie dans `cmd/wol/main.go` et `install.sh`.
+- Version du programme préparée : `1.2.3`, définie dans `cmd/wol/main.go` et `install.sh`.
 - Dernière distribution auditée avant ce changement de version : manifeste `1.2.0`, canal `dev`, révision source `95cd327c6da18194a17f66ff9b2e7f33cf9eec08`.
 - Les corrections d'aide et de documentation postérieures à ce binaire restent dans l'arbre de travail jusqu'au prochain cycle manuel source puis artefacts.
 - Date de l'analyse : 19 octobre 2026.

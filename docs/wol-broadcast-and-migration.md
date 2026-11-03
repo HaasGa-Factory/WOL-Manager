@@ -18,9 +18,9 @@ et jamais `255.255.255.255` par défaut. Si ces conditions échouent, aucun paqu
   fichier.
 - `sudo wol setup` reconnaît `unicast` et `allow_unicast`, annonce l'incompatibilité et prépare la
   suppression uniquement après une première confirmation.
-- Depuis `1.2.2`, `sudo wol update` ouvre ce même assistant avec le binaire candidat signé lorsque
-  l'ancienne configuration bloque la validation. Le remplacement ne reprend qu'après migration et
-  revalidation ; le mode non interactif refuse sans modifier les fichiers.
+- L'installateur système `1.2.3` ouvre ce même assistant avec le binaire candidat signé lorsque
+  l'ancienne configuration bloque la validation. Une installation qui utilise encore l'installateur
+  `1.2.1` doit d'abord suivre l'amorçage vérifié décrit dans `docs/updates.md`.
 - Une machine dont la résolution effective était uniquement `unicast` est listée explicitement. Un
   transport broadcast ou relais valide doit être configuré avant l'enregistrement.
 - Le résumé et la confirmation finale restent obligatoires.
