@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-APP_VERSION="1.2.1"
+APP_VERSION="1.2.2"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -83,6 +83,7 @@ Canaux:
   dev   version de développement/BETA, choisie uniquement pour cette commande
 Un paquet local signé est détecté automatiquement. Son canal et sa version sont vérifiés
 avant installation; un --channel explicite doit correspondre au manifeste signé.
+Une ancienne configuration unicast déclenche une migration guidée et confirmée avant mise à jour.
 
 Options:
   --channel main|dev      choisir le canal (main par défaut)
@@ -585,6 +586,33 @@ rollback() {
   fi
   log "Rollback terminé"
 }
+validate_candidate_config() {
+  [ -f "$CONFIG" ] || return 0
+  config_check_log="$TMP_WORK/config-check.log"
+  if "$CANDIDATE" --config "$CONFIG" config check >"$config_check_log" 2>&1; then
+    cat "$config_check_log" >>"$LOG_FILE"
+    return 0
+  fi
+  cat "$config_check_log" >>"$LOG_FILE"
+  if ! grep -Eq "transport inconnu unicast|allow_unicast n'est plus pris en charge" "$config_check_log"; then
+    die "Configuration incompatible avec $CANDIDATE_VERSION"
+  fi
+
+  warn "La configuration utilise l'ancien transport unicast, retiré de $CANDIDATE_VERSION pour des raisons de sécurité."
+  info "Une migration guidée doit retirer unicast et vérifier qu'un broadcast ou un relais reste utilisable."
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    die "Migration guidée requise: relancez sudo wol update --channel $CHANNEL sans --non-interactive"
+  fi
+  confirm "Lancer maintenant la migration guidée avec le nouveau binaire vérifié ?" || \
+    die "Mise à jour annulée: la configuration existante n'a pas été modifiée"
+  "$CANDIDATE" --config "$CONFIG" setup || die "Migration guidée interrompue; la mise à jour n'a pas été installée"
+  if ! "$CANDIDATE" --config "$CONFIG" config check >"$config_check_log" 2>&1; then
+    cat "$config_check_log" >>"$LOG_FILE"
+    die "Migration non enregistrée ou configuration encore incompatible avec $CANDIDATE_VERSION"
+  fi
+  cat "$config_check_log" >>"$LOG_FILE"
+  success "Configuration migrée et validée pour $CANDIDATE_VERSION"
+}
 install_candidate() {
   current=$(installed_version)
   current_revision=$(installed_revision)
@@ -595,7 +623,7 @@ install_candidate() {
     version_lt "$CANDIDATE_VERSION" "$current" && [ "$ALLOW_DOWNGRADE" -ne 1 ] && die "Rétrogradation $current vers $CANDIDATE_VERSION refusée"
     confirm "Installer cette mise à jour ?" || { log "Mise à jour annulée"; return 0; }
   fi
-  [ ! -f "$CONFIG" ] || "$CANDIDATE" --config "$CONFIG" config check >>"$LOG_FILE" 2>&1 || die "Configuration incompatible avec $CANDIDATE_VERSION"
+  validate_candidate_config
   if [ "$SYSTEMD" = yes ] && can_manage_systemd && [ -e "$UNIT" ]; then
     systemctl is-active --quiet wol-manager.service 2>/dev/null && PREVIOUS_ACTIVE=1 || true
     systemctl is-enabled --quiet wol-manager.service 2>/dev/null && PREVIOUS_ENABLED=1 || true
