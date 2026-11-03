@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-APP_VERSION="1.2.2"
+APP_VERSION="1.2.3"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -649,7 +649,19 @@ install_candidate() {
   fi
   install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$(path /usr/share/doc/wol-manager/wol.example.yaml)"
   [ "$SERVICE_MODE" = cli ] || install -m 0644 "$SCRIPT_DIR/packaging/systemd/wol-manager.service" "$UNIT"
-  install -m 0644 "$SCRIPT_DIR/packaging/logrotate/wol-manager" "$LOGROTATE"
+  logrotate_source="$SCRIPT_DIR/packaging/logrotate/wol-manager"
+  [ ! -L "$logrotate_source" ] || die "Ressource Logrotate interdite (lien symbolique): $logrotate_source"
+  if [ -f "$logrotate_source" ]; then
+    install -m 0644 "$logrotate_source" "$LOGROTATE"
+  elif [ "$ACTION" = update ]; then
+    if [ -f "$LOGROTATE" ]; then
+      warn "Ressource Logrotate absente de l'ancien agencement; configuration existante conservée"
+    else
+      warn "Ressource Logrotate absente de l'ancien agencement; rotation Logrotate non installée pendant cette mise à jour"
+    fi
+  else
+    die "Ressource Logrotate absente: $logrotate_source"
+  fi
   umask 027
   printf 'repository=%s\ndefault_channel=main\ninstalled_channel=%s\ninstalled_version=%s\nsource_revision=%s\npublication_commit=%s\n' \
     "$REPOSITORY" "$CHANNEL" "$CANDIDATE_VERSION" "$CANDIDATE_REVISION" "$PUBLICATION_COMMIT" >"$RELEASE_CONFIG"
