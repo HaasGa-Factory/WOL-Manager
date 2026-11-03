@@ -35,6 +35,18 @@ func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive
 	}
 	if session.existing {
 		fmt.Fprintf(output, "Configuration existante détectée: %s.\n", path)
+		if session.legacyUnicast {
+			fmt.Fprintln(output, "Cette configuration utilise l'ancien transport unicast, désormais incompatible.")
+			if len(session.unicastOnly) > 0 {
+				fmt.Fprintf(output, "Machines sans autre transport après conversion: %s. Configurez un broadcast local autorisé avant l'enregistrement.\n", strings.Join(session.unicastOnly, ", "))
+			}
+			fmt.Fprintln(output, "La conversion retirera seulement unicast et allow_unicast. Le fichier ne sera modifié qu'après le résumé, une seconde confirmation et une sauvegarde datée.")
+			if !confirmPrompt(reader, output, "Préparer cette conversion en mémoire ?") {
+				fmt.Fprintln(output, "Configuration existante conservée sans modification.")
+				return nil
+			}
+			session.changed = true
+		}
 	} else {
 		fmt.Fprintln(output, "Création d'une nouvelle configuration guidée.")
 		fmt.Fprintln(output, "NUT signifie Network UPS Tools. Il permet de lire l'état d'un onduleur; cette fonction est facultative et WoL Manager ne commande jamais l'onduleur.")
@@ -96,7 +108,7 @@ func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive
 				for _, issue := range issues {
 					fmt.Fprintln(output, "-", issue)
 				}
-				fmt.Fprintln(output, "Ouvrez Réseaux WoL, modifiez le réseau indiqué et activez le broadcast local, l'unicast ou un relais utilisable.")
+				fmt.Fprintln(output, "Ouvrez Réseaux WoL, modifiez le réseau indiqué et activez le broadcast local, un broadcast dirigé autorisé ou un relais utilisable.")
 				continue
 			}
 			if err := simulateAllMachines(output, session.cfg); err != nil {
@@ -196,10 +208,12 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config, interacti
 }
 
 type configSession struct {
-	base     []byte
-	cfg      *Config
-	existing bool
-	changed  bool
+	base          []byte
+	cfg           *Config
+	existing      bool
+	changed       bool
+	legacyUnicast bool
+	unicastOnly   []string
 }
 
 func newConfigSession(path string) (*configSession, error) {
@@ -220,7 +234,7 @@ func newConfigSession(path string) (*configSession, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	cfg, err := loadConfigData(base)
+	cfg, legacyUnicast, unicastOnly, err := loadConfigDataForMigration(base)
 	if err != nil {
 		if existing {
 			return nil, fmt.Errorf("configuration existante invalide, aucune modification: %w", err)
@@ -239,7 +253,7 @@ func newConfigSession(path string) (*configSession, error) {
 	if cfg.UPS == nil {
 		cfg.UPS = map[string]UPSConfig{}
 	}
-	return &configSession{base: base, cfg: cfg, existing: existing}, nil
+	return &configSession{base: base, cfg: cfg, existing: existing, legacyUnicast: legacyUnicast, unicastOnly: unicastOnly}, nil
 }
 
 func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
@@ -336,7 +350,7 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 			fmt.Fprintln(output, err, "Recommencez.")
 		}
 	}
-	n.Interface = promptDefault(reader, output, "Interface Linux (facultatif)", n.Interface)
+	n.Interface = promptDefault(reader, output, "Interface Linux (requise pour broadcast local)", n.Interface)
 	for {
 		n.SourceIP = promptDefault(reader, output, "Adresse IPv4 source (facultatif)", n.SourceIP)
 		if n.SourceIP == "" || net.ParseIP(n.SourceIP).To4() != nil {
@@ -346,12 +360,14 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 	}
 	printChoiceList(output, "TRANSPORTS DISPONIBLES", []helpRow{
 		{command: "Broadcast local", description: "Recommandé lorsque la machine est sur le même réseau"},
-		{command: "Unicast", description: "Envoi direct, mais dépend de la table ARP"},
 		{command: "Broadcast dirigé", description: "Traverse un routeur et présente davantage de risques"},
 		{command: "Relais", description: "Recommandé pour joindre un réseau distant"},
 	})
 	n.AllowLocalBroadcast = promptBool(reader, output, "Autoriser le broadcast local", valueOrDefault(n.AllowLocalBroadcast, !editing))
-	n.AllowUnicast = promptBool(reader, output, "Autoriser l'unicast", valueOrDefault(n.AllowUnicast, !editing))
+	for n.AllowLocalBroadcast && n.Interface == "" {
+		fmt.Fprintln(output, "Le broadcast local exige une interface Linux explicite.")
+		n.Interface = promptDefault(reader, output, "Interface Linux", n.Interface)
+	}
 	n.AllowDirectedBroadcast = promptBool(reader, output, "Autoriser le broadcast dirigé", n.AllowDirectedBroadcast)
 	if len(cfg.Relays) > 0 {
 		printValueList(output, "RELAIS DISPONIBLES", sortedKeys(cfg.Relays))
@@ -1186,9 +1202,6 @@ func enabledTransports(n Network) []string {
 	if n.AllowLocalBroadcast {
 		out = append(out, "broadcast local")
 	}
-	if n.AllowUnicast {
-		out = append(out, "unicast")
-	}
 	if n.AllowDirectedBroadcast {
 		out = append(out, "broadcast dirigé")
 	}
@@ -2005,6 +2018,9 @@ func writeManagedConfig(path string, base []byte, cfg *Config, backup bool) erro
 	if err := replaceGlobalCheckLogic(root, cfg.Global.CheckLogic); err != nil {
 		return err
 	}
+	if err := replaceGlobalTransportOrder(root, cfg.Global.TransportOrder); err != nil {
+		return err
+	}
 	for _, section := range []struct {
 		name  string
 		value any
@@ -2210,6 +2226,28 @@ func replaceGlobalCheckLogic(root *yaml.Node, value string) error {
 	return nil
 }
 
+func replaceGlobalTransportOrder(root *yaml.Node, value []string) error {
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != "global" || root.Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		global := root.Content[i+1]
+		for j := 0; j+1 < len(global.Content); j += 2 {
+			if global.Content[j].Value != "transport_order" {
+				continue
+			}
+			node := &yaml.Node{}
+			if err := node.Encode(value); err != nil {
+				return err
+			}
+			global.Content[j+1] = node
+			return nil
+		}
+		return errors.New("global.transport_order absent")
+	}
+	return errors.New("section global YAML absente")
+}
+
 func rejectConfigSymlinks(path string) error {
 	if info, err := os.Lstat(filepath.Dir(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("configuration refusée: le répertoire cible est un lien symbolique")
@@ -2264,7 +2302,7 @@ func fieldHelp(label string) string {
 	case strings.Contains(key, "adresse mac"):
 		return "Aide: adresse matérielle de la machine au format 02:00:00:00:00:01. Elle sert à construire le Magic Packet."
 	case strings.Contains(key, "adresse ipv4") && !strings.Contains(key, "source"):
-		return "Aide: adresse IPv4 actuelle de la machine, par exemple 192.168.1.20. Elle sert à l'unicast et aux contrôles de disponibilité."
+		return "Aide: adresse IPv4 actuelle de la machine, par exemple 192.168.1.20. Elle sert aux contrôles de disponibilité."
 	case strings.Contains(key, "machines du groupe"):
 		return "Aide: machines réveillées par « wol wake --group GROUPE ». Elles peuvent aussi avoir leurs propres dépendances obligatoires."
 	case key == "machines" || strings.HasPrefix(key, "machines [") || strings.HasPrefix(key, "machines (-"):
@@ -2281,8 +2319,6 @@ func fieldHelp(label string) string {
 		return "Aide: adresse locale utilisée comme source. Entrée conserve l'adresse détectée; utilisez - pour revenir au choix automatique."
 	case strings.Contains(key, "broadcast local"):
 		return "Aide: recommandé sur le même réseau; envoie au broadcast local et reste limité au segment directement connecté."
-	case strings.Contains(key, "unicast"):
-		return "Aide: envoie directement à l'IP de la machine; simple mais dépend de la conservation de l'entrée ARP."
 	case strings.Contains(key, "broadcast dirigé"):
 		return "Aide: traverse un routeur vers un autre sous-réseau; plus risqué et à activer seulement si le routeur est configuré pour cela."
 	case strings.Contains(key, "relais"):
@@ -2405,7 +2441,7 @@ func uniqueUPSID(configured map[string]UPSConfig, base string) string {
 const minimalConfig = `version: 1
 global:
   port: 9
-  transport_order: [local_broadcast, unicast, directed_broadcast, relay]
+  transport_order: [local_broadcast, directed_broadcast, relay]
   checks:
     - {type: tcp, port: 22, timeout: 2s}
 api:

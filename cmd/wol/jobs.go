@@ -9,8 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
+)
+
+const (
+	terminalJobTTL  = 30 * 24 * time.Hour
+	maxTerminalJobs = 1000
 )
 
 type Job struct {
@@ -22,6 +28,7 @@ type Job struct {
 	Updated time.Time `json:"updated"`
 	Message string    `json:"message,omitempty"`
 	Result  any       `json:"result,omitempty"`
+	Actor   string    `json:"actor,omitempty"`
 }
 type jobFile struct {
 	Jobs   map[string]*Job        `json:"jobs"`
@@ -84,6 +91,7 @@ func newID() (string, error) {
 	return hex.EncodeToString(b[:4]) + "-" + hex.EncodeToString(b[4:6]) + "-" + hex.EncodeToString(b[6:8]) + "-" + hex.EncodeToString(b[8:10]) + "-" + hex.EncodeToString(b[10:]), nil
 }
 func (s *JobStore) saveLocked() error {
+	s.pruneTerminalLocked(time.Now().UTC())
 	dir := filepath.Dir(s.path)
 	if e := os.MkdirAll(dir, 0750); e != nil {
 		return e
@@ -126,7 +134,33 @@ func (s *JobStore) saveLocked() error {
 	}
 	return e
 }
+
+func (s *JobStore) pruneTerminalLocked(now time.Time) {
+	cutoff := now.Add(-terminalJobTTL)
+	var terminal []*Job
+	for id, job := range s.jobs {
+		if !terminalJobState(job.State) {
+			continue
+		}
+		if job.Updated.Before(cutoff) {
+			delete(s.jobs, id)
+			continue
+		}
+		terminal = append(terminal, job)
+	}
+	sort.Slice(terminal, func(i, j int) bool { return terminal[i].Updated.After(terminal[j].Updated) })
+	if len(terminal) <= maxTerminalJobs {
+		return
+	}
+	for _, job := range terminal[maxTerminalJobs:] {
+		delete(s.jobs, job.ID)
+	}
+}
 func (s *JobStore) create(kind, target string, fn func(context.Context) (any, error)) (*Job, error) {
+	return s.createForActor(kind, target, "", fn)
+}
+
+func (s *JobStore) createForActor(kind, target, actor string, fn func(context.Context) (any, error)) (*Job, error) {
 	s.mu.Lock()
 	for _, j := range s.jobs {
 		if j.Kind == kind && j.Target == target && (j.State == "queued" || j.State == "running" || j.State == "revalidation_required") {
@@ -140,7 +174,7 @@ func (s *JobStore) create(kind, target string, fn func(context.Context) (any, er
 		s.mu.Unlock()
 		return nil, idErr
 	}
-	j := &Job{ID: id, Kind: kind, Target: target, State: "queued", Created: now, Updated: now}
+	j := &Job{ID: id, Kind: kind, Target: target, State: "queued", Created: now, Updated: now, Actor: actor}
 	s.jobs[j.ID] = j
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel[j.ID] = cancel
@@ -154,7 +188,7 @@ func (s *JobStore) create(kind, target string, fn func(context.Context) (any, er
 	s.mu.Unlock()
 	go func() {
 		s.update(j.ID, "running", "", nil)
-		v, e := fn(ctx)
+		v, e := fn(withAuditActor(ctx, actor))
 		if e != nil {
 			state := "failed"
 			if ctx.Err() != nil {
@@ -183,7 +217,7 @@ func (s *JobStore) resume(id string, fn func(context.Context) (any, error)) erro
 	_ = s.saveLocked()
 	s.mu.Unlock()
 	go func() {
-		v, e := fn(ctx)
+		v, e := fn(withAuditActor(ctx, j.Actor))
 		if e != nil {
 			state := "failed"
 			if ctx.Err() != nil {

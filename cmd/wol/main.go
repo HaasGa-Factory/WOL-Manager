@@ -380,11 +380,13 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 				return errors.New("découverte active annulée")
 			}
 		}
-		audit.write("network.discovery.active", "cli", "configured_networks", "started", map[string]bool{"dry_run": *dry})
+		if err := audit.write("network.discovery.active", "cli", "configured_networks", "requested", map[string]bool{"dry_run": *dry}); err != nil {
+			return fmt.Errorf("journal d'audit indisponible; diagnostic actif refusé: %w", err)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), c.Discovery.Safeguards.Timeout.Value(30*time.Second))
 		defer cancel()
 		report := activeDiscovery(ctx, c, *dry)
-		audit.write("network.discovery.active", "cli", "configured_networks", "completed", report)
+		_ = audit.write("network.discovery.active", "cli", "configured_networks", "completed", report)
 		return output(jsonOut, report, "")
 	default:
 		return errUsage
@@ -673,8 +675,12 @@ func printWakeResults(output io.Writer, results []WakeResult) {
 		switch packet {
 		case "dry_run":
 			packet = "simulation, aucun paquet émis"
-		case "sent":
-			packet = "paquet annoncé comme émis"
+		case "send_unverified", "socket_accepted":
+			if result.SocketAccepted {
+				packet = "socket UDP accepté; émission réseau non vérifiée"
+			} else {
+				packet = "requête relais acceptée; émission réseau non vérifiée"
+			}
 		case "not_sent":
 			packet = "aucun paquet émis"
 		}
@@ -685,7 +691,10 @@ func printWakeResults(output io.Writer, results []WakeResult) {
 		if result.Destination != "" {
 			rows = append(rows, helpRow{command: "Destination", description: result.Destination})
 		}
-		rows = append(rows, helpRow{command: "Vérifié", description: strconv.FormatBool(result.Verified)})
+		rows = append(rows,
+			helpRow{command: "Émission réseau", description: emptyAs(result.PacketEmitted, "inconnue")},
+			helpRow{command: "Réveil vérifié", description: strconv.FormatBool(result.WakeVerified)},
+		)
 		if result.Note != "" {
 			rows = append(rows, helpRow{command: "Information", description: result.Note})
 		}

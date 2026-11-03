@@ -11,6 +11,12 @@ Permissions : `read` pour inventaire, état et jobs ; `wake` pour les réveils ;
 
 Les opérations longues renvoient `202` et un job. Consulter `GET /api/v1/jobs/{id}` ou demander son annulation. `GET /api/v1/automations` expose en lecture seule les cycles électriques persistés, politiques, tâches et raisons d'attente. Une découverte active requiert simultanément : activation globale, activation API, permission `admin`, `active: true` et `confirm: true`.
 
+L'identité du jeton authentifié est conservée dans les jobs individuels, groupés, globaux et de
+découverte. Avant une action réseau, l'API exige l'écriture de l'événement `requested` dans le
+journal durable ; si le journal est indisponible, elle répond `503 audit_unavailable` et ne crée pas
+de job. Les jobs terminaux sont conservés au plus 30 jours et les 1 000 plus récents sont gardés ;
+les jobs actifs ou en attente de revalidation ne sont pas évincés.
+
 L'API n'accepte jamais d'adresse IP, de MAC ou de destination WoL libre. Le client fournit uniquement un identifiant configuré.
 
 HTTP sans TLS est accepté uniquement sur loopback. Toute autre écoute échoue à la validation sans certificat et clé TLS.

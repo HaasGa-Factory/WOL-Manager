@@ -431,8 +431,8 @@ l'assistant. Utilisez ensuite "wol config check" avant de redémarrer le service
 	"config network": `Usage: sudo wol [--config FILE] config network
 
 Actions: ajouter, modifier, supprimer ou revenir.
-Paramètres: identifiant, CIDR IPv4, interface, IP source, broadcast local, unicast et broadcast dirigé.
-Valeurs par défaut: interface et IP source automatiques; broadcast local proposé à la création.
+Paramètres: identifiant, CIDR IPv4, interface, IP source, broadcast local et broadcast dirigé.
+Valeurs par défaut: interface et IP source proposées lorsqu'une seule interface IPv4 est détectée; le broadcast local exige une interface explicite.
 Contraintes: identifiant et CIDR valides; suppression refusée si une machine utilise le réseau.
 Les relais, contrôles et temporisations réseau avancés restent disponibles dans le YAML.`,
 	"config machine": `Usage: sudo wol [--config FILE] config machine

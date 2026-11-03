@@ -195,10 +195,11 @@ EOF
 
 prepare_payload() {
   local payload=$1 version=$2 revision=$3 channel=${4:-main}
-  mkdir -p "$payload/configs" "$payload/packaging/systemd" "$payload/dist"
+  mkdir -p "$payload/configs" "$payload/packaging/systemd" "$payload/packaging/logrotate" "$payload/dist"
   cp "$REPO/install.sh" "$payload/install.sh"
   cp "$REPO/configs/wol.example.yaml" "$payload/configs/wol.example.yaml"
   cp "$REPO/packaging/systemd/wol-manager.service" "$payload/packaging/systemd/wol-manager.service"
+  cp "$REPO/packaging/logrotate/wol-manager" "$payload/packaging/logrotate/wol-manager"
   cp "$PUBLIC_KEY" "$payload/packaging/release-public.pem"
   make_distribution "$payload/dist" "$version" "$revision" "$channel"
   chmod +x "$payload/install.sh"
@@ -251,6 +252,8 @@ assert_contains "$ROOT12/etc/bash_completion.d/wol-manager" "complete -F _wol wo
 [[ $(sha256sum "$ROOT12/usr/share/bash-completion/completions/wol" | awk '{print $1}') = "$DEBIAN_COMPLETION_SHA" ]] || fail "le fichier de complétion Debian a été modifié"
 bash --noprofile --norc -c 'source "$1"; complete -p wol | grep -Fq "complete -F _wol wol"' _ "$ROOT12/etc/bash_completion.d/wol-manager" || fail "la complétion WoL Manager ne se charge pas"
 assert_file "$ROOT12/etc/wol-manager/secrets/tokens.json"
+assert_file "$ROOT12/etc/logrotate.d/wol-manager"
+assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "rotate 12"
 [[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "permissions dangereuses sur le fichier de jetons"
 [[ ! -s "$WORK/go.log" ]] || fail "Go a été utilisé pendant l'installation"
 
@@ -618,6 +621,7 @@ ROOT_ROLL="$WORK/root-roll"
 prepare_root "$ROOT_ROLL" 12
 run_installer "$PAYLOAD" "$ROOT_ROLL" amd64 --non-interactive --yes --service install
 printf 'ancienne complétion WoL Manager\n' >"$ROOT_ROLL/etc/bash_completion.d/wol-manager"
+printf 'ancienne rotation\n' >"$ROOT_ROLL/etc/logrotate.d/wol-manager"
 cp "$REPO/configs/wol.example.yaml" "$ROOT_ROLL/etc/wol-manager/wol.yaml"
 : >"$ROOT_ROLL/systemd-state/enabled"
 : >"$ROOT_ROLL/systemd-state/active"
@@ -633,6 +637,7 @@ fi
 assert_file "$ROOT_ROLL/systemd-state/enabled"
 assert_file "$ROOT_ROLL/systemd-state/active"
 assert_contains "$ROOT_ROLL/etc/bash_completion.d/wol-manager" "ancienne complétion WoL Manager"
+assert_contains "$ROOT_ROLL/etc/logrotate.d/wol-manager" "ancienne rotation"
 assert_contains "$ROOT_ROLL/usr/share/bash-completion/completions/wol" "_comp_cmd_wol"
 assert_contains "$WORK/rollback.log" "Rollback terminé"
 
@@ -691,6 +696,7 @@ APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_REMOTE/system
   WOL_ROOT="$ROOT_REMOTE" WOL_OS_RELEASE="$ROOT_REMOTE/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
   PATH="$MOCK_BIN:$PATH" "$ROOT_REMOTE/usr/local/lib/wol-manager/install.sh" --uninstall --non-interactive
 [[ ! -e "$ROOT_REMOTE/etc/bash_completion.d/wol-manager" ]] || fail "la complétion WoL Manager n'a pas été supprimée"
+[[ ! -e "$ROOT_REMOTE/etc/logrotate.d/wol-manager" ]] || fail "la rotation WoL Manager n'a pas été supprimée"
 assert_contains "$ROOT_REMOTE/usr/share/bash-completion/completions/wol" "fichier Debian mis à jour"
 assert_file "$ROOT_REMOTE/etc/wol-manager/secrets/tokens.json"
 run_installer "$PAYLOAD" "$ROOT_REMOTE" amd64 --non-interactive --yes --service cli >"$WORK/reinstall-after-uninstall.log" 2>&1

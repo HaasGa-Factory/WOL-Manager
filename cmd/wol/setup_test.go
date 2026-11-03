@@ -107,6 +107,62 @@ func TestWriteSetupConfigPreservesExistingSettings(t *testing.T) {
 	}
 }
 
+func TestLegacyUnicastMigrationBacksUpBeforeWriting(t *testing.T) {
+	directory := testDir(t)
+	path := filepath.Join(directory, "wol.yaml")
+	legacy := `version: 1
+global:
+  transport_order: [unicast, local_broadcast]
+networks:
+  lan:
+    cidr: 192.0.2.0/24
+    interface: ens-test
+    allow_unicast: true
+    allow_local_broadcast: true
+groups: {}
+servers:
+  one: {mac: "02:00:00:00:00:01", ip: 192.0.2.20, network: lan}
+api: {listen: 127.0.0.1:8080}
+storage: {}
+network_discovery: {safeguards: {max_packets: 20, rate_limit_pps: 2}}
+ups: {}
+relays: {}
+automations: []
+`
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, found, _, err := loadConfigDataForMigration([]byte(legacy))
+	if err != nil || !found {
+		t.Fatalf("ancienne configuration non détectée: %v", err)
+	}
+	if err := writeManagedConfig(path, []byte(legacy), cfg, true); err != nil {
+		t.Fatal(err)
+	}
+	newData, _ := os.ReadFile(path)
+	if strings.Contains(string(newData), "unicast") {
+		t.Fatalf("unicast conservé après migration:\n%s", newData)
+	}
+	backups, _ := filepath.Glob(path + ".bak-*")
+	if len(backups) != 1 {
+		t.Fatalf("sauvegarde de migration absente: %v", backups)
+	}
+	backup, _ := os.ReadFile(backups[0])
+	if !bytes.Equal(backup, []byte(legacy)) {
+		t.Fatal("la sauvegarde ne contient pas la configuration originale")
+	}
+}
+
+func TestUnicastOnlyMigrationIsReported(t *testing.T) {
+	data := strings.Replace(minimalConfig, "transport_order: [local_broadcast, directed_broadcast, relay]", "transport_order: [unicast]", 1)
+	data = strings.Replace(data, "servers: {}", "servers:\n  one: {mac: \"02:00:00:00:00:01\", ip: 192.0.2.20, network: lan}\n", 1)
+	data = strings.Replace(data, "networks: {}", "networks:\n  lan: {cidr: 192.0.2.0/24, allow_unicast: true}\n", 1)
+	_, legacy, only, err := loadConfigDataForMigration([]byte(data))
+	if err != nil || !legacy || len(only) != 1 || only[0] != "one" {
+		t.Fatalf("incompatibilité unicast seul non signalée: legacy=%v only=%v err=%v", legacy, only, err)
+	}
+}
+
 func TestParseNUTSelection(t *testing.T) {
 	indices, err := parseSelection("1,3,1", 3)
 	if err != nil || len(indices) != 2 || indices[0] != 0 || indices[1] != 2 {
@@ -127,7 +183,7 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 	input := strings.NewReader(strings.Join([]string{
 		"2",      // NUT: non
 		"1", "1", // réseaux: ajouter
-		"lan", "192.168.50.0/24", "", "", "", "", "", "4",
+		"lan", "192.168.50.0/24", "ens-test", "", "n", "y", "", "4",
 		"2", "1", // machines: ajouter
 		"test-pc", "Machine test", "02:00:00:00:50:10", "192.168.50.10", "lan", "", "", "1", "", "90s", "180s", "5s", "", "", "4",
 		"5", "y", // valider et enregistrer
@@ -673,9 +729,9 @@ func TestReadinessRejectsEnabledMachineWithoutTransport(t *testing.T) {
 	if len(issues) == 0 || !strings.Contains(issues[0], "aucun transport") {
 		t.Fatalf("absence de transport non détectée: %v", issues)
 	}
-	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowUnicast: true}
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowDirectedBroadcast: true}
 	if issues := readinessIssues(cfg); len(issues) != 0 {
-		t.Fatalf("unicast utilisable refusé: %v", issues)
+		t.Fatalf("broadcast dirigé utilisable refusé: %v", issues)
 	}
 }
 
@@ -803,7 +859,7 @@ func TestMachineUPSPolicyIsNotPartOfTheConfigurationSchema(t *testing.T) {
 networks:
   lan:
     cidr: 192.168.1.0/24
-    allow_unicast: true
+    allow_directed_broadcast: true
 groups: {}
 servers:
   one:

@@ -163,7 +163,7 @@ Vérification après réveil: 1 — ICMP
 | Identifiant | Nom technique stable utilisé dans les commandes, par exemple `wol wake truenas`. |
 | Nom | Libellé lisible affiché à l'utilisateur. |
 | Adresse MAC | Adresse de la carte réseau qui recevra le paquet Wake-on-LAN. |
-| Adresse IPv4 | Adresse utilisée pour vérifier si la machine est joignable et, selon la configuration réseau, pour l'envoi en unicast. Une réservation DHCP est recommandée. |
+| Adresse IPv4 | Adresse utilisée pour vérifier si la machine est joignable. Une réservation DHCP est recommandée. |
 | Réseau | Réseau WoL auquel appartient la machine. Ici, `lan` doit contenir `192.168.1.237`. |
 | Groupes | Groupes auxquels rattacher la machine. Une réponse vide signifie aucun groupe. Saisir `-` sert à vider une valeur existante lors d'une modification. |
 | Dépendances | Autres machines que WoL Manager doit réveiller avant celle-ci. Une réponse vide signifie aucune dépendance. |
@@ -186,4 +186,4 @@ l'identifiant technique.
 
 NUT et l'API sont facultatifs. `wol setup` peut être relancé : il sauvegarde le YAML, préserve les autres modules et écrit atomiquement seulement après validation. Une configuration existante n'est jamais remplacée par l'exemple. Le YAML reste un format interne ; `wol config edit` est réservé aux administrateurs qui souhaitent une édition avancée.
 
-Les journaux d'installation se trouvent dans `/var/log/wol-manager/install-*.log`. Aucun jeton ni contenu de secret n'y est écrit.
+Les journaux d'installation se trouvent dans `/var/log/wol-manager/install-*.log`. Aucun jeton ni contenu de secret n'y est écrit. L'installateur déploie aussi `/etc/logrotate.d/wol-manager` pour le journal d'audit JSONL : rotation hebdomadaire, 12 archives, seuil de 10 MiB et compression. Une mise à jour sauvegarde et restaure ce fichier lors d'un rollback ; une désinstallation le retire sans supprimer les journaux existants.

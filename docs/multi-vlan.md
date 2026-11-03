@@ -3,7 +3,7 @@
 Une route IP ne constitue jamais une autorisation WoL.
 
 - `local_broadcast` exige une interface locale dans le CIDR cible et l'autorisation du réseau.
-- `unicast` vise uniquement l'IP enregistrée ; son fonctionnement peut dépendre de la table ARP du routeur.
+- L'ancien transport `unicast` n'est plus opérationnel. `wol setup` propose une conversion confirmée et sauvegardée des anciennes configurations.
 - `directed_broadcast` utilise le broadcast calculé du CIDR et exige `allow_directed_broadcast: true`.
 - `relay` est sélectionné uniquement pour le relais affecté au réseau.
 

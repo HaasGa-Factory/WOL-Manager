@@ -7,9 +7,13 @@ La découverte active demande une activation YAML et `--allow-active-scan`. Elle
 Chaque résultat distingue :
 
 - `connectivity` : route ou socket disponible ;
-- `packet` : bloqué, simulé, émis ou en erreur ;
+- `packet` : bloqué, simulé, accepté par le socket ou en erreur ;
 - `reception` : confirmation instrumentée ou inconnue ;
 - `wake` : machine observée joignable ou non observée.
+
+Un succès de `WriteToUDP` ne constitue pas une preuve de présence du paquet sur le câble. Sans
+capture ou observation équivalente, l'émission reste non vérifiée. Les résultats de `wol wake`
+exposent séparément `socket_accepted`, `packet_emitted` et `wake_verified`.
 
 Le test actif peut réveiller une machine. Il n'est jamais lancé par une automatisation, une reprise ou un échec de réveil.
 

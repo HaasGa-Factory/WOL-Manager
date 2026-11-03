@@ -35,8 +35,8 @@ func testConfig(t *testing.T) *Config {
 	f := false
 	c := &Config{
 		Version:  1,
-		Global:   Defaults{Port: 9, TransportOrder: []string{"unicast", "directed_broadcast"}},
-		Networks: map[string]Network{"lan": {CIDR: "127.0.0.0/8", AllowUnicast: true}},
+		Global:   Defaults{Port: 9, TransportOrder: []string{"directed_broadcast"}},
+		Networks: map[string]Network{"lan": {CIDR: "127.0.0.0/8", AllowDirectedBroadcast: true}},
 		Groups:   map[string]Group{"core": {Priority: 10, Servers: []string{"one"}}},
 		Servers: map[string]Server{
 			"one": {Name: "One", MAC: "02:00:00:00:00:01", IP: "127.0.0.1", Network: "lan", Enabled: &f},
@@ -495,7 +495,7 @@ func TestHumanMenuPresentationAvoidsRawJSONAndNanoseconds(t *testing.T) {
 func TestNetworkInformationUsesIndentedLabels(t *testing.T) {
 	var output bytes.Buffer
 	printNetworks(&output, map[string]Network{"lan": {
-		CIDR: "192.168.1.0/24", Interface: "ens18", SourceIP: "192.168.1.231", AllowLocalBroadcast: true, AllowUnicast: true,
+		CIDR: "192.168.1.0/24", Interface: "ens18", SourceIP: "192.168.1.231", AllowLocalBroadcast: true,
 	}})
 	text := output.String()
 	for _, expected := range []string{
@@ -503,7 +503,7 @@ func TestNetworkInformationUsesIndentedLabels(t *testing.T) {
 		"  CIDR           : 192.168.1.0/24",
 		"  Interface      : ens18",
 		"  Adresse source : 192.168.1.231",
-		"  Transports     : broadcast local, unicast",
+		"  Transports     : broadcast local",
 		"  Port WoL       : 9 (valeur par défaut)",
 	} {
 		if !strings.Contains(text, expected) {
@@ -515,14 +515,15 @@ func TestNetworkInformationUsesIndentedLabels(t *testing.T) {
 func TestHumanWakeResultsAvoidRawJSON(t *testing.T) {
 	var output bytes.Buffer
 	printWakeResults(&output, []WakeResult{{
-		Server:      "two",
-		Transport:   "local_broadcast",
-		Destination: "192.0.2.255:9",
-		Packet:      "dry_run",
-		Note:        "simulation: aucun paquet émis",
+		Server:        "two",
+		Transport:     "local_broadcast",
+		Destination:   "192.0.2.255:9",
+		Packet:        "dry_run",
+		PacketEmitted: "not_emitted",
+		Note:          "simulation: aucun paquet émis",
 	}})
 	text := output.String()
-	for _, expected := range []string{"Résultat two", "simulation, aucun paquet émis", "Transport", "local_broadcast", "Destination", "192.0.2.255:9", "Vérifié", "false"} {
+	for _, expected := range []string{"Résultat two", "simulation, aucun paquet émis", "Transport", "local_broadcast", "Destination", "192.0.2.255:9", "Émission réseau", "not_emitted", "Réveil vérifié", "false"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("%q absent de la sortie humaine: %s", expected, text)
 		}
@@ -624,7 +625,7 @@ func TestStrictYAML(t *testing.T) {
 func TestTransportRestrictionsAndDryRun(t *testing.T) {
 	c := testConfig(t)
 	p, err := transportPlan(c, "two")
-	if err != nil || p[0].Name != "unicast" || p[0].State != "selected" {
+	if err != nil || p[0].Name != "directed_broadcast" || p[0].State != "selected" {
 		t.Fatalf("plan inattendu: %#v %v", p, err)
 	}
 	c.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowDirectedBroadcast: true, TransportOrder: []string{"directed_broadcast"}}
@@ -640,6 +641,115 @@ func TestTransportRestrictionsAndDryRun(t *testing.T) {
 	}
 }
 
+func TestLocalBroadcastUsesResolvedInterfaceAndDirectedSubnetAddress(t *testing.T) {
+	c := testConfig(t)
+	c.Global.TransportOrder = []string{"local_broadcast"}
+	n := c.Networks["lan"]
+	n.AllowDirectedBroadcast = false
+	n.AllowLocalBroadcast = true
+	n.Interface = "ens-test"
+	n.CIDR = "192.0.2.0/24"
+	c.Networks["lan"] = n
+	s := c.Servers["two"]
+	s.IP = "192.0.2.20"
+	c.Servers["two"] = s
+
+	original := localBroadcastResolver
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{Interface: "ens-test", Source: "192.0.2.10", Destination: "192.0.2.255:9"}, nil
+	}
+	t.Cleanup(func() { localBroadcastResolver = original })
+
+	plan, err := transportPlan(c, "two")
+	if err != nil || len(plan) != 1 || plan[0].State != "selected" || plan[0].Destination != "192.0.2.255:9" || plan[0].Interface != "ens-test" || plan[0].Source != "192.0.2.10" {
+		t.Fatalf("plan broadcast local inattendu: %#v, %v", plan, err)
+	}
+}
+
+func TestLocalBroadcastRejectsUnavailableInterfaceUnusableCIDRAndDisabledNetwork(t *testing.T) {
+	if _, err := resolveLocalBroadcast(Network{CIDR: "192.0.2.0/24", Interface: "wol-interface-that-does-not-exist"}, 9); err == nil || !strings.Contains(err.Error(), "indisponible") {
+		t.Fatalf("interface inexistante acceptée: %v", err)
+	}
+	if _, err := resolveLocalBroadcast(Network{CIDR: "192.0.2.0/31", Interface: "unused"}, 9); err == nil || !strings.Contains(err.Error(), "sans adresse de broadcast") {
+		t.Fatalf("CIDR sans broadcast accepté: %v", err)
+	}
+	c := testConfig(t)
+	c.Global.TransportOrder = []string{"local_broadcast"}
+	n := c.Networks["lan"]
+	n.AllowLocalBroadcast = false
+	c.Networks["lan"] = n
+	plan, err := transportPlan(c, "two")
+	if err == nil || len(plan) != 1 || plan[0].State != "disabled" {
+		t.Fatalf("réseau non autorisé accepté: plan=%#v err=%v", plan, err)
+	}
+}
+
+func TestLocalBroadcastSendUsesResolvedSource(t *testing.T) {
+	c := testConfig(t)
+	c.Global.TransportOrder = []string{"local_broadcast"}
+	n := c.Networks["lan"]
+	n.AllowDirectedBroadcast = false
+	n.AllowLocalBroadcast = true
+	n.Interface = "ens-test"
+	n.ChecksDisabled = true
+	n.CIDR = "192.0.2.0/24"
+	c.Networks["lan"] = n
+	s := c.Servers["two"]
+	s.IP = "192.0.2.20"
+	c.Servers["two"] = s
+
+	original := localBroadcastResolver
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{Interface: "ens-test", Source: "192.0.2.10", Destination: "192.0.2.255:9"}, nil
+	}
+	t.Cleanup(func() { localBroadcastResolver = original })
+	var destination, source string
+	result, err := (&Engine{cfg: c, audit: &Auditor{}, sendPacket: func(gotDestination, gotSource string, broadcast bool, _ []byte) error {
+		destination, source = gotDestination, gotSource
+		if !broadcast {
+			t.Fatal("envoi local sans option broadcast")
+		}
+		return nil
+	}}).wakeOne(context.Background(), "two")
+	if err != nil || destination != "192.0.2.255:9" || source != "192.0.2.10" || !result.SocketAccepted || result.PacketEmitted != "unverified" {
+		t.Fatalf("émission locale incorrecte: destination=%q source=%q result=%#v err=%v", destination, source, result, err)
+	}
+}
+
+func TestLegacyUnicastRequiresExplicitMigration(t *testing.T) {
+	data := []byte(`version: 1
+global:
+  transport_order: [unicast, local_broadcast]
+networks:
+  lan:
+    cidr: 192.0.2.0/24
+    interface: ens-test
+    allow_unicast: true
+    allow_local_broadcast: true
+groups: {}
+servers:
+  one: {mac: "02:00:00:00:00:01", ip: 192.0.2.20, network: lan}
+api: {listen: 127.0.0.1:8080}
+storage: {}
+network_discovery: {safeguards: {max_packets: 20, rate_limit_pps: 2}}
+ups: {}
+relays: {}
+automations: []
+`)
+	if _, err := loadConfigData(data); err == nil || !strings.Contains(err.Error(), "unicast") {
+		t.Fatalf("configuration unicast acceptée sans migration: %v", err)
+	}
+	cfg, legacy, only, err := loadConfigDataForMigration(data)
+	if err != nil || !legacy || len(only) != 0 || cfg.Networks["lan"].AllowUnicast {
+		t.Fatalf("migration contrôlée incorrecte: legacy=%v only=%v err=%v cfg=%#v", legacy, only, err, cfg)
+	}
+	for _, transport := range cfg.Global.TransportOrder {
+		if transport == "unicast" {
+			t.Fatal("unicast conservé après migration")
+		}
+	}
+}
+
 func TestConfigurationInheritance(t *testing.T) {
 	c := testConfig(t)
 	one := 1
@@ -647,7 +757,7 @@ func TestConfigurationInheritance(t *testing.T) {
 	n := c.Networks["lan"]
 	n.Checks = []Check{{Type: "tcp", Port: 80}}
 	n.WakeRetries = &one
-	n.TransportOrder = []string{"unicast"}
+	n.TransportOrder = []string{"directed_broadcast"}
 	c.Networks["lan"] = n
 	g := c.Groups["core"]
 	g.Checks = []Check{{Type: "tcp", Port: 443}}
@@ -656,12 +766,12 @@ func TestConfigurationInheritance(t *testing.T) {
 	c.Groups["core"] = g
 	s := c.Servers["one"]
 	s.Checks = []Check{{Type: "tcp", Port: 22}}
-	s.Transports = []string{"unicast"}
+	s.Transports = []string{"directed_broadcast"}
 	c.Servers["one"] = s
 	if got := c.effectiveChecks("one")[0].Port; got != 22 {
 		t.Fatalf("checks serveur non prioritaire: %d", got)
 	}
-	if got := c.effectiveTransportOrder("one")[0]; got != "unicast" {
+	if got := c.effectiveTransportOrder("one")[0]; got != "directed_broadcast" {
 		t.Fatalf("transport serveur non prioritaire: %s", got)
 	}
 	_, retries, _ := c.effectiveTiming("one")
@@ -775,6 +885,42 @@ func TestJobPersistenceCancellationAndRestart(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("tâche non reprise: %s", x.State)
+}
+
+func TestTerminalJobRetentionIsBounded(t *testing.T) {
+	store, err := openJobs(filepath.Join(testDir(t), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	store.jobs["expired"] = &Job{ID: "expired", State: "completed", Updated: now.Add(-terminalJobTTL - time.Second)}
+	for i := 0; i < maxTerminalJobs+10; i++ {
+		id := fmt.Sprintf("terminal-%04d", i)
+		store.jobs[id] = &Job{ID: id, State: "completed", Updated: now.Add(-time.Duration(i) * time.Second)}
+	}
+	store.jobs["active"] = &Job{ID: "active", State: "running", Updated: now.Add(-terminalJobTTL * 2)}
+	store.pruneTerminalLocked(now)
+	if len(store.jobs) != maxTerminalJobs+1 || store.jobs["active"] == nil || store.jobs["expired"] != nil {
+		t.Fatalf("rétention incorrecte: %d jobs", len(store.jobs))
+	}
+}
+
+func TestJobPersistsAuthenticatedActor(t *testing.T) {
+	store, err := openJobs(filepath.Join(testDir(t), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	job, err := store.createForActor("wake_group", "core", "token-a", func(ctx context.Context) (any, error) {
+		done <- auditActor(ctx)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Actor != "token-a" || <-done != "token-a" {
+		t.Fatalf("acteur perdu: %#v", job)
+	}
 }
 
 func TestCancellationIsTerminalWhenWorkerReturnsSuccess(t *testing.T) {
@@ -991,6 +1137,42 @@ func TestAPIPermissions(t *testing.T) {
 	srv.handler().ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("requête anonyme acceptée: %d", w.Code)
+	}
+}
+
+func TestAPIRefusesWakeWhenAuthoritativeAuditIsUnavailable(t *testing.T) {
+	c := testConfig(t)
+	store, _ := openJobs(c.Storage.StateFile)
+	plain := "wake-secret"
+	sum := sha256.Sum256([]byte(plain))
+	parent := filepath.Join(testDir(t), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine := &Engine{cfg: c, audit: &Auditor{path: filepath.Join(parent, "audit.jsonl")}, dry: true}
+	srv := &APIServer{cfg: c, jobs: store, engine: engine, tokens: []TokenRecord{{ID: "operator", Hash: hex.EncodeToString(sum[:]), Permissions: []string{"wake"}}}, rates: map[string]rateEntry{}}
+	r := httptest.NewRequest("POST", "/api/v1/groups/core/wake", nil)
+	r.Header.Set("Authorization", "Bearer "+plain)
+	w := httptest.NewRecorder()
+	srv.handler().ServeHTTP(w, r)
+	if w.Code != http.StatusServiceUnavailable || len(store.list()) != 0 {
+		t.Fatalf("action non refusée sans audit: HTTP %d jobs=%#v body=%s", w.Code, store.list(), w.Body.String())
+	}
+}
+
+func TestBulkWakeJobKeepsAuthenticatedPrincipal(t *testing.T) {
+	c := testConfig(t)
+	store, _ := openJobs(c.Storage.StateFile)
+	plain := "wake-secret"
+	sum := sha256.Sum256([]byte(plain))
+	engine := &Engine{cfg: c, audit: &Auditor{path: filepath.Join(testDir(t), "audit.jsonl")}, dry: true}
+	srv := &APIServer{cfg: c, jobs: store, engine: engine, tokens: []TokenRecord{{ID: "operator", Hash: hex.EncodeToString(sum[:]), Permissions: []string{"wake"}}}, rates: map[string]rateEntry{}}
+	r := httptest.NewRequest("POST", "/api/v1/groups/core/wake", nil)
+	r.Header.Set("Authorization", "Bearer "+plain)
+	w := httptest.NewRecorder()
+	srv.handler().ServeHTTP(w, r)
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"actor":"operator"`) {
+		t.Fatalf("principal absent du réveil groupé: HTTP %d body=%s", w.Code, w.Body.String())
 	}
 }
 

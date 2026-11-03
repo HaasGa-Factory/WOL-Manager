@@ -14,6 +14,21 @@ pas le fichier. Le résumé final présente toutes ces valeurs avant l'écriture
 
 Le YAML est lu avec rejet des champs inconnus. `wol config check` vérifie notamment les MAC/IP dupliquées, CIDR, références, priorités de groupe, cycles, TLS, réseaux actifs autorisés et transports.
 
+## Migration des transports WoL
+
+Le transport opérationnel `unicast` a été supprimé. Un broadcast local exige désormais un nom
+d'interface explicite et une adresse IPv4 de cette interface appartenant exactement au CIDR déclaré.
+La destination est le broadcast calculé du sous-réseau ; `255.255.255.255` n'est pas utilisé comme
+solution de repli.
+
+Une simple lecture (`wol config check`, API ou démarrage du service) ne modifie jamais un ancien
+fichier. Elle refuse `unicast` et `allow_unicast` avec une indication de migration. `sudo wol setup`
+charge l'ancienne configuration en mémoire, annonce les machines qui ne disposaient que d'unicast,
+demande une première confirmation de conversion puis la confirmation finale habituelle. La
+conversion retire uniquement les références à l'unicast. Avant l'écriture atomique, le fichier
+original reçoit une sauvegarde datée. Une configuration unicast uniquement doit donc recevoir un
+transport broadcast ou relais valide avant de pouvoir être enregistrée.
+
 L'assistant couvre les paramètres usuels. Les réglages avancés de réseau et de machine — relais,
 ordre détaillé des transports, politiques UPS historiques, CA NUT privée et fichiers d'identifiants —
 restent disponibles dans le YAML. Cette limite est annoncée dans `wol config ... --help`; elle ne
@@ -44,7 +59,7 @@ servers:
       interval: 5s
 ```
 
-`initial_delay` attend après l'envoi effectif du paquet, avant la première vérification. `timeout` limite la fenêtre totale de vérification et `interval` espace les tentatives. `attempts: 0` conserve une limite basée uniquement sur `timeout`; une valeur positive borne aussi le nombre de contrôles. `packet_retries` borne séparément les nouveaux Magic Packets. Les durées utilisent la syntaxe Go (`5s`, `90s`, `3m`). Une machine déjà joignable, une simulation `--dry-run` ou un envoi échoué n'attendent jamais ce délai. L'attente est liée au contexte du job et s'interrompt immédiatement lors d'une annulation.
+`initial_delay` attend après l'acceptation de la demande d'envoi, avant la première vérification. `timeout` limite la fenêtre totale de vérification et `interval` espace les tentatives. `attempts: 0` conserve une limite basée uniquement sur `timeout`; une valeur positive borne aussi le nombre de contrôles. `packet_retries` borne séparément les nouveaux Magic Packets. Les durées utilisent la syntaxe Go (`5s`, `90s`, `3m`). Une machine déjà joignable, une simulation `--dry-run` ou un envoi échoué n'attendent jamais ce délai. L'attente est liée au contexte du job et s'interrompt immédiatement lors d'une annulation.
 
 Chaque machine peut déclarer plusieurs contrôles, y compris plusieurs ports TCP. `check_logic: any` considère la machine joignable dès qu'un contrôle réussit ; `all` exige la réussite de tous les contrôles. Un résultat absent ou indéterminé n'est jamais transformé en succès.
 
@@ -55,6 +70,12 @@ précis peut ensuite réactiver des contrôles en déclarant sa propre liste. Qu
 est effective, `wol status ID` retourne immédiatement l'état `unknown`, sans attendre ; un réveil
 envoie au plus les paquets prévus mais ne prétend pas confirmer le démarrage et n'applique ni délai de
 vérification, ni tentative de contrôle, ni nouvel envoi motivé par un échec de vérification.
+
+Les résultats de réveil séparent trois preuves : `socket_accepted` indique seulement que l'appel
+d'envoi UDP a réussi, `packet_emitted` vaut `unverified` tant qu'aucune observation réseau adaptée
+n'existe, et `wake_verified` exige la réussite des contrôles ICMP, TCP ou ARP configurés. Une
+machine déjà joignable peut avoir `wake_verified: true` sans émission ; un `--dry-run` conserve
+`packet_emitted: not_emitted`.
 
 Sans ces champs, le comportement historique reste inchangé : aucune attente initiale, fenêtre de 45 secondes et intervalle de 2 secondes. `wake_timeout` reste accepté pour les anciennes configurations. Une surcharge ponctuelle ne modifie pas le fichier :
 

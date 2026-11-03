@@ -25,12 +25,19 @@ while (($#)); do
   esac
 done
 
-for command in go git sha256sum file openssl tar; do
+for command in go govulncheck git sha256sum file openssl tar; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "Prérequis développeur manquant: $command" >&2
     exit 1
   }
 done
+
+required_go=go1.26.10
+actual_go=$(go env GOVERSION)
+[[ "$actual_go" == "$required_go" ]] || {
+  echo "Toolchain Go refusé: $actual_go; version requise: $required_go." >&2
+  exit 1
+}
 
 cd "$ROOT"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
@@ -95,7 +102,9 @@ git archive HEAD -- cmd api go.mod go.sum | tar -xf - -C "$source_tree"
 (
   cd "$source_tree"
   go mod verify
-  go test ./...
+  go test -count=1 ./...
+  go vet ./...
+  govulncheck ./...
 )
 
 ldflags="-s -w -X main.version=$version -X main.sourceRevision=$source_revision -X main.buildChannel=$CHANNEL"
@@ -106,6 +115,11 @@ for arch in amd64 arm64; do
     cd "$source_tree"
     CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags="$ldflags" -o "$output" ./cmd/wol
   )
+done
+
+for arch in amd64 arm64; do
+  echo "Analyse govulncheck linux/$arch..."
+  govulncheck -mode=binary "$work/wol-linux-$arch"
 done
 
 file "$work/wol-linux-amd64" | grep -Eq 'ELF 64-bit.*x86-64' || {
@@ -127,12 +141,23 @@ amd64_sha=$(sha256sum "$work/wol-linux-amd64" | awk '{print $1}')
 arm64_sha=$(sha256sum "$work/wol-linux-arm64" | awk '{print $1}')
 install -m 0755 install.sh "$work/install.sh"
 installer_sha=$(sha256sum "$work/install.sh" | awk '{print $1}')
+govulncheck_version=$(govulncheck -version 2>&1 | sed -n 's/^Scanner: //p' | head -n1 | tr -d '\r')
+required_govulncheck=govulncheck@v1.9.0
+[[ "$govulncheck_version" == "$required_govulncheck" ]] || {
+  echo "Version govulncheck refusée: $govulncheck_version; version requise: $required_govulncheck" >&2
+  exit 1
+}
 cat >"$work/manifest.json" <<EOF
 {
   "manifest_version": 2,
   "version": "$version",
   "channel": "$CHANNEL",
   "source_revision": "$source_revision",
+  "go_version": "$actual_go",
+  "govulncheck_version": "$govulncheck_version",
+  "govulncheck_source": "clean",
+  "govulncheck_linux_amd64": "clean",
+  "govulncheck_linux_arm64": "clean",
   "key_id": "wol-manager-2026-01",
   "installer_file": "install.sh",
   "installer_sha256": "$installer_sha",

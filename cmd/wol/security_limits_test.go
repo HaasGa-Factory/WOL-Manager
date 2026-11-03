@@ -96,6 +96,17 @@ func TestNUTErrorsNeverExposeCredentials(t *testing.T) {
 	}
 }
 
+func TestNUTControlCharactersAreRenderedLiterally(t *testing.T) {
+	input := "normal\x1b[31mrouge\x07"
+	got := sanitizeExternalText(input)
+	if strings.ContainsRune(got, '\x1b') || strings.ContainsRune(got, '\x07') {
+		t.Fatalf("contrôle terminal conservé: %q", got)
+	}
+	if got != `normal\x1B[31mrouge\x07` {
+		t.Fatalf("rendu neutralisé inattendu: %q", got)
+	}
+}
+
 func newRateTestServer(t *testing.T, now *time.Time, limit int) *APIServer {
 	t.Helper()
 	cfg := testConfig(t)
@@ -167,5 +178,25 @@ func TestAPIRateLimiterConcurrentCalls(t *testing.T) {
 	wg.Wait()
 	if allowed.Load() != 50 {
 		t.Fatalf("admissions concurrentes: %d, attendu 50", allowed.Load())
+	}
+}
+
+func TestRelayRequestRetentionIsBoundedAndExpires(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	seen := make(map[string]time.Time, maxRelaySeen)
+	for i := 0; i < maxRelaySeen; i++ {
+		duplicate, accepted := rememberRelayRequest(seen, now, fmt.Sprintf("request-%d", i))
+		if duplicate || !accepted {
+			t.Fatalf("requête %d refusée avant la limite", i)
+		}
+	}
+	if duplicate, accepted := rememberRelayRequest(seen, now, "overflow"); duplicate || accepted {
+		t.Fatal("requête acceptée au-delà du plafond")
+	}
+	if duplicate, accepted := rememberRelayRequest(seen, now, "request-0"); !duplicate || accepted {
+		t.Fatal("doublon non détecté à capacité maximale")
+	}
+	if duplicate, accepted := rememberRelayRequest(seen, now.Add(relaySeenTTL+time.Second), "after-expiry"); duplicate || !accepted || len(seen) != 1 {
+		t.Fatalf("expiration incorrecte: duplicate=%v accepted=%v entries=%d", duplicate, accepted, len(seen))
 	}
 }

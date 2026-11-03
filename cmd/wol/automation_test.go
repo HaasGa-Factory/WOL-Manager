@@ -433,11 +433,11 @@ func TestPowerRestoreValidationAndV111Compatibility(t *testing.T) {
 	legacy := []byte(`version: 1
 global:
   port: 9
-  transport_order: [unicast]
+  transport_order: [directed_broadcast]
 networks:
   lan:
     cidr: 127.0.0.0/8
-    allow_unicast: true
+    allow_directed_broadcast: true
 groups:
   core:
     priority: 10

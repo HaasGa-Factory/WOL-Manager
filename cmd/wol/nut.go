@@ -205,6 +205,7 @@ func listNUTUPS(ctx context.Context, u UPSConfig) ([]NUTDevice, error) {
 		if unquoteErr != nil {
 			description = strings.Trim(parts[2], "\"")
 		}
+		description = sanitizeExternalText(description)
 		devices = append(devices, NUTDevice{Name: parts[1], Description: description})
 	}
 	return devices, nil
@@ -231,7 +232,7 @@ func nutStatus(ctx context.Context, id string, u UPSConfig) UPSStatus {
 			if unquoteErr != nil {
 				value = strings.Trim(parts[3], "\"")
 			}
-			vars[parts[2]] = value
+			vars[parts[2]] = sanitizeExternalText(value)
 		}
 	}
 	if vars["ups.status"] == "" {
@@ -240,6 +241,18 @@ func nutStatus(ctx context.Context, id string, u UPSConfig) UPSStatus {
 	}
 	applyNUTVars(&result, vars)
 	return result
+}
+
+func sanitizeExternalText(value string) string {
+	var out strings.Builder
+	for _, r := range value {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			fmt.Fprintf(&out, "\\x%02X", r)
+			continue
+		}
+		out.WriteRune(r)
+	}
+	return out.String()
 }
 
 func classifyNUTError(err error) error {

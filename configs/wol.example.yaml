@@ -2,7 +2,7 @@ version: 1
 
 global:
   port: 9
-  transport_order: [local_broadcast, unicast, directed_broadcast, relay]
+  transport_order: [local_broadcast, directed_broadcast, relay]
   wake_retries: 1
   delay: 2s
   check_logic: any
@@ -23,12 +23,10 @@ networks:
     interface: eth0.10
     source_ip: 192.168.10.2
     allow_local_broadcast: true
-    allow_unicast: true
     allow_directed_broadcast: false
   servers:
     cidr: 192.168.20.0/24
     allow_local_broadcast: false
-    allow_unicast: true
     allow_directed_broadcast: false
     relay: relay-vlan20
     # Une liste checks vide hérite. Pour n'effectuer aucun contrôle à ce niveau :

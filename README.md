@@ -7,7 +7,7 @@ WoL Manager `v1.2.1` est un gestionnaire Wake-on-LAN Linux centralisé pour plus
 ## Fonctions
 
 - configuration YAML déclarative et strictement validée ;
-- broadcast local, unicast, broadcast dirigé explicitement autorisé et relais mTLS ;
+- broadcast local, broadcast dirigé explicitement autorisé et relais mTLS ;
 - dépendances, groupes et reprise NUT séquentielle ou parallèle après un cycle de coupure réellement observé ;
 - seuils batterie bas/haut, stabilité secteur, politiques d'échec et reprise prudente après redémarrage ;
 - contrôles ICMP/TCP/ARP multiples avec logique ET/OU et quatre états distincts ;

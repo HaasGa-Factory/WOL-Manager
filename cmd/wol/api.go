@@ -41,6 +41,8 @@ const principalKey ctxKey = 1
 const (
 	apiRateWindow     = time.Minute
 	maxAPIRateEntries = 4096
+	maxRelaySeen      = 4096
+	relaySeenTTL      = 24 * time.Hour
 )
 
 type rateEntry struct {
@@ -48,15 +50,16 @@ type rateEntry struct {
 	count int
 }
 type APIServer struct {
-	cfg         *Config
-	jobs        *JobStore
-	engine      *Engine
-	tokens      []TokenRecord
-	tokenPath   string
-	mu          sync.Mutex
-	rates       map[string]rateEntry
-	now         func() time.Time
-	automations *AutomationManager
+	cfg             *Config
+	jobs            *JobStore
+	engine          *Engine
+	tokens          []TokenRecord
+	tokenPath       string
+	mu              sync.Mutex
+	rates           map[string]rateEntry
+	nextRateCleanup time.Time
+	now             func() time.Time
+	automations     *AutomationManager
 }
 
 func loadTokens(path string) ([]TokenRecord, error) {
@@ -136,10 +139,13 @@ func (s *APIServer) allowRequest(key string) bool {
 	if s.rates == nil {
 		s.rates = make(map[string]rateEntry)
 	}
-	for existingKey, entry := range s.rates {
-		if now.Sub(entry.start) >= apiRateWindow {
-			delete(s.rates, existingKey)
+	if s.nextRateCleanup.IsZero() || !now.Before(s.nextRateCleanup) {
+		for existingKey, entry := range s.rates {
+			if now.Sub(entry.start) >= apiRateWindow {
+				delete(s.rates, existingKey)
+			}
 		}
+		s.nextRateCleanup = now.Add(apiRateWindow)
 	}
 	entry, exists := s.rates[key]
 	if !exists {
@@ -252,7 +258,12 @@ func (s *APIServer) server(w http.ResponseWriter, r *http.Request) {
 		if r.ContentLength != 0 && !decodeJSON(w, r, &body) {
 			return
 		}
-		j, e := s.jobs.create("wake", id, func(ctx context.Context) (any, error) {
+		actor := principalOf(r)
+		if e := s.engine.audit.write("api.wake", actor, id, "requested", map[string]any{"dry_run": body.DryRun}); e != nil {
+			writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
+			return
+		}
+		j, e := s.jobs.createForActor("wake", id, actor, func(ctx context.Context) (any, error) {
 			engine := *s.engine
 			engine.dry = body.DryRun
 			return engine.wakeTree(ctx, id, map[string]bool{})
@@ -261,7 +272,7 @@ func (s *APIServer) server(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 409, "job_conflict", e.Error())
 			return
 		}
-		s.engine.audit.write("api.wake", principalOf(r), id, "accepted", map[string]any{"job": j.ID, "dry_run": body.DryRun})
+		_ = s.engine.audit.write("api.wake", actor, id, "accepted", map[string]any{"job": j.ID, "dry_run": body.DryRun})
 		writeJSON(w, 202, j)
 	default:
 		method(w)
@@ -283,11 +294,17 @@ func (s *APIServer) group(w http.ResponseWriter, r *http.Request) {
 	s.startGroup(w, r, p[0])
 }
 func (s *APIServer) startGroup(w http.ResponseWriter, r *http.Request, id string) {
-	j, e := s.jobs.create("wake_group", id, func(ctx context.Context) (any, error) { return s.engine.wakeGroup(ctx, id) })
+	actor := principalOf(r)
+	if e := s.engine.audit.write("api.wake_group", actor, id, "requested", nil); e != nil {
+		writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
+		return
+	}
+	j, e := s.jobs.createForActor("wake_group", id, actor, func(ctx context.Context) (any, error) { return s.engine.wakeGroup(ctx, id) })
 	if e != nil {
 		writeError(w, 409, "job_conflict", e.Error())
 		return
 	}
+	_ = s.engine.audit.write("api.wake_group", actor, id, "accepted", map[string]string{"job": j.ID})
 	writeJSON(w, 202, j)
 }
 func (s *APIServer) wakeAll(w http.ResponseWriter, r *http.Request) {
@@ -298,11 +315,17 @@ func (s *APIServer) wakeAll(w http.ResponseWriter, r *http.Request) {
 	if !need(w, r, "wake") {
 		return
 	}
-	j, e := s.jobs.create("wake_all", "all", func(ctx context.Context) (any, error) { return s.engine.wakeAll(ctx) })
+	actor := principalOf(r)
+	if e := s.engine.audit.write("api.wake_all", actor, "all", "requested", nil); e != nil {
+		writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
+		return
+	}
+	j, e := s.jobs.createForActor("wake_all", "all", actor, func(ctx context.Context) (any, error) { return s.engine.wakeAll(ctx) })
 	if e != nil {
 		writeError(w, 409, "job_conflict", e.Error())
 		return
 	}
+	_ = s.engine.audit.write("api.wake_all", actor, "all", "accepted", map[string]string{"job": j.ID})
 	writeJSON(w, 202, j)
 }
 func (s *APIServer) ups(w http.ResponseWriter, r *http.Request) {
@@ -414,7 +437,12 @@ func (s *APIServer) discovery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "active_discovery_blocked", "activation serveur et confirmation explicite requises")
 		return
 	}
-	j, e := s.jobs.create("network_discovery", fmt.Sprint(b.Active), func(ctx context.Context) (any, error) {
+	actor := principalOf(r)
+	if e := s.engine.audit.write("api.network.discovery", actor, "configured_networks", "requested", map[string]any{"active": b.Active, "dry_run": b.DryRun}); e != nil {
+		writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
+		return
+	}
+	j, e := s.jobs.createForActor("network_discovery", fmt.Sprint(b.Active), actor, func(ctx context.Context) (any, error) {
 		if !b.Active {
 			return passiveDiscovery(ctx), nil
 		}
@@ -427,7 +455,7 @@ func (s *APIServer) discovery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "job_conflict", e.Error())
 		return
 	}
-	s.engine.audit.write("api.network.discovery", principalOf(r), "configured_networks", "accepted", map[string]any{"job": j.ID, "active": b.Active, "dry_run": b.DryRun})
+	_ = s.engine.audit.write("api.network.discovery", actor, "configured_networks", "accepted", map[string]any{"job": j.ID, "active": b.Active, "dry_run": b.DryRun})
 	writeJSON(w, 202, j)
 }
 func principalOf(r *http.Request) string {
@@ -555,6 +583,22 @@ type relayRequest struct {
 	RequestID string `json:"request_id"`
 }
 
+func rememberRelayRequest(seen map[string]time.Time, now time.Time, requestID string) (duplicate, accepted bool) {
+	for id, timestamp := range seen {
+		if now.Sub(timestamp) > relaySeenTTL {
+			delete(seen, id)
+		}
+	}
+	if _, duplicate = seen[requestID]; duplicate {
+		return true, false
+	}
+	if len(seen) >= maxRelaySeen {
+		return false, false
+	}
+	seen[requestID] = now
+	return false, true
+}
+
 func serveRelay(c *Config, e *Engine, relayID, listen, certFile, keyFile, clientCA string) error {
 	if _, ok := c.Relays[relayID]; !ok {
 		return fmt.Errorf("relais %q absent de la configuration", relayID)
@@ -586,7 +630,7 @@ func serveRelay(c *Config, e *Engine, relayID, listen, certFile, keyFile, client
 		if !decodeJSON(w, r, &b) {
 			return
 		}
-		if b.RequestID == "" {
+		if b.RequestID == "" || len(b.RequestID) > 128 {
 			writeError(w, 400, "invalid_request", "request_id requis")
 			return
 		}
@@ -601,16 +645,17 @@ func serveRelay(c *Config, e *Engine, relayID, listen, certFile, keyFile, client
 			return
 		}
 		mu.Lock()
-		if _, ok := seen[b.RequestID]; ok {
+		now := time.Now()
+		duplicate, accepted := rememberRelayRequest(seen, now, b.RequestID)
+		if duplicate {
 			mu.Unlock()
 			writeJSON(w, 202, map[string]string{"status": "duplicate_ignored"})
 			return
 		}
-		seen[b.RequestID] = time.Now()
-		for id, t := range seen {
-			if time.Since(t) > 24*time.Hour {
-				delete(seen, id)
-			}
+		if !accepted {
+			mu.Unlock()
+			writeError(w, 429, "relay_capacity", "capacité de déduplication atteinte")
+			return
 		}
 		mu.Unlock()
 		copy := *e

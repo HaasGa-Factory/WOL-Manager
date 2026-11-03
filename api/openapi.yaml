@@ -39,18 +39,21 @@ paths:
         '202': {$ref: '#/components/responses/JobAccepted'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/AuditUnavailable'}
   /groups/{id}/wake:
     parameters: [{$ref: '#/components/parameters/Id'}]
     post:
       summary: Crée une tâche de réveil de groupe
       responses:
         '202': {$ref: '#/components/responses/JobAccepted'}
+        '503': {$ref: '#/components/responses/AuditUnavailable'}
         '404': {$ref: '#/components/responses/NotFound'}
   /wake-all:
     post:
       summary: Réveille tous les serveurs actifs
       responses:
         '202': {$ref: '#/components/responses/JobAccepted'}
+        '503': {$ref: '#/components/responses/AuditUnavailable'}
   /ups:
     get:
       summary: États NUT
@@ -125,6 +128,20 @@ components:
         server: {type: string}
         state: {type: string, enum: [reachable, unreachable, unknown, check_impossible]}
         results: {type: array, items: {$ref: '#/components/schemas/Object'}}
+    WakeResult:
+      type: object
+      required: [server, packet, socket_accepted, packet_emitted, wake_verified, verified, note]
+      properties:
+        server: {type: string}
+        transport: {type: string, enum: [local_broadcast, directed_broadcast, relay]}
+        destination: {type: string}
+        packet: {type: string, enum: [not_sent, dry_run, send_unverified]}
+        socket_accepted: {type: boolean, description: Succès de l'appel UDP local uniquement}
+        packet_emitted: {type: string, enum: [not_emitted, unverified]}
+        wake_verified: {type: boolean, description: Disponibilité confirmée par les contrôles configurés}
+        verified: {type: boolean, description: Alias historique de wake_verified}
+        status: {$ref: '#/components/schemas/Status'}
+        note: {type: string}
     Job:
       type: object
       required: [id, kind, target, state, created, updated]
@@ -137,6 +154,7 @@ components:
         updated: {type: string, format: date-time}
         message: {type: string}
         result: {}
+        actor: {type: string, description: Identifiant du principal authentifié, jamais le secret du jeton}
     Error:
       type: object
       properties:
@@ -148,3 +166,4 @@ components:
     Unauthorized: {description: Jeton absent ou invalide, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Forbidden: {description: Permission insuffisante, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     NotFound: {description: Ressource inconnue, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    AuditUnavailable: {description: Action refusée car le journal d'audit autoritatif est indisponible, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}

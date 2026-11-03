@@ -276,6 +276,10 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 		return
 	}
 	m.gate.Allow(ups)
+	if err := m.engine.audit.write("automation", "nut", ups, "requested", map[string]any{"groups": len(ready)}); err != nil {
+		m.gate.Block(ups, "journal d'audit indisponible; automatisme refusé: "+err.Error())
+		return
+	}
 	run := func(ctx context.Context) (any, error) {
 		result, runErr := m.runPlans(ctx, ups, ready)
 		if persistErr := m.finishCycle(ups, ready, runErr); runErr == nil {
@@ -300,7 +304,7 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 			reason += ": " + err.Error()
 		}
 		m.gate.Block(ups, reason)
-		m.engine.audit.write("automation", "nut", ups, "blocked", reason)
+		_ = m.engine.audit.write("automation", "nut", ups, "blocked", reason)
 		return
 	}
 	cycle.State = "running"
@@ -310,7 +314,7 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 		_ = m.jobs.cancelJob(job.ID)
 		return
 	}
-	m.engine.audit.write("automation", "nut", ups, "accepted", map[string]any{"job": job.ID})
+	_ = m.engine.audit.write("automation", "nut", ups, "accepted", map[string]any{"job": job.ID})
 }
 
 func (m *AutomationManager) waitReason(cycle PowerCycle, plans []restorePlan, status UPSStatus, now time.Time) string {
@@ -340,7 +344,7 @@ func (m *AutomationManager) saveCycle(cycle PowerCycle) error {
 	if err := m.jobs.setCycle(cycle); err != nil {
 		reason := "persistance du cycle impossible: " + err.Error()
 		m.gate.Block(cycle.UPS, reason)
-		m.engine.audit.write("automation", "nut", cycle.UPS, "blocked", reason)
+		_ = m.engine.audit.write("automation", "nut", cycle.UPS, "blocked", reason)
 		return errors.New(reason)
 	}
 	return nil
