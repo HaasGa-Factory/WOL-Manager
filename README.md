@@ -2,7 +2,16 @@
 
 WoL Manager `v1.2.3` est un gestionnaire Wake-on-LAN Linux centralisé pour plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fournit une CLI, un menu, une API REST authentifiée et une reprise persistante après coupure électrique, sans Docker ni accès Internet à l'exécution.
 
-> Beta : testez d'abord avec `--dry-run`. Un paquet WoL émis ne prouve ni sa réception ni le réveil d'une machine.
+**[Télécharger la dernière version stable — GitHub Releases (Latest)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)**
+
+Dans ce projet, la release GitHub marquée **Latest** est la référence officielle
+pour une nouvelle installation stable depuis le canal `main`. La branche
+`dev` peut documenter une version plus récente qui n'est pas encore la version
+stable proposée par ce lien.
+
+> **Précaution :** testez d'abord les opérations de réveil avec `--dry-run`.
+> Un paquet WoL émis ne prouve ni sa réception ni le réveil effectif d'une
+> machine.
 
 ## Fonctions
 
@@ -17,11 +26,29 @@ WoL Manager `v1.2.3` est un gestionnaire Wake-on-LAN Linux centralisé pour plus
 - client NUT facultatif ;
 - binaire unique, service systemd facultatif.
 
-## Démarrage rapide
+## Installation stable
+
+**Systèmes ciblés :** Debian 12 et Debian 13, architectures AMD64 et ARM64.
+
+L'installation depuis une release officielle ne nécessite ni Git, ni Go, ni
+Docker.
+
+1. Ouvrez la [dernière release stable](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest).
+2. Dans **Assets**, téléchargez une seule des deux archives :
+   `wol-manager-vX.Y.Z-installer.tar.gz` ou
+   `wol-manager-vX.Y.Z-installer.zip`.
+3. Extrayez l'archive sur la machine Debian.
+4. Ouvrez un terminal dans le répertoire extrait contenant `install.sh`, puis
+   lancez :
 
 ```sh
+chmod +x install.sh
 sudo ./install.sh
 ```
+
+`X.Y.Z` représente la version de la release. Les archives contiennent déjà
+l'installateur, les binaires AMD64/ARM64, le manifeste signé et les sommes de
+contrôle : aucune compilation n'est effectuée sur la machine cliente.
 
 L'installateur active aussi l'autocomplétion Bash : dans un nouveau terminal, `wol m<Tab>` complète la commande `menu` et `wol config m<Tab>` complète `machine`.
 
@@ -67,6 +94,8 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health
 La création et la révocation sont prises en compte par l'API dès la requête suivante, sans redémarrer
 le service. `token list` n'affiche jamais les secrets ni leurs hashes.
 
+## Mises à jour et canaux
+
 ```sh
 wol update --check
 sudo wol update
@@ -87,7 +116,14 @@ confirmation et sauvegarde datée. Une installation encore équipée de l'instal
 d'abord remplacer uniquement `/usr/local/lib/wol-manager/install.sh` par le fichier signé
 `dist/install.sh` du paquet `1.2.3`, selon la [procédure d'amorçage vérifiée](docs/updates.md#amorçage-depuis-linstallateur-121).
 
-Pour un essai sans installation :
+Le canal `main` correspond aux versions stables. Le canal `dev` sert aux tests
+et validations. Une nouvelle installation stable doit privilégier la
+[GitHub Release marquée Latest](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest).
+
+## Essai sans installation
+
+Pour un essai depuis une copie du dépôt contenant les artefacts de
+distribution :
 
 ```sh
 cp configs/wol.example.yaml wol.yaml
