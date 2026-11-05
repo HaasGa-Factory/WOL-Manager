@@ -128,7 +128,10 @@ conservé. Une tâche interrompue reste soumise à la revalidation du moteur exi
 
 ## Installation atomique et rollback
 
-Avant remplacement, l'installateur valide le nouveau binaire et la configuration, puis sauvegarde le binaire, le service, l'installateur et les métadonnées sous `/var/lib/wol-manager/backups/`. Le remplacement du binaire utilise un fichier temporaire sur le même système de fichiers.
+Avant remplacement, l'installateur valide le nouveau binaire et la
+configuration, puis sauvegarde le binaire, le service, l'installateur et les
+métadonnées sous `/var/lib/wol-manager-installer/backups/`. Le remplacement du
+binaire utilise un fichier temporaire sur le même système de fichiers.
 
 Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces composants sont restaurés et l'ancien service est relancé lorsque possible. Aucune migration irréversible de données n'est exécutée dans cette Beta ; la migration confirmée de la configuration conserve sa sauvegarde datée et les données persistantes restent intactes. Le journal indique clairement si le rollback a été déclenché.
 
@@ -137,3 +140,19 @@ Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces comp
 La clé publique Ed25519 approuvée est installée avec WoL Manager. Elle vérifie le manifeste avant lecture de ses champs ; les SHA-256 signés vérifient ensuite le binaire et l'installateur. La version, le canal et la révision source intégrés doivent correspondre au manifeste. La branche GitHub est d'abord résolue vers un commit de publication, afin de ne jamais mélanger des fichiers de commits différents.
 
 Le `source_revision` désigne le commit source propre utilisé pour compiler. Le commit de publication, nécessairement ultérieur puisqu'il contient les binaires, est enregistré séparément dans `release.conf`. Cette séparation évite le problème circulaire d'un binaire contenant le hash du commit qui le contient.
+
+## Vérification avant et après mise à jour
+
+Avant une installation, utilisez :
+
+```sh
+wol version
+wol update --check
+wol config check
+```
+
+Pour vérifier temporairement le canal de développement, remplacez la deuxième
+commande par `wol update --check --channel dev`. Lisez les messages de
+compatibilité et ne forcez pas `--non-interactive` pour contourner une
+migration refusée. Après la mise à jour, contrôlez de nouveau `wol version`,
+`wol config check` et `wol network test`.

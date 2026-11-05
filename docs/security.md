@@ -27,3 +27,30 @@ relais doit utiliser une CA cliente dédiée et non partagée. Ce point reste `n
 convention de nom de certificat ne doit pas être inventée dans le protocole existant.
 
 Signaler les vulnérabilités selon [`SECURITY.md`](../SECURITY.md), jamais dans une issue publique avant coordination.
+
+## Mise en service sécurisée
+
+Avant d'exposer l'API, créez un jeton limité au besoin réel :
+
+```sh
+sudo wol token create --help
+sudo wol token list
+```
+
+Conservez le secret affiché une seule fois dans un gestionnaire de secrets.
+Ne le placez pas dans un dépôt, un ticket, un journal ou une commande conservée
+dans l'historique du shell. Révoquez les jetons inutiles avec :
+
+```sh
+sudo wol token revoke --id IDENTIFIANT
+```
+
+Pour un usage local, conservez l'écoute sur `127.0.0.1`. Une écoute distante
+exige HTTPS et des certificats correctement administrés. Ne désactivez jamais
+la vérification TLS dans un exemple de production.
+
+Accordez uniquement les permissions nécessaires : `read` pour consulter,
+`wake` pour demander des réveils et `admin` pour les opérations
+d'administration. L'API ne permet pas de fournir librement une MAC, une IP ou
+une destination WoL : elle résout les identifiants depuis la configuration du
+serveur.

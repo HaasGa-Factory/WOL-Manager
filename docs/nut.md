@@ -54,7 +54,12 @@ flowchart TD
 
 Pendant une reprise automatique, un refus UPS temporaire remet le cycle en attente : aucun nouveau Magic Packet n'est envoyé et l'UPS est relu après `poll_interval`. Les groupes déjà terminés restent enregistrés et seules les machines encore nécessaires sont revalidées. Une erreur de configuration ou d'exécution non récupérable reste terminale. Pour un réveil manuel, un refus UPS termine simplement la commande en erreur ; aucune boucle automatique n'est créée.
 
-Pour toute nouvelle politique créée par l'assistant, le réglage recommandé et sélectionné par défaut est 0 % / 70 % : toute coupure observée réarme le groupe, puis la reprise attend 70 % de batterie. Les seuils bas supérieurs à 0 % restent disponibles comme réglages avancés afin d'ignorer volontairement les coupures courtes.
+Pour toute nouvelle politique créée par l'assistant, le réglage recommandé et
+sélectionné par défaut est 0 % / 70 % : tout épisode `OB`, `LB` ou `FSD`
+observé peut armer le groupe, puis la reprise attend 70 % de batterie. Un seuil
+bas supérieur à 0 % est un réglage avancé : un épisode seulement `OB` qui ne
+descend jamais jusqu'à ce seuil peut être ignoré. En revanche, `LB` ou `FSD`
+arme le cycle par sécurité, quelle que soit la charge mesurée.
 
 ## Reprise automatique V1.2
 
@@ -80,3 +85,27 @@ obligatoire n'est jamais contournée. Les politiques d'échec sont :
 - `continue` : continuer uniquement avec les machines indépendantes ;
 - `retry` : retenter de manière bornée avant de poursuivre ;
 - `continue_retry` : continuer les éléments indépendants et retenter en parallèle.
+
+## Scénario pratique
+
+Commencez par `wol ups test` et vérifiez que `ups.status` est lisible. Si la
+politique exige une charge ou une autonomie, la mesure correspondante doit
+également être connue. Configurez ensuite la protection et la reprise dans un
+groupe avec `sudo wol config group` ; une machine seule peut être placée dans
+un groupe dédié.
+
+Une reprise automatique exige le processus permanent `wol api serve`, un
+épisode `OB`, `LB` ou `FSD` effectivement observé, puis le retour `OL`, la
+batterie au seuil haut et la stabilité secteur complète. Un service qui
+démarre alors que l'UPS est déjà `OL` ne réveille rien.
+
+```sh
+wol ups test
+wol automation status
+wol jobs
+```
+
+En cas d'attente, contrôlez dans cet ordre : service actif, UPS joignable,
+coupure enregistrée, seuils, stabilité, dépendances et contrôles des machines.
+Ne provoquez pas de coupure réelle sur une infrastructure de production pour
+tester cette fonction.

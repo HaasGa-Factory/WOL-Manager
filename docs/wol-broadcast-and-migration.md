@@ -20,7 +20,8 @@ et jamais `255.255.255.255` par défaut. Si ces conditions échouent, aucun paqu
   suppression uniquement après une première confirmation.
 - L'installateur système `1.2.3` ouvre ce même assistant avec le binaire candidat signé lorsque
   l'ancienne configuration bloque la validation. Une installation qui utilise encore l'installateur
-  `1.2.1` doit d'abord suivre l'amorçage vérifié décrit dans `docs/updates.md`.
+  `1.2.1` doit d'abord suivre l'amorçage vérifié décrit dans les
+  [mises à jour](updates.md).
 - Une machine dont la résolution effective était uniquement `unicast` est listée explicitement. Un
   transport broadcast ou relais valide doit être configuré avant l'enregistrement.
 - Le résumé et la confirmation finale restent obligatoires.
@@ -52,3 +53,16 @@ complète a réussi avec Go 1.26.10 dans une unité systemd à réseau privé ; 
 
 La confirmation de `packet_emitted` par capture réelle reste volontairement hors de l'application et
 doit être réalisée par l'agent TEST sur un réseau de laboratoire explicitement autorisé.
+
+## Vérifier après migration
+
+```sh
+wol config check
+wol network test
+wol wake IDENTIFIANT --dry-run
+```
+
+Chaque machine doit disposer d'un transport réellement autorisé. Une ancienne
+référence `unicast` n'est pas un repli : utilisez un broadcast local, un
+broadcast dirigé explicitement permis ou un relais mTLS. La validation du plan
+n'est pas une preuve de réveil physique.

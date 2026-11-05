@@ -4,7 +4,8 @@
 
 Si `sudo wol update --channel dev` signale une configuration incompatible, consultez le journal
 indiqué par la commande. Si le journal mentionne `unicast` et que la commande suivante annonce
-l'installateur `1.2.1`, appliquez d'abord l'amorçage vérifié de `docs/updates.md` :
+l'installateur `1.2.1`, appliquez d'abord l'amorçage vérifié du guide des
+[mises à jour](updates.md) :
 
 ```sh
 sudo /usr/local/lib/wol-manager/install.sh --version
@@ -69,3 +70,25 @@ wol automation status
 ```
 
 Le premier affiche les états et mesures réellement lisibles. Le second indique le cycle enregistré, les groupes armés/terminés, la stabilité secteur, les tâches et la raison d'une attente. Une batterie inconnue, un état `OB`, `LB`, `FSD` ou `unknown` doit rester visible comme blocage ; ce n'est pas une valeur zéro implicite.
+
+## Diagnostic guidé : une machine ne se réveille pas
+
+1. `wol config check` : corrigez d'abord toute erreur de configuration.
+2. `wol list` : vérifiez l'identifiant de la cible.
+3. `wol network test IDENTIFIANT` : contrôlez le transport sélectionné.
+4. `wol status IDENTIFIANT` : interprétez les contrôles de disponibilité.
+5. `wol wake IDENTIFIANT --dry-run` : vérifiez le plan et les dépendances sans
+   émettre de paquet.
+6. `wol wake IDENTIFIANT` : effectuez le réveil réel uniquement si le plan est
+   correct.
+7. `wol jobs` : consultez les tâches et résultats persistés.
+
+`socket_accepted: true` signifie seulement que le socket local a accepté
+l'envoi. `packet_emitted: unverified` n'est pas une preuve de réception.
+`wake_verified: true` exige une observation positive par les contrôles
+configurés. Un état `unknown` sans contrôle n'est ni une réussite ni un échec
+prouvé.
+
+Pour une panne liée à un onduleur, complétez avec `wol ups test` et
+`wol automation status`. Ne désactivez pas une politique UPS uniquement pour
+faire passer un test.

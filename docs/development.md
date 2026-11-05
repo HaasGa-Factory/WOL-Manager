@@ -31,3 +31,15 @@ Le commit source et le commit de publication sont volontairement distincts. Le p
 Le script exige `go`, `govulncheck`, `git`, `sha256sum`, `file` et `openssl`, refuse un arbre source sale hors `dist/`, exécute `go mod verify`, `go test -count=1 ./...`, `go vet ./...` et `govulncheck ./...`, compile avec `CGO_ENABLED=0` pour Linux AMD64 et ARM64 puis analyse aussi les deux binaires avec `govulncheck -mode=binary`. Il contrôle les formats ELF, ajoute une copie exacte de `install.sh`, signe le manifeste Ed25519 et génère `SHA256SUMS`. Le manifeste enregistre le commit source, la version exacte de Go, la version du scanner et les résultats des trois scans.
 
 Il n'effectue jamais de commit, push, merge, création de branche, GitHub Release ou publication. Le format ARM64 est contrôlé localement ; son exécution doit être validée sur une vraie machine ARM64.
+
+## Frontière entre documentation utilisateur et développement
+
+Ce document s'adresse aux contributeurs qui compilent et préparent une
+publication. L'utilisateur final n'a pas à exécuter `build.sh`, installer Go
+ni gérer les signatures : il suit [l'installation](installation.md), puis les
+[premiers pas](premiers-pas.md).
+
+Avant de publier une documentation, vérifiez les commandes citées contre
+`cmd/wol/help.go`, et les routes HTTP contre les handlers et
+`api/openapi.yaml`. Une revue documentaire ne modifie ni les aides intégrées,
+ni le comportement du programme.

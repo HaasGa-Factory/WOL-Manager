@@ -100,18 +100,25 @@ Sur ARM64, remplacez `wol-linux-amd64` par `wol-linux-arm64`.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Installation et mise à jour](docs/installation.md)
-- [Mises à jour et rollback](docs/updates.md)
-- [Compilation et publication locale](docs/development.md)
-- [Configuration](docs/configuration.md)
-- [CLI](docs/cli.md)
-- [API](docs/api.md) et [OpenAPI](api/openapi.yaml)
-- [Réseaux et VLAN](docs/multi-vlan.md)
-- [Broadcast WoL et migration de l'ancien unicast](docs/wol-broadcast-and-migration.md)
-- [Diagnostics](docs/diagnostics.md)
-- [NUT](docs/nut.md)
-- [Sécurité](docs/security.md)
+Pour débuter :
+
+- [Premiers pas](docs/premiers-pas.md) : installation, première machine et simulation ;
+- [Installation et désinstallation](docs/installation.md) ;
+- [Configuration guidée](docs/configuration.md) ;
+- [Diagnostics](docs/diagnostics.md).
+
+Pour administrer des fonctions avancées :
+
+- [Référence CLI](docs/cli.md) ;
+- [Mises à jour et rollback](docs/updates.md) ;
+- [API REST](docs/api.md) et [contrat OpenAPI](api/openapi.yaml) ;
+- [Réseaux, VLAN et relais](docs/multi-vlan.md) ;
+- [Broadcast WoL et migration de l'ancien unicast](docs/wol-broadcast-and-migration.md) ;
+- [NUT et reprise après coupure](docs/nut.md) ;
+- [Sécurité](docs/security.md).
+
+Pour contribuer : [architecture](docs/architecture.md) et
+[compilation/publication locale](docs/development.md).
 
 ## Limites connues de la Beta
 

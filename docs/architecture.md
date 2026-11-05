@@ -25,3 +25,20 @@ Un refus UPS temporaire pendant une reprise remet le cycle en attente, annule l'
 Les groupes éligibles sont ordonnés par priorité puis identifiant. Le mode séquentiel respecte l'ordre configuré ; le mode parallèle conserve les dépendances obligatoires. Un coordinateur partagé évite les doublons lorsqu'une machine appartient à plusieurs groupes. Le verrou de puissance est revérifié immédiatement avant chaque émission.
 
 Une nouvelle coupure bloque l'UPS concerné et annule les tâches automatiques actives. Après redémarrage, les cycles incomplets repassent en attente et doivent reconstruire leur durée de stabilité avant toute reprise.
+
+## Lecture simplifiée des composants
+
+Le **fichier YAML** décrit les machines, réseaux, groupes, dépendances,
+transports et politiques UPS. La **CLI** et le **menu** permettent de gérer et
+d'utiliser cette configuration. Le **moteur WoL** prépare les plans, applique
+les autorisations et contrôle les résultats. L'**API REST** déclenche des
+tâches asynchrones authentifiées. Le **processus permanent** assure également
+la surveillance NUT et la reprise après coupure.
+
+Un relais distant est une instance du même programme exposée avec mTLS. Il ne
+reçoit pas d'adresse libre à réveiller : il résout un identifiant déjà déclaré.
+Le journal durable doit être disponible avant qu'une opération réseau demandée
+par l'API soit acceptée.
+
+Ce document s'adresse aux contributeurs et administrateurs avancés. Pour une
+première utilisation, commencez par les [premiers pas](premiers-pas.md).

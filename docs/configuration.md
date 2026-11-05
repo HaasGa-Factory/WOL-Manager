@@ -5,6 +5,24 @@ La méthode recommandée est `sudo wol setup`. L'assistant détecte les interfac
 Chaque section accepte `--help` sans charger le YAML. Dans un assistant ouvert, saisissez `?` pour
 afficher une explication du menu courant sans modifier les données préparées.
 
+## Parcours guidé pour une première machine
+
+1. Dans `sudo wol setup`, créez d'abord le réseau. Avec une seule interface
+   IPv4, l'assistant propose le CIDR, l'interface et l'adresse source détectés.
+2. Ajoutez une machine avec un identifiant technique (par exemple `truenas`),
+   un nom lisible, son adresse MAC, son IP et le réseau créé.
+3. Choisissez au moins un contrôle si vous souhaitez confirmer le démarrage :
+   ICMP (ping), TCP (port réellement ouvert) ou ARP (présence locale).
+4. Relisez le transport, la destination, les délais et dépendances dans le
+   résumé. La simulation finale ne transmet aucun Magic Packet.
+5. Confirmez seulement lorsque le contrôle de préparation ne signale aucune
+   machine active sans transport utilisable.
+
+`checks: []` signifie « hériter » ; ce n'est pas « aucune vérification ».
+L'assistant utilise `checks_disabled: true` pour désactiver explicitement les
+contrôles. `any` valide dès qu'un contrôle réussit ; `all` exige tous les
+contrôles configurés.
+
 Avant chaque enregistrement, la configuration complète est validée. Une configuration existante reçoit une sauvegarde datée, puis le nouveau fichier est remplacé atomiquement. Les cibles symboliques sont refusées et, sous Debian avec une installation standard, le fichier final est `root:wol-manager` en mode `0640`. Une suppression référencée est refusée au lieu de provoquer une cascade silencieuse.
 
 `wol config discovery` enregistre ensemble les deux parties de la fonction : `network_discovery`
@@ -32,7 +50,8 @@ transport broadcast ou relais valide avant de pouvoir être enregistrée.
 Lorsque l'installateur système `1.2.3` est déjà en place, `sudo wol update` utilise directement le
 binaire candidat authentifié pour ouvrir ce même assistant. Une installation provenant de `1.2.1`
 doit auparavant remplacer uniquement l'ancien installateur système par le `dist/install.sh` signé
-du paquet `1.2.3`; la procédure complète est décrite dans `docs/updates.md`. La mise à jour ne
+du paquet `1.2.3`; la procédure complète est décrite dans les
+[mises à jour](updates.md). La mise à jour ne
 remplace le binaire qu'après enregistrement et nouvelle validation de la configuration.
 
 L'assistant couvre les paramètres usuels. Les réglages avancés de réseau et de machine — relais,
