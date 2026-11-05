@@ -1,8 +1,53 @@
-# WoL Manager
+<div align="center">
 
-WoL Manager `v1.2.3` est un gestionnaire Wake-on-LAN Linux centralisé pour plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fournit une CLI, un menu, une API REST authentifiée et une reprise persistante après coupure électrique, sans Docker ni accès Internet à l'exécution.
+# ⚡ WoL Manager
 
-**[Télécharger la dernière version stable — GitHub Releases (Latest)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)**
+**Gestion centralisée du Wake-on-LAN pour Linux**
+
+Réveillez, vérifiez et orchestrez vos machines sur plusieurs réseaux, avec une
+CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
+
+[![Dernière release](https://img.shields.io/github/v/release/HaasGa-Factory/WOL-Manager?display_name=tag&sort=semver&style=for-the-badge&label=stable)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)
+[![Licence MIT](https://img.shields.io/github/license/HaasGa-Factory/WOL-Manager?style=for-the-badge)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/HaasGa-Factory/WOL-Manager?style=for-the-badge)](https://github.com/HaasGa-Factory/WOL-Manager/issues)
+[![Activité dev](https://img.shields.io/github/last-commit/HaasGa-Factory/WOL-Manager/dev?style=for-the-badge&label=dev)](https://github.com/HaasGa-Factory/WOL-Manager/commits/dev)
+
+![Debian 12 et 13](https://img.shields.io/badge/Debian-12%20%7C%2013-A81D33?style=for-the-badge&logo=debian&logoColor=white)
+![Linux AMD64 et ARM64](https://img.shields.io/badge/Linux-AMD64%20%7C%20ARM64-FCC624?style=for-the-badge&logo=linux&logoColor=black)
+![Go côté développement](https://img.shields.io/badge/client-sans%20Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)
+
+[![Télécharger la version stable](https://img.shields.io/badge/Télécharger-la%20version%20stable-2ea44f?style=for-the-badge&logo=github)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)
+[![Premiers pas](https://img.shields.io/badge/Guide-Premiers%20pas-2563eb?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/premiers-pas.md)
+[![Documentation](https://img.shields.io/badge/Documentation-Complète-6b7280?style=for-the-badge&logo=markdown&logoColor=white)](#documentation)
+
+<br>
+
+<a href="docs/cli.md">
+  <img src="docs/images/wol-help-preview.svg" width="900" alt="Aperçu de l'aide CLI de WoL Manager">
+</a>
+
+<sub>Aperçu de l'aide intégrée — cliquez sur l'image pour consulter la référence CLI.</sub>
+
+</div>
+
+## En bref
+
+| ⚡ Réveil maîtrisé | 🔌 Reprise après coupure | 🔐 Administration sécurisée |
+|---|---|---|
+| Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
+
+WoL Manager `v1.2.3` est un gestionnaire Wake-on-LAN Linux centralisé pour
+plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
+et sans accès Internet à l'exécution.
+
+### Navigation rapide
+
+- [Installation stable](#installation-stable)
+- [Fonctions](#fonctions)
+- [Mises à jour et canaux](#mises-à-jour-et-canaux)
+- [Essai sans installation](#essai-sans-installation)
+- [Documentation](#documentation)
+- [Limites connues](#limites-connues-de-la-beta)
 
 Dans ce projet, la release GitHub marquée **Latest** est la référence officielle
 pour une nouvelle installation stable depuis le canal `main`. La branche
