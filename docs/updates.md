@@ -106,6 +106,11 @@ wol update --check --channel dev
 
 Il faut attendre la publication de la version sur `main` avant de revenir au canal stable. Cette exception d'affichage ne s'applique qu'au format signé connu 1 pendant un contrôle sans installation : une signature incorrecte ou tout autre format incompatible reste une erreur stricte. Le canal par défaut reste `main`.
 
+Lorsque `main` publie ensuite exactement la même version et la même révision source que le
+binaire `dev` installé, le canal reste un critère de comparaison. WoL Manager propose alors le
+remplacement du binaire de développement par le binaire signé stable au lieu d'annoncer à tort
+que l'installation est déjà à jour.
+
 ### Transition unique depuis le manifeste de format 1
 
 Les installations `1.1.0-beta` construites depuis la révision `0d423dd` possèdent un ancien moteur qui ne sait mettre à jour que le binaire. Pour éviter qu'il réécrive le fichier de complétion appartenant à Debian, le premier passage au manifeste de format 2 est volontairement refusé par cet ancien moteur.
@@ -133,7 +138,7 @@ configuration, puis sauvegarde le binaire, le service, l'installateur et les
 métadonnées sous `/var/lib/wol-manager-installer/backups/`. Le remplacement du
 binaire utilise un fichier temporaire sur le même système de fichiers.
 
-Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces composants sont restaurés et l'ancien service est relancé lorsque possible. Aucune migration irréversible de données n'est exécutée dans cette Beta ; la migration confirmée de la configuration conserve sa sauvegarde datée et les données persistantes restent intactes. Le journal indique clairement si le rollback a été déclenché.
+Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces composants sont restaurés et l'ancien service est relancé lorsque possible. Aucune migration irréversible de données n'est exécutée dans cette version ; la migration confirmée de la configuration conserve sa sauvegarde datée et les données persistantes restent intactes. Le journal indique clairement si le rollback a été déclenché.
 
 ## Intégrité et provenance
 

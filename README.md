@@ -49,7 +49,7 @@ et sans accès Internet à l'exécution.
 - [Mises à jour et canaux](#mises-à-jour-et-canaux)
 - [Essai sans installation](#essai-sans-installation)
 - [Documentation](#documentation)
-- [Limites connues](#limites-connues-de-la-beta)
+- [Limites connues](#limites-connues)
 
 Dans ce projet, la release GitHub marquée **Latest** est la référence officielle
 pour une nouvelle installation stable depuis le canal `main`. La branche
@@ -203,7 +203,7 @@ Pour administrer des fonctions avancées :
 Pour contribuer : [architecture](docs/architecture.md) et
 [compilation/publication locale](docs/development.md).
 
-## Limites connues de la Beta
+## Limites connues
 
 - Linux avec `iproute2` est requis pour les routes et voisins détaillés.
 - L'installateur cible Debian 12 et 13 sur AMD64/ARM64. Ses scénarios sont testés avec un système simulé ; la validation finale sur quatre VM réelles reste obligatoire avant d'annoncer officiellement la compatibilité.

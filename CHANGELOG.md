@@ -1,10 +1,11 @@
 # Changelog
 
-## 1.2.3 - en préparation
+## 1.2.3 - 2026-11-05
 
 - compatibilité de mise à jour avec l'agencement `1.2.1` qui ne contient pas encore la ressource Logrotate dans le répertoire de l'installateur ;
 - conservation de la configuration Logrotate existante, ou avertissement non bloquant lorsqu'elle est absente, sans copier de ressource non signée ;
-- documentation de l'amorçage unique de l'installateur système `1.2.1` avec le `dist/install.sh` vérifié du paquet `1.2.3`.
+- documentation de l'amorçage unique de l'installateur système `1.2.1` avec le `dist/install.sh` vérifié du paquet `1.2.3` ;
+- transition explicite d'un binaire `dev` vers le binaire stable `main`, même lorsque la version et la révision source sont identiques.
 
 ## 1.2.2 - 2026-11-03
 

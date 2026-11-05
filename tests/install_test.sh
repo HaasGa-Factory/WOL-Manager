@@ -644,6 +644,11 @@ make_distribution "$REMOTE_VERSIONS/dev" 1.2.1 121212121212121212121212121212121
 run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" dev --channel dev --check --non-interactive >"$WORK/dev-newer.log"
 assert_contains "$WORK/dev-newer.log" "Mise à jour disponible"
 
+make_distribution "$REMOTE_VERSIONS/main" 1.2.0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-main-same-source.log"
+assert_contains "$WORK/dev-to-main-same-source.log" "Mise à jour disponible: passage du canal dev vers main"
+assert_not_contains "$WORK/dev-to-main-same-source.log" "WoL Manager est à jour"
+
 make_distribution "$REMOTE_VERSIONS/main" 1.2.0 2020202020202020202020202020202020202020 main
 run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-same-main.log"
 assert_contains "$WORK/dev-to-same-main.log" "Mise à jour disponible: même version"
