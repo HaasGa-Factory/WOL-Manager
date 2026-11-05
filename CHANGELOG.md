@@ -1,6 +1,18 @@
 # Changelog
 
-## 1.2.1 - en préparation
+## 1.2.3 - 2026-11-05
+
+- compatibilité de mise à jour avec l'agencement `1.2.1` qui ne contient pas encore la ressource Logrotate dans le répertoire de l'installateur ;
+- conservation de la configuration Logrotate existante, ou avertissement non bloquant lorsqu'elle est absente, sans copier de ressource non signée ;
+- documentation de l'amorçage unique de l'installateur système `1.2.1` avec le `dist/install.sh` vérifié du paquet `1.2.3` ;
+- transition explicite d'un binaire `dev` vers le binaire stable `main`, même lorsque la version et la révision source sont identiques.
+
+## 1.2.2 - 2026-11-03
+
+- correction de la mise à jour depuis une configuration utilisant l'ancien transport `unicast` : le binaire signé ouvre désormais une migration guidée, confirmée et sauvegardée avant installation ;
+- refus explicite et sans modification en mode non interactif lorsqu'une migration de configuration est nécessaire.
+
+## 1.2.1 - 2026-11-03
 
 - aide contextuelle complète pour les commandes et sous-commandes, disponible sans charger la configuration ;
 - aide `?` dans les menus guidés, avec explications NUT, groupes, séquences et reprise après coupure ;

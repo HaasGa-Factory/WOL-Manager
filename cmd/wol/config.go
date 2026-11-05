@@ -61,20 +61,21 @@ type Defaults struct {
 }
 
 type Network struct {
-	CIDR                   string   `yaml:"cidr"`
-	Interface              string   `yaml:"interface"`
-	SourceIP               string   `yaml:"source_ip"`
-	AllowLocalBroadcast    bool     `yaml:"allow_local_broadcast"`
-	AllowDirectedBroadcast bool     `yaml:"allow_directed_broadcast"`
-	AllowUnicast           bool     `yaml:"allow_unicast"`
-	Relay                  string   `yaml:"relay"`
-	TransportOrder         []string `yaml:"transport_order"`
-	Checks                 []Check  `yaml:"checks"`
-	ChecksDisabled         bool     `yaml:"checks_disabled,omitempty" json:"checks_disabled,omitempty"`
-	WakeTimeout            Duration `yaml:"wake_timeout"`
-	WakeRetries            *int     `yaml:"wake_retries"`
-	Delay                  Duration `yaml:"delay"`
-	Port                   int      `yaml:"port"`
+	CIDR                   string `yaml:"cidr"`
+	Interface              string `yaml:"interface"`
+	SourceIP               string `yaml:"source_ip"`
+	AllowLocalBroadcast    bool   `yaml:"allow_local_broadcast"`
+	AllowDirectedBroadcast bool   `yaml:"allow_directed_broadcast"`
+	// Retained only so legacy YAML can be diagnosed and migrated.
+	AllowUnicast   bool     `yaml:"allow_unicast,omitempty"`
+	Relay          string   `yaml:"relay"`
+	TransportOrder []string `yaml:"transport_order"`
+	Checks         []Check  `yaml:"checks"`
+	ChecksDisabled bool     `yaml:"checks_disabled,omitempty" json:"checks_disabled,omitempty"`
+	WakeTimeout    Duration `yaml:"wake_timeout"`
+	WakeRetries    *int     `yaml:"wake_retries"`
+	Delay          Duration `yaml:"delay"`
+	Port           int      `yaml:"port"`
 }
 
 type Group struct {
@@ -106,7 +107,6 @@ type Server struct {
 	Delay          Duration           `yaml:"delay" json:"-"`
 	Verification   VerificationConfig `yaml:"verification,omitempty" json:"-"`
 	CheckLogic     string             `yaml:"check_logic,omitempty" json:"-"`
-	UPS            *UPSPolicy         `yaml:"ups_policy" json:"-"`
 	Enabled        *bool              `yaml:"enabled" json:"enabled,omitempty"`
 }
 
@@ -117,6 +117,11 @@ type VerificationConfig struct {
 	Attempts      *int      `yaml:"attempts,omitempty"`
 	PacketRetries *int      `yaml:"packet_retries,omitempty"`
 }
+
+const (
+	defaultPowerRestoreLowBattery  = 0
+	defaultPowerRestoreHighBattery = 70
+)
 
 type PowerRestorePolicy struct {
 	Enabled       bool     `yaml:"enabled"`
@@ -207,16 +212,82 @@ func LoadConfig(path string) (*Config, error) {
 
 func loadConfigData(b []byte) (*Config, error) {
 	var c Config
-	d := yaml.NewDecoder(strings.NewReader(string(b)))
-	d.KnownFields(true)
-	if err := d.Decode(&c); err != nil {
-		return nil, fmt.Errorf("configuration YAML: %w", err)
+	if err := decodeConfigYAML(b, &c); err != nil {
+		return nil, err
 	}
 	c.defaults()
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+func loadConfigDataForMigration(b []byte) (*Config, bool, []string, error) {
+	var c Config
+	if err := decodeConfigYAML(b, &c); err != nil {
+		return nil, false, nil, err
+	}
+	c.defaults()
+	only := legacyUnicastOnlyServers(&c)
+	legacy := removeLegacyUnicast(&c)
+	if err := c.Validate(); err != nil {
+		return nil, legacy, only, err
+	}
+	return &c, legacy, only, nil
+}
+
+func decodeConfigYAML(b []byte, c *Config) error {
+	d := yaml.NewDecoder(strings.NewReader(string(b)))
+	d.KnownFields(true)
+	if err := d.Decode(c); err != nil {
+		return fmt.Errorf("configuration YAML: %w", err)
+	}
+	return nil
+}
+
+func removeLegacyUnicast(c *Config) bool {
+	changed := false
+	filter := func(xs []string) []string {
+		out := xs[:0]
+		for _, x := range xs {
+			if x == "unicast" {
+				changed = true
+				continue
+			}
+			out = append(out, x)
+		}
+		return out
+	}
+	c.Global.TransportOrder = filter(c.Global.TransportOrder)
+	for id, n := range c.Networks {
+		if n.AllowUnicast {
+			changed = true
+			n.AllowUnicast = false
+		}
+		n.TransportOrder = filter(n.TransportOrder)
+		c.Networks[id] = n
+	}
+	for id, g := range c.Groups {
+		g.TransportOrder = filter(g.TransportOrder)
+		c.Groups[id] = g
+	}
+	for id, s := range c.Servers {
+		s.Transports = filter(s.Transports)
+		c.Servers[id] = s
+	}
+	return changed
+}
+
+func legacyUnicastOnlyServers(c *Config) []string {
+	var ids []string
+	for id := range c.Servers {
+		order := c.effectiveTransportOrder(id)
+		if len(order) == 1 && order[0] == "unicast" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (c *Config) defaults() {
@@ -230,7 +301,7 @@ func (c *Config) defaults() {
 		c.Global.WakeTimeout = Duration(45 * time.Second)
 	}
 	if len(c.Global.TransportOrder) == 0 {
-		c.Global.TransportOrder = []string{"local_broadcast", "unicast", "directed_broadcast", "relay"}
+		c.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
 	}
 	if c.API.Listen == "" {
 		c.API.Listen = "127.0.0.1:8080"
@@ -260,7 +331,7 @@ func (c *Config) Validate() error {
 	if c.Global.WakeRetries < 0 {
 		problems = append(problems, "global.wake_retries ne peut pas être négatif")
 	}
-	allowed := map[string]bool{"local_broadcast": true, "directed_broadcast": true, "unicast": true, "relay": true}
+	allowed := map[string]bool{"local_broadcast": true, "directed_broadcast": true, "relay": true}
 	checkChecks := func(where string, xs []Check) {
 		for _, x := range xs {
 			if x.Type != "tcp" && x.Type != "icmp" && x.Type != "arp" {
@@ -334,6 +405,12 @@ func (c *Config) Validate() error {
 			continue
 		}
 		_ = ipnet
+		if n.AllowUnicast {
+			problems = append(problems, "network "+id+": allow_unicast n'est plus pris en charge; utilisez wol setup pour une migration confirmée")
+		}
+		if n.AllowLocalBroadcast && n.Interface == "" {
+			problems = append(problems, "network "+id+": interface explicite requise pour le broadcast local")
+		}
 		if n.SourceIP != "" {
 			source := net.ParseIP(n.SourceIP)
 			if source == nil || source.To4() == nil || !ipnet.Contains(source) {
@@ -403,13 +480,24 @@ func (c *Config) Validate() error {
 		}
 		checkVerification("server "+id+" verification", s.Verification)
 		checkLogic("server "+id, s.CheckLogic)
-		checkPolicy("server "+id, s.UPS)
 		if s.WakeRetries != nil && *s.WakeRetries < 0 {
 			problems = append(problems, "server "+id+": wake_retries négatif")
 		}
 		_, timeout, interval := c.effectiveVerification(id)
 		if interval > timeout {
 			problems = append(problems, "server "+id+": verification.interval ne peut pas dépasser verification.timeout")
+		}
+		var inherited *UPSPolicy
+		for _, group := range c.groupsFor(id) {
+			if group.UPS == nil {
+				continue
+			}
+			if inherited != nil && *inherited != *group.UPS {
+				problems = append(problems, "server "+id+": plusieurs groupes définissent des politiques UPS différentes")
+				break
+			}
+			copy := *group.UPS
+			inherited = &copy
 		}
 	}
 	priorities := map[int]string{}
@@ -751,10 +839,6 @@ func (c *Config) effectiveUPS(id string) *UPSPolicy {
 			q := *g.UPS
 			p = &q
 		}
-	}
-	if c.Servers[id].UPS != nil {
-		q := *c.Servers[id].UPS
-		p = &q
 	}
 	return p
 }

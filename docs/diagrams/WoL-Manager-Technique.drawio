@@ -397,7 +397,7 @@
         <mxCell id="t05-verify" value="checkServer toutes les 2 s jusqu&amp;#x27;à deadline; retries+1" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="900" y="500" width="300" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t05-out" value="WakeResult: sent/dry_run/not_sent, Verified, Status, Note" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+        <mxCell id="t05-out" value="WakeResult: socket_accepted, packet_emitted, wake_verified, Status, Note" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="480" y="650" width="500" height="80" as="geometry" />
         </mxCell>
         <mxCell id="t05-fail" value="Erreur d&amp;#x27;envoi ou contexte annulé" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
@@ -418,7 +418,7 @@
         <mxCell id="t05-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n5" target="t05-n6">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="t05-e6" value="local/unicast/directed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n6" target="t05-udp">
+        <mxCell id="t05-e6" value="local/directed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n6" target="t05-udp">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="t05-e7" value="relay" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t05-n6" target="t05-relay">
@@ -465,7 +465,7 @@
         <mxCell id="t06-iface" value="Interface locale / source IPv4" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="370" y="120" width="250" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t06-lan" value="Sous-réseau/VLAN local&amp;#xa;broadcast ou unicast UDP" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+        <mxCell id="t06-lan" value="Sous-réseau/VLAN local&amp;#xa;broadcast UDP" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="720" y="120" width="270" height="90" as="geometry" />
         </mxCell>
         <mxCell id="t06-router" value="Routeur / ACL / VLAN&amp;#xa;non géré par l&amp;#x27;application" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">

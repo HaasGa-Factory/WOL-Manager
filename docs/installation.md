@@ -10,6 +10,21 @@ La logique de détection et les scénarios sans modification de l'hôte sont aut
 
 ## Installation
 
+Avant de modifier le système, consultez les options et exécutez le contrôle
+sans installation :
+
+```sh
+./install.sh --help
+sudo ./install.sh --check
+./install.sh --version
+```
+
+Options disponibles : `--channel main|dev`, `--service enable|install|cli`,
+`--setup`, `--yes`, `--non-interactive`, `--allow-downgrade`, `--verbose`,
+`--check`, `--version`, `--uninstall`, `-h` et `--help`. `--channel dev`
+s'applique uniquement à l'exécution courante. `--allow-downgrade` exige une
+autorisation explicite ; aucun retour à une ancienne version n'est implicite.
+
 Depuis le dossier du projet :
 
 ```sh
@@ -122,6 +137,12 @@ source <(wol completion bash)
 
 L'installateur utilise un `PATH` système déterministe contenant notamment `/usr/sbin`. Ainsi, `wol update --check` ne signale pas faussement l'absence du paquet `passwd` lorsque le `PATH` d'un utilisateur normal ne contient pas `useradd`.
 
+Lorsqu'une mise à jour exécutée par l'installateur système `1.2.3` détecte une ancienne configuration
+`unicast`, elle ne la modifie jamais silencieusement. Le binaire signé candidat ouvre l'assistant de
+migration avec résumé, sauvegarde et confirmation. Une installation encore équipée de
+l'installateur `1.2.1` doit d'abord suivre la procédure d'amorçage du guide des
+[mises à jour](updates.md).
+
 Après l'installation d'une version `dev`, `wol update --check` continue de consulter `main` par défaut. Si `main` utilise encore l'ancien manifeste signé de format 1, la commande indique qu'il faut utiliser temporairement `wol update --check --channel dev` ou attendre la publication sur `main`. Elle ne modifie aucun fichier et ne tente aucun retour vers une ancienne version.
 
 ## Première configuration
@@ -163,7 +184,7 @@ Vérification après réveil: 1 — ICMP
 | Identifiant | Nom technique stable utilisé dans les commandes, par exemple `wol wake truenas`. |
 | Nom | Libellé lisible affiché à l'utilisateur. |
 | Adresse MAC | Adresse de la carte réseau qui recevra le paquet Wake-on-LAN. |
-| Adresse IPv4 | Adresse utilisée pour vérifier si la machine est joignable et, selon la configuration réseau, pour l'envoi en unicast. Une réservation DHCP est recommandée. |
+| Adresse IPv4 | Adresse utilisée pour vérifier si la machine est joignable. Une réservation DHCP est recommandée. |
 | Réseau | Réseau WoL auquel appartient la machine. Ici, `lan` doit contenir `192.168.1.237`. |
 | Groupes | Groupes auxquels rattacher la machine. Une réponse vide signifie aucun groupe. Saisir `-` sert à vider une valeur existante lors d'une modification. |
 | Dépendances | Autres machines que WoL Manager doit réveiller avant celle-ci. Une réponse vide signifie aucune dépendance. |
@@ -186,4 +207,10 @@ l'identifiant technique.
 
 NUT et l'API sont facultatifs. `wol setup` peut être relancé : il sauvegarde le YAML, préserve les autres modules et écrit atomiquement seulement après validation. Une configuration existante n'est jamais remplacée par l'exemple. Le YAML reste un format interne ; `wol config edit` est réservé aux administrateurs qui souhaitent une édition avancée.
 
-Les journaux d'installation se trouvent dans `/var/log/wol-manager/install-*.log`. Aucun jeton ni contenu de secret n'y est écrit.
+Les journaux d'installation se trouvent dans
+`/var/log/wol-manager-installer/install-*.log`. Aucun jeton ni contenu de
+secret n'y est écrit. L'installateur déploie aussi
+`/etc/logrotate.d/wol-manager` pour le journal d'audit JSONL : rotation
+hebdomadaire, 12 archives, seuil de 10 MiB et compression. Une mise à jour
+sauvegarde et restaure ce fichier lors d'un rollback ; une désinstallation le
+retire sans supprimer les journaux existants.

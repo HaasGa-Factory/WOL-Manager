@@ -26,14 +26,40 @@ type UPSStatus struct {
 	Error        string  `json:"error,omitempty"`
 }
 
+type upsRevalidationError struct{ cause error }
+
+func (e *upsRevalidationError) Error() string { return e.cause.Error() }
+func (e *upsRevalidationError) Unwrap() error { return e.cause }
+
+func upsRevalidationErrorf(format string, args ...any) error {
+	return &upsRevalidationError{cause: fmt.Errorf(format, args...)}
+}
+
+func needsUPSRevalidation(err error) bool {
+	var target *upsRevalidationError
+	return errors.As(err, &target)
+}
+
 type NUTDevice struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 }
 
+const (
+	maxNUTLineBytes     = 64 << 10
+	maxNUTListLines     = 4096
+	maxNUTResponseBytes = 4 << 20
+)
+
+var errNUTResponseLimit = errors.New("limite de réponse NUT dépassée")
+
 type nutConnection struct {
 	conn net.Conn
 	rw   *bufio.ReadWriter
+}
+
+func newNUTReadWriter(conn net.Conn) *bufio.ReadWriter {
+	return bufio.NewReadWriter(bufio.NewReaderSize(conn, maxNUTLineBytes+1), bufio.NewWriter(conn))
 }
 
 func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
@@ -44,7 +70,7 @@ func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
 		return nil, classifyNUTError(err)
 	}
 	_ = conn.SetDeadline(time.Now().Add(timeout))
-	n := &nutConnection{conn: conn, rw: bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))}
+	n := &nutConnection{conn: conn, rw: newNUTReadWriter(conn)}
 	if u.TLS {
 		line, err := n.one("STARTTLS")
 		if err != nil {
@@ -77,7 +103,7 @@ func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
 			return nil, fmt.Errorf("TLS NUT: %w", err)
 		}
 		n.conn = tlsConn
-		n.rw = bufio.NewReadWriter(bufio.NewReader(tlsConn), bufio.NewWriter(tlsConn))
+		n.rw = newNUTReadWriter(tlsConn)
 	}
 	if u.UsernameFile != "" {
 		user, userErr := readSecret(u.UsernameFile)
@@ -100,6 +126,18 @@ func openNUT(ctx context.Context, u UPSConfig) (*nutConnection, error) {
 
 func (n *nutConnection) shutdown() { _ = n.conn.Close() }
 
+func (n *nutConnection) readLine() (string, int, error) {
+	line, err := n.rw.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) || len(line) > maxNUTLineBytes {
+		n.shutdown()
+		return "", 0, fmt.Errorf("%w: ligne supérieure à %d octets", errNUTResponseLimit, maxNUTLineBytes)
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	return strings.TrimSpace(string(line)), len(line), nil
+}
+
 func (n *nutConnection) one(command string) (string, error) {
 	if _, err := n.rw.WriteString(command + "\n"); err != nil {
 		return "", err
@@ -107,8 +145,8 @@ func (n *nutConnection) one(command string) (string, error) {
 	if err := n.rw.Flush(); err != nil {
 		return "", err
 	}
-	line, err := n.rw.ReadString('\n')
-	return strings.TrimSpace(line), err
+	line, _, err := n.readLine()
+	return line, err
 }
 
 func (n *nutConnection) list(command, begin, end string) ([]string, error) {
@@ -119,12 +157,21 @@ func (n *nutConnection) list(command, begin, end string) ([]string, error) {
 		return nil, err
 	}
 	var lines []string
+	totalBytes := 0
 	for {
-		line, err := n.rw.ReadString('\n')
+		line, lineBytes, err := n.readLine()
 		if err != nil {
 			return nil, classifyNUTError(err)
 		}
-		line = strings.TrimSpace(line)
+		totalBytes += lineBytes
+		if len(lines) >= maxNUTListLines {
+			n.shutdown()
+			return nil, fmt.Errorf("%w: plus de %d lignes", errNUTResponseLimit, maxNUTListLines)
+		}
+		if totalBytes > maxNUTResponseBytes {
+			n.shutdown()
+			return nil, fmt.Errorf("%w: plus de %d octets cumulés", errNUTResponseLimit, maxNUTResponseBytes)
+		}
 		if len(lines) == 0 && line != begin && !strings.HasPrefix(line, "ERR ") {
 			return nil, fmt.Errorf("réponse ne correspondant pas au protocole NUT: %q", line)
 		}
@@ -158,6 +205,7 @@ func listNUTUPS(ctx context.Context, u UPSConfig) ([]NUTDevice, error) {
 		if unquoteErr != nil {
 			description = strings.Trim(parts[2], "\"")
 		}
+		description = sanitizeExternalText(description)
 		devices = append(devices, NUTDevice{Name: parts[1], Description: description})
 	}
 	return devices, nil
@@ -184,7 +232,7 @@ func nutStatus(ctx context.Context, id string, u UPSConfig) UPSStatus {
 			if unquoteErr != nil {
 				value = strings.Trim(parts[3], "\"")
 			}
-			vars[parts[2]] = value
+			vars[parts[2]] = sanitizeExternalText(value)
 		}
 	}
 	if vars["ups.status"] == "" {
@@ -195,7 +243,22 @@ func nutStatus(ctx context.Context, id string, u UPSConfig) UPSStatus {
 	return result
 }
 
+func sanitizeExternalText(value string) string {
+	var out strings.Builder
+	for _, r := range value {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			fmt.Fprintf(&out, "\\x%02X", r)
+			continue
+		}
+		out.WriteRune(r)
+	}
+	return out.String()
+}
+
 func classifyNUTError(err error) error {
+	if errors.Is(err, errNUTResponseLimit) {
+		return err
+	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return fmt.Errorf("timeout du serveur NUT: %w", err)
@@ -218,7 +281,7 @@ func nutResponseError(line string, err error) error {
 	case strings.Contains(line, "UNKNOWN-UPS"):
 		return errors.New("UPS inaccessible ou inconnu")
 	default:
-		return fmt.Errorf("erreur NUT: %s", line)
+		return errors.New("erreur retournée par le serveur NUT")
 	}
 }
 
@@ -267,22 +330,26 @@ func checkUPSPolicy(ctx context.Context, c *Config, id string) error {
 	}
 	s := nutStatus(ctx, p.UPS, u)
 	if s.Error != "" || s.State == "unknown" {
-		return fmt.Errorf("politique UPS invérifiable: %s", s.Error)
+		reason := s.Error
+		if reason == "" {
+			reason = "état NUT inconnu"
+		}
+		return upsRevalidationErrorf("politique UPS invérifiable: %s", reason)
 	}
 	if p.RequireOnline && s.State != "OL" {
-		return fmt.Errorf("politique UPS: secteur requis, état %s", s.State)
+		return upsRevalidationErrorf("politique UPS: secteur requis, état %s", s.State)
 	}
 	if p.MinBattery > 0 && !s.BatteryKnown {
-		return errors.New("politique UPS: mesure battery.charge absente ou invalide")
+		return upsRevalidationErrorf("politique UPS: mesure battery.charge absente ou invalide")
 	}
 	if p.MinBattery > 0 && s.Battery < float64(p.MinBattery) {
-		return fmt.Errorf("politique UPS: batterie %.0f%% < %d%%", s.Battery, p.MinBattery)
+		return upsRevalidationErrorf("politique UPS: batterie %.0f%% < %d%%", s.Battery, p.MinBattery)
 	}
 	if p.MinRuntime > 0 && !s.RuntimeKnown {
-		return errors.New("politique UPS: mesure battery.runtime absente ou invalide")
+		return upsRevalidationErrorf("politique UPS: mesure battery.runtime absente ou invalide")
 	}
 	if p.MinRuntime > 0 && s.Runtime < p.MinRuntime {
-		return fmt.Errorf("politique UPS: autonomie %ds < %ds", s.Runtime, p.MinRuntime)
+		return upsRevalidationErrorf("politique UPS: autonomie %ds < %ds", s.Runtime, p.MinRuntime)
 	}
 	return nil
 }

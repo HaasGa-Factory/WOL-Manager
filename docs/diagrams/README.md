@@ -23,7 +23,7 @@ Les images ci-dessous affichent la première page de chaque cartographie sur Git
 
 - Branche locale auditée : `dev`.
 - Commit `dev` audité avant les corrections d'aide : `6795b7f`.
-- Version du programme préparée : `1.2.1`, définie dans `cmd/wol/main.go` et `install.sh`.
+- Version du programme préparée : `1.2.3`, définie dans `cmd/wol/main.go` et `install.sh`.
 - Dernière distribution auditée avant ce changement de version : manifeste `1.2.0`, canal `dev`, révision source `95cd327c6da18194a17f66ff9b2e7f33cf9eec08`.
 - Les corrections d'aide et de documentation postérieures à ce binaire restent dans l'arbre de travail jusqu'au prochain cycle manuel source puis artefacts.
 - Date de l'analyse : 19 octobre 2026.
@@ -119,7 +119,7 @@ Le code a priorité en cas d'écart. Les flux principaux des diagrammes ne prés
 
 - CLI, menu, assistant guidé et édition avancée par éditeur local.
 - Réseaux IPv4, machines, groupes, dépendances et validation des cycles/références.
-- Magic Packet UDP par broadcast local, unicast, broadcast dirigé autorisé ou relais.
+- Magic Packet UDP par broadcast local, broadcast dirigé autorisé ou relais.
 - Relais HTTPS avec authentification mutuelle TLS.
 - Vérifications TCP, ICMP et ARP, avec la réserve explicite qu'ARP ne prouve pas l'allumage.
 - Découverte passive et diagnostic actif protégé par activation, sous-réseaux, confirmation, budget, débit et timeout.

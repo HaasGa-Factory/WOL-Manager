@@ -1,19 +1,69 @@
-# WoL Manager
+<div align="center">
 
-WoL Manager `v1.2.1` est un gestionnaire Wake-on-LAN Linux centralisé pour plusieurs réseaux, VLAN, groupes, relais et UPS NUT.
+<a href="https://github.com/HaasGa-Factory/WOL-Manager">
+  <img src="docs/images/wol-manager-logo.jpg" width="430" alt="WoL Manager — Wake on LAN Manager">
+</a>
 
-Il fournit une CLI, un menu interactif, une API REST authentifiée et une reprise persistante après coupure électrique, sans Docker ni accès Internet à l'exécution.
+**Gestion centralisée du Wake-on-LAN pour Linux**
 
-**[Télécharger la dernière version stable — GitHub Releases (Latest)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)**
+Réveillez, vérifiez et orchestrez vos machines sur plusieurs réseaux, avec une
+CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 
-La release GitHub marquée **Latest** correspond toujours à la dernière version stable officielle publiée sur le canal `main`.
+[![Dernière release](https://img.shields.io/github/v/release/HaasGa-Factory/WOL-Manager?display_name=tag&sort=semver&style=for-the-badge&label=stable)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)
+[![Licence MIT](https://img.shields.io/github/license/HaasGa-Factory/WOL-Manager?style=for-the-badge)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/HaasGa-Factory/WOL-Manager?style=for-the-badge)](https://github.com/HaasGa-Factory/WOL-Manager/issues)
+[![Activité dev](https://img.shields.io/github/last-commit/HaasGa-Factory/WOL-Manager/dev?style=for-the-badge&label=dev)](https://github.com/HaasGa-Factory/WOL-Manager/commits/dev)
 
-> **Précaution :** testez d'abord les opérations de réveil avec `--dry-run`. Un paquet WoL émis ne prouve ni sa réception ni le réveil effectif d'une machine.
+![Debian 12 et 13](https://img.shields.io/badge/Debian-12%20%7C%2013-A81D33?style=for-the-badge&logo=debian&logoColor=white)
+![Linux AMD64 et ARM64](https://img.shields.io/badge/Linux-AMD64%20%7C%20ARM64-FCC624?style=for-the-badge&logo=linux&logoColor=black)
+![Go côté développement](https://img.shields.io/badge/client-sans%20Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)
+
+[![Télécharger la version stable](https://img.shields.io/badge/Télécharger-la%20version%20stable-2ea44f?style=for-the-badge&logo=github)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)
+[![Premiers pas](https://img.shields.io/badge/Guide-Premiers%20pas-2563eb?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/premiers-pas.md)
+[![Documentation](https://img.shields.io/badge/Documentation-Complète-6b7280?style=for-the-badge&logo=markdown&logoColor=white)](#documentation)
+
+<br>
+
+<a href="docs/cli.md">
+  <img src="docs/images/wol-help-preview.svg" width="900" alt="Aperçu de l'aide CLI de WoL Manager">
+</a>
+
+<sub>Aperçu de l'aide intégrée — cliquez sur l'image pour consulter la référence CLI.</sub>
+
+</div>
+
+## En bref
+
+| ⚡ Réveil maîtrisé | 🔌 Reprise après coupure | 🔐 Administration sécurisée |
+|---|---|---|
+| Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
+
+WoL Manager `v1.2.3` est un gestionnaire Wake-on-LAN Linux centralisé pour
+plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
+et sans accès Internet à l'exécution.
+
+### Navigation rapide
+
+- [Installation stable](#installation-stable)
+- [Fonctions](#fonctions)
+- [Mises à jour et canaux](#mises-à-jour-et-canaux)
+- [Essai sans installation](#essai-sans-installation)
+- [Documentation](#documentation)
+- [Limites connues](#limites-connues)
+
+Dans ce projet, la release GitHub marquée **Latest** est la référence officielle
+pour une nouvelle installation stable depuis le canal `main`. La branche
+`dev` peut documenter une version plus récente qui n'est pas encore la version
+stable proposée par ce lien.
+
+> **Précaution :** testez d'abord les opérations de réveil avec `--dry-run`.
+> Un paquet WoL émis ne prouve ni sa réception ni le réveil effectif d'une
+> machine.
 
 ## Fonctions
 
 - configuration YAML déclarative et strictement validée ;
-- broadcast local, unicast, broadcast dirigé explicitement autorisé et relais mTLS ;
+- broadcast local, broadcast dirigé explicitement autorisé et relais mTLS ;
 - dépendances, groupes et reprise NUT séquentielle ou parallèle après un cycle de coupure réellement observé ;
 - seuils batterie bas/haut, stabilité secteur, politiques d'échec et reprise prudente après redémarrage ;
 - contrôles ICMP/TCP/ARP multiples avec logique ET/OU et quatre états distincts ;
@@ -23,244 +73,106 @@ La release GitHub marquée **Latest** correspond toujours à la dernière versio
 - client NUT facultatif ;
 - binaire unique, service systemd facultatif.
 
-## Installation — Version stable
+## Installation stable
 
 **Systèmes ciblés :** Debian 12 et Debian 13, architectures AMD64 et ARM64.
 
-L'installation depuis une release officielle ne nécessite **ni Git, ni Go, ni Docker**.
+L'installation depuis une release officielle ne nécessite ni Git, ni Go, ni
+Docker.
 
-### 1. Télécharger la dernière release stable
+1. Ouvrez la [dernière release stable](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest).
+2. Dans **Assets**, téléchargez une seule des deux archives :
+   `wol-manager-vX.Y.Z-installer.tar.gz` ou
+   `wol-manager-vX.Y.Z-installer.zip`.
+3. Extrayez l'archive sur la machine Debian.
+4. Ouvrez un terminal dans le répertoire extrait contenant `install.sh`, puis
+   lancez :
 
-Ouvrez la page officielle :
-
-**[GitHub — Dernière release stable](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)**
-
-Dans la section **Assets**, téléchargez l'une des archives d'installation :
-
-- `wol-manager-vX.Y.Z-installer.tar.gz`
-- `wol-manager-vX.Y.Z-installer.zip`
-
-`X.Y.Z` représente le numéro de version de la release.
-
-Ces archives contiennent les fichiers nécessaires à l'installation, dont l'installateur et les binaires de distribution.
-
-### 2. Extraire l'archive
-
-Extrayez l'archive téléchargée sur votre machine Debian.
-
-Ouvrez ensuite un terminal dans le répertoire extrait contenant `install.sh`.
-
-### 3. Lancer l'installation
-
-```bash
+```sh
 chmod +x install.sh
 sudo ./install.sh
 ```
 
-L'installateur :
+`X.Y.Z` représente la version de la release. Les archives contiennent déjà
+l'installateur, les binaires AMD64/ARM64, le manifeste signé et les sommes de
+contrôle : aucune compilation n'est effectuée sur la machine cliente.
 
-- sélectionne automatiquement le binaire Linux AMD64 ou ARM64 compatible ;
-- vérifie les artefacts de distribution et leur intégrité ;
-- contrôle les dépendances nécessaires ;
-- propose l'installation et l'activation du service systemd ;
-- configure l'autocomplétion Bash.
+L'installateur active aussi l'autocomplétion Bash : dans un nouveau terminal, `wol m<Tab>` complète la commande `menu` et `wol config m<Tab>` complète `machine`.
 
-Les binaires sont fournis dans l'archive : **aucune compilation n'est nécessaire**.
+Pour l'activer immédiatement dans un terminal déjà ouvert :
 
-Le manifeste signé couvre également la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures.
-
-L'installateur n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
-
-### 4. Configurer WoL Manager
-
-Après l'installation, lancez :
-
-```bash
-sudo wol setup
-```
-
-L'assistant guide l'ajout des réseaux, machines, groupes, dépendances, paramètres de découverte réseau et serveurs NUT.
-
-Un utilisateur normal n'a pas à modifier manuellement le fichier YAML.
-
-Saisissez `?` dans n'importe quel champ pour obtenir une explication sans changer la valeur.
-
-Chaque enregistrement est validé, contrôlé pour son aptitude opérationnelle, sauvegardé et écrit atomiquement. Une simulation WoL automatique ne transmet aucun Magic Packet.
-
-### 5. Vérifier l'installation
-
-```bash
-wol version
-wol --help
-wol config check
-```
-
-Pour consulter les informations relatives à l'UPS et à l'automatisation :
-
-```bash
-wol ups test
-wol automation status
-```
-
-## Gestion des permissions
-
-L'utilisateur réel ayant lancé `sudo ./install.sh` est ajouté de façon idempotente au groupe `wol-manager` afin de lire la configuration protégée sans `sudo`.
-
-Root n'est jamais ajouté.
-
-Ouvrez ensuite une nouvelle session ou exécutez :
-
-```bash
-newgrp wol-manager
-```
-
-Les écritures administratives (`wol setup`, `wol config ...`, gestion des jetons et du service) continuent à utiliser `sudo`.
-
-Les fichiers protégés ne sont jamais rendus lisibles par tous les utilisateurs.
-
-## Autocomplétion Bash
-
-L'installateur active automatiquement l'autocomplétion Bash.
-
-Dans un nouveau terminal :
-
-- `wol m<Tab>` complète la commande `menu` ;
-- `wol config m<Tab>` complète la commande `machine`.
-
-Pour activer immédiatement l'autocomplétion dans un terminal déjà ouvert :
-
-```bash
+```sh
 source /etc/bash_completion.d/wol-manager
-```
-
-Ou, sans écrire de fichier :
-
-```bash
+# ou, sans écrire de fichier :
 source <(wol completion bash)
 ```
 
-## Aide CLI et menus interactifs
+L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose le mode systemd. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
 
-Toutes les commandes disposent d'une aide accessible sans charger la configuration.
+L'utilisateur réel ayant lancé `sudo ./install.sh` est ajouté de façon idempotente au groupe
+`wol-manager` afin de lire la configuration protégée sans `sudo`. Root n'est jamais ajouté. Ouvrez
+ensuite une nouvelle session ou exécutez `newgrp wol-manager`. Les écritures administratives
+(`wol setup`, `wol config ...`, jetons et service) continuent à utiliser `sudo`; les fichiers ne sont
+jamais rendus lisibles par tous les utilisateurs.
 
-Exemples :
+`sudo wol setup` guide ensuite l'ajout des réseaux, machines, groupes, dépendances, découverte réseau et serveurs NUT. Un utilisateur normal n'a pas à modifier le YAML. Saisissez `?` dans n'importe quel champ pour obtenir une explication sans changer la valeur. Chaque enregistrement est validé, contrôlé pour son aptitude opérationnelle, sauvegardé et écrit atomiquement ; une simulation WoL automatique ne transmet aucun Magic Packet.
 
-```bash
-wol --help
-wol wake --help
-wol config group --help
-wol automation status --help
-```
+Toutes les commandes disposent d'une aide sans charger la configuration, par exemple
+`wol wake --help`, `wol config group --help` ou `wol automation status --help`. Dans les menus
+interactifs, saisissez `?` pour afficher l'aide du contexte courant. L'aide colorée se désactive
+automatiquement dans les pipes et redirections ; utilisez `wol --no-color --help` ou `NO_COLOR=1`
+pour la désactiver explicitement.
 
-Dans les menus interactifs, saisissez `?` pour afficher l'aide du contexte courant.
+Si vous activez immédiatement le service lors d'une première installation interactive, l'installateur crée et affiche le premier jeton administrateur. En mode CLI ou si vous configurez l'API plus tard :
 
-## API REST et authentification
-
-WoL Manager fournit une API REST authentifiée sous `/api/v1`.
-
-Si vous activez immédiatement le service lors d'une première installation interactive, l'installateur crée et affiche le premier jeton administrateur.
-
-En mode CLI, ou si vous configurez l'API plus tard, vous pouvez gérer les jetons manuellement.
-
-### Créer un jeton administrateur
-
-```bash
+```sh
 sudo wol token create --id admin --permissions read,wake,admin
-```
-
-### Lister les jetons
-
-```bash
 sudo wol token list
-```
-
-### Révoquer un jeton
-
-```bash
 sudo wol token revoke --id admin
 ```
 
-### Exemple d'utilisation de l'API
+Le jeton s'utilise comme en-tête Bearer, par exemple :
 
-Le jeton s'utilise dans l'en-tête HTTP `Authorization: Bearer`.
-
-```bash
+```sh
 TOKEN='<jeton-affiché-une-fois>'
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health
 ```
 
-La création et la révocation des jetons sont prises en compte par l'API dès la requête suivante, sans redémarrer le service.
+La création et la révocation sont prises en compte par l'API dès la requête suivante, sans redémarrer
+le service. `token list` n'affiche jamais les secrets ni leurs hashes.
 
-La commande `token list` n'affiche jamais les secrets ni leurs hashes.
+## Mises à jour et canaux
 
-## Mises à jour
-
-WoL Manager intègre son propre mécanisme de mise à jour.
-
-Le canal stable `main` est utilisé par défaut.
-
-### Vérifier les mises à jour stables
-
-```bash
+```sh
 wol update --check
-```
-
-### Installer une mise à jour stable
-
-```bash
 sudo wol update
-```
-
-### Consulter la version installée
-
-```bash
-wol version
-```
-
-### Vérifier les mises à jour de développement
-
-```bash
 wol update --check --channel dev
-```
-
-### Installer une version de développement
-
-```bash
 sudo wol update --channel dev
+wol version
+wol ups test
+wol automation status
 ```
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
 
-Lors du retour vers `main`, le canal installé est également vérifié : même si la version et la révision source sont identiques, le binaire signé `main` remplace explicitement le binaire `dev` après confirmation.
+Si une version `dev` utilisant le manifeste de format 2 est installée alors que `main` publie encore le format signé 1, `wol update --check` explique cette transition et ne modifie rien. Utilisez `wol update --check --channel dev` jusqu'à la publication de cette version sur `main` ; aucun retour automatique vers une ancienne version n'est tenté.
 
-Si une version `dev` utilisant le manifeste de format 2 est installée alors que `main` publie encore le format signé 1, `wol update --check` explique cette transition et ne modifie rien.
+L'installateur système `1.2.3` sait migrer une ancienne configuration utilisant `unicast` : retrait
+des anciens champs, contrôle qu'un broadcast ou un relais utilisable reste configuré, résumé,
+confirmation et sauvegarde datée. Une installation encore équipée de l'installateur `1.2.1` doit
+d'abord remplacer uniquement `/usr/local/lib/wol-manager/install.sh` par le fichier signé
+`dist/install.sh` du paquet `1.2.3`, selon la [procédure d'amorçage vérifiée](docs/updates.md#amorçage-depuis-linstallateur-121).
 
-Utilisez `wol update --check --channel dev` jusqu'à la publication de cette version sur `main`. Aucun retour automatique vers une ancienne version n'est tenté.
-
-## Canaux de publication
-
-| Canal | Description | Utilisation |
-|---|---|---|
-| `main` | Versions stables officielles | Installation et utilisation courante |
-| `dev` | Versions de développement | Tests, validations et évolutions |
-
-### Publication des versions stables
-
-Les versions stables sont distribuées sous forme de releases GitHub.
-
-La release marquée **Latest** constitue la référence officielle pour les nouvelles installations stables.
-
-**[Accéder à la dernière release stable](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)**
-
-Ce lien pointe automatiquement vers la dernière release stable, sans nécessiter de modifier le README à chaque nouvelle publication.
-
-Les archives d'installation permettent de déployer WoL Manager sans cloner le dépôt GitHub et sans installer les outils de développement.
+Le canal `main` correspond aux versions stables. Le canal `dev` sert aux tests
+et validations. Une nouvelle installation stable doit privilégier la
+[GitHub Release marquée Latest](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest).
 
 ## Essai sans installation
 
-Pour un essai depuis une copie du dépôt contenant les artefacts de distribution :
+Pour un essai depuis une copie du dépôt contenant les artefacts de
+distribution :
 
-```bash
+```sh
 cp configs/wol.example.yaml wol.yaml
 ./dist/wol-linux-amd64 --config ./wol.yaml config check
 ./dist/wol-linux-amd64 --config ./wol.yaml --json network discover
@@ -269,23 +181,29 @@ cp configs/wol.example.yaml wol.yaml
 
 Sur ARM64, remplacez `wol-linux-amd64` par `wol-linux-arm64`.
 
-Cette procédure est distincte de l'installation recommandée depuis la release stable.
-
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Installation et mise à jour](docs/installation.md)
-- [Mises à jour et rollback](docs/updates.md)
-- [Compilation et publication locale](docs/development.md)
-- [Configuration](docs/configuration.md)
-- [CLI](docs/cli.md)
-- [API](docs/api.md) et [OpenAPI](api/openapi.yaml)
-- [Réseaux et VLAN](docs/multi-vlan.md)
-- [Diagnostics](docs/diagnostics.md)
-- [NUT](docs/nut.md)
-- [Sécurité](docs/security.md)
+Pour débuter :
 
-## Limites connues et validations restantes
+- [Premiers pas](docs/premiers-pas.md) : installation, première machine et simulation ;
+- [Installation et désinstallation](docs/installation.md) ;
+- [Configuration guidée](docs/configuration.md) ;
+- [Diagnostics](docs/diagnostics.md).
+
+Pour administrer des fonctions avancées :
+
+- [Référence CLI](docs/cli.md) ;
+- [Mises à jour et rollback](docs/updates.md) ;
+- [API REST](docs/api.md) et [contrat OpenAPI](api/openapi.yaml) ;
+- [Réseaux, VLAN et relais](docs/multi-vlan.md) ;
+- [Broadcast WoL et migration de l'ancien unicast](docs/wol-broadcast-and-migration.md) ;
+- [NUT et reprise après coupure](docs/nut.md) ;
+- [Sécurité](docs/security.md).
+
+Pour contribuer : [architecture](docs/architecture.md) et
+[compilation/publication locale](docs/development.md).
+
+## Limites connues
 
 - Linux avec `iproute2` est requis pour les routes et voisins détaillés.
 - L'installateur cible Debian 12 et 13 sur AMD64/ARM64. Ses scénarios sont testés avec un système simulé ; la validation finale sur quatre VM réelles reste obligatoire avant d'annoncer officiellement la compatibilité.
@@ -296,7 +214,5 @@ Cette procédure est distincte de l'installation recommandée depuis la release 
 - Le diagnostic ne peut confirmer la réception que si un relais ou une vérification de disponibilité l'observe.
 - Le mode relais conserve ses identifiants anti-rejeu en mémoire pendant 24 heures ; après redémarrage, une revalidation reste nécessaire côté orchestrateur.
 - Le client NUT implémente les variables standard nécessaires à la politique, pas toute la console `upscli`.
-
-## Licence
 
 Licence MIT.

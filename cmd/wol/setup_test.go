@@ -107,6 +107,62 @@ func TestWriteSetupConfigPreservesExistingSettings(t *testing.T) {
 	}
 }
 
+func TestLegacyUnicastMigrationBacksUpBeforeWriting(t *testing.T) {
+	directory := testDir(t)
+	path := filepath.Join(directory, "wol.yaml")
+	legacy := `version: 1
+global:
+  transport_order: [unicast, local_broadcast]
+networks:
+  lan:
+    cidr: 192.0.2.0/24
+    interface: ens-test
+    allow_unicast: true
+    allow_local_broadcast: true
+groups: {}
+servers:
+  one: {mac: "02:00:00:00:00:01", ip: 192.0.2.20, network: lan}
+api: {listen: 127.0.0.1:8080}
+storage: {}
+network_discovery: {safeguards: {max_packets: 20, rate_limit_pps: 2}}
+ups: {}
+relays: {}
+automations: []
+`
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, found, _, err := loadConfigDataForMigration([]byte(legacy))
+	if err != nil || !found {
+		t.Fatalf("ancienne configuration non détectée: %v", err)
+	}
+	if err := writeManagedConfig(path, []byte(legacy), cfg, true); err != nil {
+		t.Fatal(err)
+	}
+	newData, _ := os.ReadFile(path)
+	if strings.Contains(string(newData), "unicast") {
+		t.Fatalf("unicast conservé après migration:\n%s", newData)
+	}
+	backups, _ := filepath.Glob(path + ".bak-*")
+	if len(backups) != 1 {
+		t.Fatalf("sauvegarde de migration absente: %v", backups)
+	}
+	backup, _ := os.ReadFile(backups[0])
+	if !bytes.Equal(backup, []byte(legacy)) {
+		t.Fatal("la sauvegarde ne contient pas la configuration originale")
+	}
+}
+
+func TestUnicastOnlyMigrationIsReported(t *testing.T) {
+	data := strings.Replace(minimalConfig, "transport_order: [local_broadcast, directed_broadcast, relay]", "transport_order: [unicast]", 1)
+	data = strings.Replace(data, "servers: {}", "servers:\n  one: {mac: \"02:00:00:00:00:01\", ip: 192.0.2.20, network: lan}\n", 1)
+	data = strings.Replace(data, "networks: {}", "networks:\n  lan: {cidr: 192.0.2.0/24, allow_unicast: true}\n", 1)
+	_, legacy, only, err := loadConfigDataForMigration([]byte(data))
+	if err != nil || !legacy || len(only) != 1 || only[0] != "one" {
+		t.Fatalf("incompatibilité unicast seul non signalée: legacy=%v only=%v err=%v", legacy, only, err)
+	}
+}
+
 func TestParseNUTSelection(t *testing.T) {
 	indices, err := parseSelection("1,3,1", 3)
 	if err != nil || len(indices) != 2 || indices[0] != 0 || indices[1] != 2 {
@@ -127,7 +183,7 @@ func TestGuidedSetupCreatesNetworkMachineAndDryRun(t *testing.T) {
 	input := strings.NewReader(strings.Join([]string{
 		"2",      // NUT: non
 		"1", "1", // réseaux: ajouter
-		"lan", "192.168.50.0/24", "", "", "", "", "", "4",
+		"lan", "192.168.50.0/24", "ens-test", "", "n", "y", "", "4",
 		"2", "1", // machines: ajouter
 		"test-pc", "Machine test", "02:00:00:00:50:10", "192.168.50.10", "lan", "", "", "1", "", "90s", "180s", "5s", "", "", "4",
 		"5", "y", // valider et enregistrer
@@ -176,6 +232,119 @@ func TestGuidedSetupContextHelpDoesNotWrite(t *testing.T) {
 	}
 }
 
+func TestEveryConfigurationSubmenuShowsModernHelpAndReturnsUnchanged(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		run  func(*bufio.Reader, io.Writer, *Config, bool) bool
+	}{
+		{name: "networks", want: "AIDE RÉSEAUX", run: manageNetworks},
+		{name: "machines", want: "AIDE MACHINES", run: manageServers},
+		{name: "groups", want: "AIDE GROUPES", run: manageGroups},
+		{name: "nut", want: "AIDE NUT ET UPS", run: func(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
+			return configureNUT(reader, output, cfg, interactive)
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.UPS = map[string]UPSConfig{"main": {Address: "127.0.0.1:3493"}}
+			var output bytes.Buffer
+			if changed := test.run(bufio.NewReader(strings.NewReader("?\n4\n")), &output, cfg, false); changed {
+				t.Fatal("l'aide a modifié la configuration")
+			}
+			for _, expected := range []string{"WoL Manager", test.want, "Astuce"} {
+				if !strings.Contains(output.String(), expected) {
+					t.Errorf("aide %s sans %q:\n%s", test.name, expected, output.String())
+				}
+			}
+		})
+	}
+}
+
+func TestMachineSubmenuWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
+	cfg := testConfig(t)
+	var output strings.Builder
+	input := bufio.NewReader(strings.NewReader("2\nunknown\n\n4\n"))
+	if changed := manageServers(input, &output, cfg, true); changed {
+		t.Fatal("une machine inconnue a modifié la configuration")
+	}
+	text := output.String()
+	menu := strings.Index(text, "WoL Manager — MACHINES")
+	result := strings.Index(text, "Machine inconnue.")
+	view := strings.Index(text, "WoL Manager — MODIFIER UNE MACHINE")
+	list := strings.Index(text, "Machines configurées :")
+	pause := strings.Index(text, "Appuyez sur Entrée pour revenir au menu des machines")
+	redraw := strings.LastIndex(text, "WoL Manager — MACHINES")
+	if menu < 0 || view < menu || list < view || result < list || pause < result || redraw < pause {
+		t.Fatalf("ordre visuel incorrect après une action:\n%s", text)
+	}
+}
+
+func TestNUTTestWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-test"] = UPSConfig{Address: "127.0.0.1:1", Name: "ups", Timeout: Duration(time.Millisecond)}
+	var output strings.Builder
+	if changed := configureNUT(bufio.NewReader(strings.NewReader("3\n\n4\n")), &output, cfg, true); changed {
+		t.Fatal("le test NUT a modifié la configuration")
+	}
+	text := output.String()
+	result := strings.Index(text, "ups-test:")
+	pause := strings.Index(text, "Appuyez sur Entrée pour revenir au menu NUT")
+	redraw := strings.LastIndex(text, "WoL Manager — SERVEURS NUT ET UPS")
+	if result < 0 || pause < result || redraw < pause {
+		t.Fatalf("ordre visuel incorrect après le test NUT:\n%s", text)
+	}
+}
+
+func TestNUTTestDoesNotPauseWhenNonInteractive(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-test"] = UPSConfig{Address: "127.0.0.1:1", Name: "ups", Timeout: Duration(time.Millisecond)}
+	var output strings.Builder
+	if changed := configureNUT(bufio.NewReader(strings.NewReader("3\n4\n")), &output, cfg, false); changed {
+		t.Fatal("le test NUT a modifié la configuration")
+	}
+	if strings.Contains(output.String(), "Appuyez sur Entrée") {
+		t.Fatalf("pause présente en mode non interactif:\n%s", output.String())
+	}
+}
+
+func TestNUTHelpWaitsBeforeRedrawingInteractiveMenu(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-test"] = UPSConfig{Address: "127.0.0.1:1", Name: "ups", Timeout: Duration(time.Millisecond)}
+	var output strings.Builder
+	if changed := configureNUT(bufio.NewReader(strings.NewReader("?\n\n4\n")), &output, cfg, true); changed {
+		t.Fatal("l'aide NUT a modifié la configuration")
+	}
+	text := output.String()
+	help := strings.Index(text, "WoL Manager — AIDE NUT ET UPS")
+	pause := strings.Index(text, "Appuyez sur Entrée pour revenir au menu NUT")
+	redraw := strings.LastIndex(text, "WoL Manager — SERVEURS NUT ET UPS")
+	if help < 0 || pause < help || redraw < pause {
+		t.Fatalf("ordre visuel incorrect après l'aide NUT:\n%s", text)
+	}
+}
+
+func TestMachineListIsShownOnlyWhenSelectingModifyOrDelete(t *testing.T) {
+	for name, input := range map[string]string{
+		"return": "4\n",
+		"modify": "2\nunknown\n4\n",
+		"delete": "3\nunknown\n4\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := testConfig(t)
+			var output strings.Builder
+			if changed := manageServers(bufio.NewReader(strings.NewReader(input)), &output, cfg, false); changed {
+				t.Fatal("la configuration a été modifiée")
+			}
+			hasList := strings.Contains(output.String(), "Machines configurées :")
+			if hasList != (name != "return") {
+				t.Fatalf("affichage inattendu de la liste pour %s:\n%s", name, output.String())
+			}
+		})
+	}
+}
+
 func TestGuidedGlobalVerification(t *testing.T) {
 	cfg := testConfig(t)
 	input := bufio.NewReader(strings.NewReader("10s\n3m\n5s\n\n\nany\n"))
@@ -217,6 +386,35 @@ func TestQuestionMarkNeverChangesInteractiveDefaults(t *testing.T) {
 	}
 	if strings.Count(output.String(), "Aide:") < 5 {
 		t.Fatalf("aides de champ absentes:\n%s", output.String())
+	}
+}
+
+func TestGuidedValuesUseReadableVerticalSections(t *testing.T) {
+	var output strings.Builder
+	printValueList(&output, "RÉSEAUX DISPONIBLES", []string{"lan", "serveurs"})
+	_ = promptKnownIDs(bufio.NewReader(strings.NewReader("lab\n")), &output, "Groupes", nil, map[string]bool{"lab": true, "maison": true})
+	_ = promptKnownIDs(bufio.NewReader(strings.NewReader("nas\n")), &output, "Dépendances machines", nil, map[string]bool{"nas": true})
+	_, _ = promptChecks(bufio.NewReader(strings.NewReader("\n")), &output, nil, false)
+
+	text := output.String()
+	for _, expected := range []string{
+		"RÉSEAUX DISPONIBLES",
+		"- lan\n- serveurs",
+		"GROUPES DISPONIBLES",
+		"- lab\n- maison",
+		"MACHINES DISPONIBLES",
+		"Vérification après réveil",
+		"Valeur actuelle : hériter",
+		"VÉRIFICATION APRÈS RÉVEIL",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("%q absent de la présentation guidée:\n%s", expected, text)
+		}
+	}
+	for _, dense := range []string{"Réseaux disponibles: lan", "Valeurs disponibles: lab", "ICMP: ping simple mais parfois bloqué. TCP:"} {
+		if strings.Contains(text, dense) {
+			t.Fatalf("présentation compacte encore présente (%q):\n%s", dense, text)
+		}
 	}
 }
 
@@ -309,27 +507,27 @@ func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 		"Enregistrer cette configuration ?":      {"sauvegarde", "atomiquement"},
 		"Tester une machine en simulation WoL ?": {"aucun Magic Packet"},
 		"Machine à simuler":                      {"numéro affiché", "Entrée annule"},
-		"Envoyer réellement un paquet WoL à nas ?": {"émission réseau réelle"},
-		"Attente avant la première vérification":   {"délai après", "30s"},
-		"Durée maximale des vérifications":         {"temps total maximal", "2m"},
-		"Nombre maximal de vérifications":          {"nombre de contrôles", "timeout"},
-		"Nouveaux Magic Packets après échec":       {"nouveaux envois", "distinct"},
-		"Identifiant du serveur NUT":               {"serveur NUT", "ni d'une machine"},
-		"Identifiant du groupe":                    {"wol wake --group"},
-		"Adresse MAC":                              {"02:00:00:00:00:01"},
-		"Dépendances machines":                     {"réveillées et vérifiées avant"},
-		"Machines du groupe":                       {"wol wake --group"},
-		"Ordre de démarrage":                       {"ordre explicite", "prérequis"},
-		"Nombre maximal de nouvelles tentatives":   {"0 désactive", "3 par défaut"},
-		"Intervalle entre tentatives":              {"pause entre deux reprises", "30s"},
-		"Seuil bas (%)":                            {"réarme"},
-		"Seuil haut (%)":                           {"autorisant le réveil"},
-		"Stabilité secteur":                        {"état OL", "30s"},
-		"Fréquence NUT":                            {"lectures NUT"},
-		"Mode (sequential=un par un)":              {"indépendantes en parallèle"},
-		"Échec (stop/continue/retry)":              {"stop bloque", "continue_retry"},
-		"Limite maximale de paquets":               {"plafond de paquets"},
-		"Activer la reprise automatique NUT":       {"cycle de coupure", "Aucun ordre électrique"},
+		"Envoyer réellement un paquet WoL à nas ?":                       {"émission réseau réelle"},
+		"Après le Magic Packet, attendre avant la première vérification": {"délai après", "30s"},
+		"Durée maximale des vérifications":                               {"temps total maximal", "2m"},
+		"Nombre maximal de vérifications":                                {"nombre de contrôles", "timeout"},
+		"Nouveaux Magic Packets après échec":                             {"nouveaux envois", "distinct"},
+		"Identifiant du serveur NUT":                                     {"serveur NUT", "ni d'une machine"},
+		"Identifiant du groupe":                                          {"wol wake --group"},
+		"Adresse MAC":                                                    {"02:00:00:00:00:01"},
+		"Dépendances machines":                                           {"réveillées et vérifiées avant"},
+		"Machines du groupe":                                             {"wol wake --group"},
+		"Ordre de démarrage":                                             {"ordre explicite", "prérequis"},
+		"Nombre maximal de nouvelles tentatives":                         {"0 désactive", "3 par défaut"},
+		"Intervalle entre tentatives":                                    {"pause entre deux reprises", "30s"},
+		"Seuil bas (%)":                                                  {"réarme"},
+		"Seuil haut (%)":                                                 {"autorisant le réveil"},
+		"Stabilité secteur":                                              {"état OL", "30s"},
+		"Fréquence NUT":                                                  {"lectures NUT"},
+		"Mode de démarrage":                                              {"Séquentiel", "Parallèle", "dépendances"},
+		"Comportement en cas d’échec":                                    {"Bloquer", "Continuer", "Retenter"},
+		"Limite maximale de paquets":                                     {"plafond de paquets"},
+		"Activer la reprise automatique NUT":                             {"OB, LB ou FSD", "inaccessible", "pas considéré comme une coupure"},
 	}
 	for label, fragments := range cases {
 		help := fieldHelp(label)
@@ -338,6 +536,64 @@ func TestFieldHelpMatchesTheRequestedSetting(t *testing.T) {
 				t.Errorf("aide %q sans %q: %s", label, fragment, help)
 			}
 		}
+	}
+}
+
+func TestFieldHelpExplainsUPSRuntime(t *testing.T) {
+	help := fieldHelp("Autonomie minimale — 0 pour désactiver")
+	for _, expected := range []string{"alimenter", "30m", "nombre seul en secondes", "0 ignore", "estimation", "bloqué"} {
+		if !strings.Contains(help, expected) {
+			t.Errorf("aide autonomie UPS sans %q: %s", expected, help)
+		}
+	}
+}
+
+func TestPromptDurationSecondsRangeAcceptsReadableAndLegacyValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		current int
+		want    int
+	}{
+		{name: "minutes", input: "30m\n", want: 1800},
+		{name: "combined", input: "1h30m\n", want: 5400},
+		{name: "legacy seconds", input: "1800\n", want: 1800},
+		{name: "keep current", input: "\n", current: 600, want: 600},
+		{name: "invalid then valid", input: "demain\n10m\n", want: 600},
+		{name: "help then duration", input: "?\n30m\n", want: 1800},
+		{name: "too precise then valid", input: "500ms\n30m\n", want: 1800},
+		{name: "too long then valid", input: "8d\n30m\n", want: 1800},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output strings.Builder
+			got := promptDurationSecondsRange(bufio.NewReader(strings.NewReader(test.input)), &output, "Autonomie minimale", test.current, 7*24*time.Hour)
+			if got != test.want {
+				t.Fatalf("durée convertie = %d, attendu %d; sortie:\n%s", got, test.want, output.String())
+			}
+		})
+	}
+}
+
+func TestPromptMenuValueUsesNumbersAndKeepsTheCurrentChoice(t *testing.T) {
+	rows := []helpRow{
+		{command: "[1] Séquentiel", description: "Un par un"},
+		{command: "[2] Parallèle", description: "Indépendants ensemble"},
+	}
+	var output strings.Builder
+	got := promptMenuValue(bufio.NewReader(strings.NewReader("2\n")), &output, "MODE", "sequential", "Mode de démarrage", []string{"sequential", "parallel"}, rows)
+	if got != "parallel" || !strings.Contains(output.String(), "[2] Parallèle") {
+		t.Fatalf("choix numérique non appliqué: %q\n%s", got, output.String())
+	}
+	output.Reset()
+	got = promptMenuValue(bufio.NewReader(strings.NewReader("\n")), &output, "MODE", "parallel", "Mode de démarrage", []string{"sequential", "parallel"}, rows)
+	if got != "parallel" || !strings.Contains(output.String(), "Choix [2]") {
+		t.Fatalf("choix actuel non conservé: %q\n%s", got, output.String())
+	}
+	output.Reset()
+	got = promptMenuValue(bufio.NewReader(strings.NewReader("?\n1\n")), &output, "MODE", "parallel", "Mode de démarrage", []string{"sequential", "parallel"}, rows)
+	if got != "sequential" || !strings.Contains(output.String(), "Parallèle lance ensemble") || !strings.Contains(output.String(), "dépendances") {
+		t.Fatalf("aide contextuelle ou choix après aide incorrect: %q\n%s", got, output.String())
 	}
 }
 
@@ -368,8 +624,8 @@ func TestChecksDisabledPersistsAndInheritanceRemainsDistinct(t *testing.T) {
 		t.Fatalf("héritage TCP 22 incorrect: %#v disabled=%t", checks, disabled)
 	}
 	var summary strings.Builder
-	showConfigSummary(&summary, reloaded)
-	if !strings.Contains(summary.String(), "contrôles=tcp:22") {
+	showServerSummary(&summary, reloaded, "two")
+	if !strings.Contains(summary.String(), "Contrôles") || !strings.Contains(summary.String(), "tcp:22") {
 		t.Fatalf("résumé de l'héritage incorrect:\n%s", summary.String())
 	}
 }
@@ -384,14 +640,19 @@ func TestNoChecksSkipsLogicAndVerificationQuestions(t *testing.T) {
 	if !cfg.Servers["two"].ChecksDisabled {
 		t.Fatal("le choix Aucune n'a pas activé checks_disabled")
 	}
-	for _, unexpected := range []string{"Logique des contrôles", "Attente avant la première vérification", "Durée maximale des vérifications"} {
+	for _, unexpected := range []string{"Logique des contrôles", "Après le Magic Packet, attendre avant la première vérification", "Durée maximale des vérifications"} {
 		if strings.Contains(output.String(), unexpected) {
 			t.Fatalf("question %q posée malgré Aucune:\n%s", unexpected, output.String())
 		}
 	}
-	showConfigSummary(&output, cfg)
-	if !strings.Contains(output.String(), "contrôles=aucun") {
+	if !strings.Contains(output.String(), "Contrôles") || !strings.Contains(output.String(), ": aucun") {
 		t.Fatalf("résumé sans contrôles=aucun:\n%s", output.String())
+	}
+	if !strings.Contains(output.String(), "Machine two —") || !strings.Contains(output.String(), "SYNTHÈSE") {
+		t.Fatalf("synthèse de la machine modifiée absente:\n%s", output.String())
+	}
+	if strings.Contains(output.String(), "Machine one —") {
+		t.Fatalf("la synthèse d'une autre machine a été affichée:\n%s", output.String())
 	}
 }
 
@@ -403,7 +664,7 @@ func TestOfferDryRunUsesNumberOrIdentifier(t *testing.T) {
 			if err := offerDryRun(bufio.NewReader(strings.NewReader(input)), &output, cfg); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(output.String(), "[2] two — Two") || !strings.Contains(output.String(), "two:") {
+			if !strings.Contains(output.String(), "MACHINES DISPONIBLES") || !strings.Contains(output.String(), "[2] two") || !strings.Contains(output.String(), "Two") || !strings.Contains(output.String(), "two:") {
 				t.Fatalf("sélection guidée absente:\n%s", output.String())
 			}
 		})
@@ -417,7 +678,7 @@ func TestSummaryUsesEffectiveDefaultPort(t *testing.T) {
 	cfg.Networks["lan"] = network
 	var output strings.Builder
 	showConfigSummary(&output, cfg)
-	if !strings.Contains(output.String(), "port=9 (valeur par défaut)") || strings.Contains(output.String(), "port=0") {
+	if !strings.Contains(output.String(), "Port WoL") || !strings.Contains(output.String(), "9 (valeur par défaut)") || strings.Contains(output.String(), "Port WoL       : 0") {
 		t.Fatalf("port effectif absent du résumé:\n%s", output.String())
 	}
 }
@@ -468,20 +729,186 @@ func TestReadinessRejectsEnabledMachineWithoutTransport(t *testing.T) {
 	if len(issues) == 0 || !strings.Contains(issues[0], "aucun transport") {
 		t.Fatalf("absence de transport non détectée: %v", issues)
 	}
-	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowUnicast: true}
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowDirectedBroadcast: true}
 	if issues := readinessIssues(cfg); len(issues) != 0 {
-		t.Fatalf("unicast utilisable refusé: %v", issues)
+		t.Fatalf("broadcast dirigé utilisable refusé: %v", issues)
 	}
 }
 
 func TestDetailedSummaryContainsOperationalSettings(t *testing.T) {
 	cfg := testConfig(t)
 	var output strings.Builder
-	showConfigSummary(&output, cfg)
-	for _, expected := range []string{"source=", "transports=", "destination=", "contrôles=", "logique=", "délais(initial=", "dépendances=", "active="} {
+	showServerSummary(&output, cfg, "two")
+	for _, expected := range []string{
+		"Adresse IP", "Adresse MAC", "Réseau", "Transport", "Destination", "Active",
+		"COMPORTEMENT EFFECTIF DU RÉVEIL", "Contrôles utilisés", "Magic Packets prévus",
+		"1 maximum (1 initial, aucun renvoi)", "Premier paquet", "seulement si la machine est injoignable",
+		"Première vérification", "immédiatement après l’envoi", "Vérifications suivantes", "toutes les 2 secondes",
+		"Temps d’attente maximal", "45 secondes", "Validation du démarrage", "dès qu’un contrôle réussit",
+		"Nombre maximal de contrôles", "sans limite dans les 45 secondes",
+		"Machines à démarrer avant", "Politique de sécurité UPS", "désactivée", "SYNTHÈSE",
+	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("résumé incomplet (%s):\n%s", expected, output.String())
 		}
+	}
+	for _, misleading := range []string{"Tentatives", "Nouveaux paquets", "Logique       : any", "UPS           : aucun"} {
+		if strings.Contains(output.String(), misleading) {
+			t.Fatalf("libellé brut ou trompeur encore affiché (%s):\n%s", misleading, output.String())
+		}
+	}
+	summary := wakeSummary(cfg, "two")
+	for _, expected := range []string{"si la machine n’est pas déjà joignable", "un seul Magic Packet", "toutes les 2 secondes pendant 45 secondes maximum", "dès qu’un des contrôles configurés réussira", "Aucune autre machine", "Aucune politique UPS"} {
+		if !strings.Contains(summary, expected) {
+			t.Fatalf("synthèse incomplète (%s):\n%s", expected, summary)
+		}
+	}
+}
+
+func TestConfigSummaryKeepsMachineListCompact(t *testing.T) {
+	cfg := testConfig(t)
+	var output strings.Builder
+	showConfigSummary(&output, cfg)
+
+	for _, expected := range []string{"Machines configurées", "one", "One", "127.0.0.1", "two", "Two", "127.0.0.2"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("liste compacte incomplète (%s):\n%s", expected, output.String())
+		}
+	}
+	for _, unexpected := range []string{"COMPORTEMENT EFFECTIF DU RÉVEIL", "SYNTHÈSE", "Magic Packets prévus"} {
+		if strings.Contains(output.String(), unexpected) {
+			t.Fatalf("le résumé final contient encore le détail de chaque machine (%s):\n%s", unexpected, output.String())
+		}
+	}
+}
+
+func TestGuidedUPSSafetyPolicyIsInheritedFromGroup(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "ups"}
+
+	group := cfg.Groups["core"]
+	group.Servers = []string{"one", "two"}
+	var output strings.Builder
+	group.UPS = promptUPSSafetyPolicy(
+		bufio.NewReader(strings.NewReader("o\nups-main\n\n40\n30m\n")),
+		&output, cfg, group.UPS, "ce groupe",
+	)
+	cfg.Groups["core"] = group
+
+	for _, id := range []string{"one", "two"} {
+		inherited := cfg.effectiveUPS(id)
+		if inherited == nil || inherited.UPS != "ups-main" || !inherited.RequireOnline || inherited.MinBattery != 40 || inherited.MinRuntime != 1800 {
+			t.Fatalf("politique de groupe non héritée par %s: %#v", id, inherited)
+		}
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("configuration UPS guidée invalide: %v", err)
+	}
+
+	var summary strings.Builder
+	showServerSummary(&summary, cfg, "one")
+	showServerSummary(&summary, cfg, "two")
+	for _, expected := range []string{"héritée d’un groupe", "secteur OL requis", "batterie minimale 40 %", "autonomie minimale 1800 secondes"} {
+		if !strings.Contains(summary.String(), expected) {
+			t.Fatalf("politique UPS de groupe absente (%s):\n%s", expected, summary.String())
+		}
+	}
+	for _, expected := range []string{"SÉCURITÉ AVANT RÉVEIL", "juste avant chaque envoi", "ne détecte pas les coupures", "UPS DISPONIBLES", "PROTECTION AVANT CHAQUE MAGIC PACKET", "Serveur NUT", "EN PRATIQUE"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("assistant UPS incomplet (%s):\n%s", expected, output.String())
+		}
+	}
+	for _, unexpected := range []string{"Commande électrique", "commande électrique", "ordre électrique"} {
+		if strings.Contains(output.String(), unexpected) {
+			t.Fatalf("mention UPS inutile conservée (%s):\n%s", unexpected, output.String())
+		}
+	}
+}
+
+func TestDifferentGroupUPSPoliciesForSameMachineAreRejected(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "ups"}
+	first := cfg.Groups["core"]
+	first.UPS = &UPSPolicy{UPS: "ups-main", RequireOnline: true, MinBattery: 40}
+	cfg.Groups["core"] = first
+	cfg.Groups["other"] = Group{
+		Priority: 20,
+		Servers:  []string{"one"},
+		UPS:      &UPSPolicy{UPS: "ups-main", RequireOnline: true, MinBattery: 70},
+	}
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "plusieurs groupes définissent des politiques UPS différentes") {
+		t.Fatalf("conflit de politiques UPS non refusé: %v", err)
+	}
+
+	second := cfg.Groups["other"]
+	second.UPS = &UPSPolicy{UPS: "ups-main", RequireOnline: true, MinBattery: 40}
+	cfg.Groups["other"] = second
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("politiques UPS identiques refusées: %v", err)
+	}
+	policy := cfg.effectiveUPS("one")
+	if policy == nil || policy.MinBattery != 40 {
+		t.Fatalf("politique UPS de groupe non résolue: %#v", policy)
+	}
+}
+
+func TestMachineUPSPolicyIsNotPartOfTheConfigurationSchema(t *testing.T) {
+	data := `version: 1
+networks:
+  lan:
+    cidr: 192.168.1.0/24
+    allow_directed_broadcast: true
+groups: {}
+servers:
+  one:
+    name: One
+    mac: "02:00:00:00:00:01"
+    ip: 192.168.1.10
+    network: lan
+    ups_policy:
+      ups: ups-main
+      require_online: true
+ups:
+  ups-main:
+    address: 127.0.0.1:3493
+    name: main
+relays: {}
+automations: []
+`
+	_, err := loadConfigData([]byte(data))
+	if err == nil || !strings.Contains(err.Error(), "field ups_policy not found") {
+		t.Fatalf("ups_policy a été accepté sur une machine: %v", err)
+	}
+}
+
+func TestNewPowerRestorePolicyDefaultsToAnyObservedOutage(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "main"}
+	group := cfg.Groups["core"]
+	group.Servers = []string{"one", "two"}
+	var output strings.Builder
+
+	policy := promptPowerRestore(
+		bufio.NewReader(strings.NewReader("o\nups-main\n\n\n\n\n\n\n")),
+		&output,
+		cfg,
+		group,
+	)
+	if policy == nil || policy.LowBattery == nil || policy.HighBattery == nil {
+		t.Fatalf("politique de reprise absente ou incomplète: %#v", policy)
+	}
+	if *policy.LowBattery != 0 || *policy.HighBattery != 70 {
+		t.Fatalf("seuils guidés = %d/%d, attendu 0/70", *policy.LowBattery, *policy.HighBattery)
+	}
+	for _, expected := range []string{"REPRISE AUTOMATIQUE APRÈS COUPURE", "OB, LB ou FSD", "inaccessible", "[1] Toute coupure", "reprendre à 70 %", "recommandé", "Charge de démarrage", "Vérification NUT", "[1] Séquentiel", "[4] Continuer et retenter", "EN PRATIQUE"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("aide du défaut 0/70 absente (%s):\n%s", expected, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "ordre électrique") || strings.Contains(output.String(), "Commande électrique") {
+		t.Fatalf("mention UPS inutile conservée:\n%s", output.String())
 	}
 }
 

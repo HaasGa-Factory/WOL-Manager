@@ -20,10 +20,14 @@ import (
 )
 
 func setup(path string) error {
-	return setupWithIO(path, os.Stdin, os.Stdout)
+	return setupWithIOMode(path, os.Stdin, os.Stdout, isTerminalFile(os.Stdin) && isTerminalFile(os.Stdout))
 }
 
 func setupWithIO(path string, input io.Reader, output io.Writer) error {
+	return setupWithIOMode(path, input, output, false)
+}
+
+func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive bool) error {
 	reader := bufio.NewReader(input)
 	session, err := newConfigSession(path)
 	if err != nil {
@@ -31,17 +35,34 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 	}
 	if session.existing {
 		fmt.Fprintf(output, "Configuration existante détectée: %s.\n", path)
+		if session.legacyUnicast {
+			fmt.Fprintln(output, "Cette configuration utilise l'ancien transport unicast, désormais incompatible.")
+			if len(session.unicastOnly) > 0 {
+				fmt.Fprintf(output, "Machines sans autre transport après conversion: %s. Configurez un broadcast local autorisé avant l'enregistrement.\n", strings.Join(session.unicastOnly, ", "))
+			}
+			fmt.Fprintln(output, "La conversion retirera seulement unicast et allow_unicast. Le fichier ne sera modifié qu'après le résumé, une seconde confirmation et une sauvegarde datée.")
+			if !confirmPrompt(reader, output, "Préparer cette conversion en mémoire ?") {
+				fmt.Fprintln(output, "Configuration existante conservée sans modification.")
+				return nil
+			}
+			session.changed = true
+		}
 	} else {
 		fmt.Fprintln(output, "Création d'une nouvelle configuration guidée.")
 		fmt.Fprintln(output, "NUT signifie Network UPS Tools. Il permet de lire l'état d'un onduleur; cette fonction est facultative et WoL Manager ne commande jamais l'onduleur.")
 		fmt.Fprintln(output, "Si vous l'activez, préparez l'adresse IP/DNS, le port (3493), le choix TLS/STARTTLS et, seulement si nécessaires, les identifiants stockés dans des fichiers secrets.")
 		fmt.Fprintln(output, "Souhaitez-vous configurer un serveur NUT ?")
-		fmt.Fprintln(output, "[1] Oui\n[2] Non\n[3] Plus tard\n[?] Aide")
+		printInteractiveMenu(output, "CONFIGURATION NUT", []helpRow{
+			{command: "[1] Oui", description: "Configurer maintenant un serveur NUT et ses UPS"},
+			{command: "[2] Non", description: "Continuer sans intégration NUT"},
+			{command: "[3] Plus tard", description: "Reporter la configuration NUT"},
+			{command: "[?] Aide", description: "Expliquer NUT et son fonctionnement en lecture seule"},
+		})
 	chooseNUT:
 		for {
 			switch prompt(reader, output, "> ") {
 			case "1":
-				if configureNUT(reader, output, session.cfg) {
+				if configureNUT(reader, output, session.cfg, interactive) {
 					session.changed = true
 				}
 				break chooseNUT
@@ -56,17 +77,26 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 	}
 
 	for {
-		fmt.Fprintln(output, "\nConfiguration WoL Manager :")
-		fmt.Fprintln(output, "[1] Réseaux WoL\n[2] Machines\n[3] Groupes et dépendances\n[4] Serveurs NUT et UPS\n[5] Résumé, validation et enregistrement\n[6] Annuler sans modifier\n[7] Délais globaux de vérification\n[8] Découverte réseau\n[?] Aide")
+		printInteractiveMenu(output, "CONFIGURATION", []helpRow{
+			{command: "[1] Réseaux WoL", description: "Ajouter ou modifier les réseaux et transports"},
+			{command: "[2] Machines", description: "Ajouter ou modifier les machines à réveiller"},
+			{command: "[3] Groupes et dépendances", description: "Organiser l’ordre et les dépendances"},
+			{command: "[4] Serveurs NUT et UPS", description: "Configurer la surveillance facultative des onduleurs"},
+			{command: "[5] Résumé et enregistrement", description: "Valider, simuler puis enregistrer atomiquement"},
+			{command: "[6] Annuler", description: "Quitter sans modifier la configuration"},
+			{command: "[7] Délais globaux", description: "Régler les valeurs de vérification héritées"},
+			{command: "[8] Découverte réseau", description: "Configurer la découverte passive et active"},
+			{command: "[?] Aide", description: "Afficher l’aide complète de l’assistant"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
-			session.changed = manageNetworks(reader, output, session.cfg) || session.changed
+			session.changed = manageNetworks(reader, output, session.cfg, interactive) || session.changed
 		case "2":
-			session.changed = manageServers(reader, output, session.cfg) || session.changed
+			session.changed = manageServers(reader, output, session.cfg, interactive) || session.changed
 		case "3":
-			session.changed = manageGroups(reader, output, session.cfg) || session.changed
+			session.changed = manageGroups(reader, output, session.cfg, interactive) || session.changed
 		case "4":
-			session.changed = configureNUT(reader, output, session.cfg) || session.changed
+			session.changed = configureNUT(reader, output, session.cfg, interactive) || session.changed
 		case "5":
 			showConfigSummary(output, session.cfg)
 			if err := session.cfg.Validate(); err != nil {
@@ -78,7 +108,7 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 				for _, issue := range issues {
 					fmt.Fprintln(output, "-", issue)
 				}
-				fmt.Fprintln(output, "Ouvrez Réseaux WoL, modifiez le réseau indiqué et activez le broadcast local, l'unicast ou un relais utilisable.")
+				fmt.Fprintln(output, "Ouvrez Réseaux WoL, modifiez le réseau indiqué et activez le broadcast local, un broadcast dirigé autorisé ou un relais utilisable.")
 				continue
 			}
 			if err := simulateAllMachines(output, session.cfg); err != nil {
@@ -110,7 +140,7 @@ func setupWithIO(path string, input io.Reader, output io.Writer) error {
 	}
 }
 
-func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	fmt.Fprintln(output, "NUT (Network UPS Tools) lit un onduleur sans le commander. OL=secteur présent, OB=sur batterie, LB=batterie faible, FSD=arrêt forcé. L'identifiant du serveur est un nom local WoL Manager; l'identifiant UPS est fourni par NUT.")
 	working := cfg.UPS
 	before, _ := yaml.Marshal(working)
@@ -131,16 +161,26 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 	}
 
 	for {
-		fmt.Fprintln(output, "\nConfiguration NUT :")
-		fmt.Fprintln(output, "[1] Ajouter ou modifier un serveur\n[2] Supprimer un UPS configuré\n[3] Tester les UPS configurés\n[4] Terminer\n[5] Annuler les changements NUT\n[?] Aide")
+		printInteractiveMenu(output, "SERVEURS NUT ET UPS", []helpRow{
+			{command: "[1] Ajouter ou modifier", description: "Configurer un serveur NUT et sélectionner ses UPS"},
+			{command: "[2] Supprimer un UPS", description: "Retirer un UPS de WoL Manager sans modifier NUT"},
+			{command: "[3] Tester", description: "Tester en lecture seule les UPS configurés"},
+			{command: "[4] Terminer", description: "Conserver les changements de cette section"},
+			{command: "[5] Annuler", description: "Annuler uniquement les changements NUT"},
+			{command: "[?] Aide", description: "Afficher l’aide NUT et les états OL, OB, LB et FSD"},
+		})
+		waitAfterAction := false
 		switch prompt(reader, output, "> ") {
 		case "1":
+			waitAfterAction = true
 			if err := configureRemoteNUT(reader, output, working); err != nil {
 				fmt.Fprintf(output, "Configuration reportée: %v\n", err)
 			}
 		case "2":
+			waitAfterAction = true
 			removeConfiguredUPS(reader, output, cfg)
 		case "3":
+			waitAfterAction = true
 			testConfiguredUPS(output, working)
 		case "4":
 			after, _ := yaml.Marshal(working)
@@ -156,18 +196,24 @@ func configureNUT(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			}
 			return false
 		case "?", "aide", "help":
+			waitAfterAction = true
 			printContextHelp(output, "nut")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if waitAfterAction && interactive && !waitForMenuReturn(reader, output, true, "nut", "menu NUT") {
+			return false
 		}
 	}
 }
 
 type configSession struct {
-	base     []byte
-	cfg      *Config
-	existing bool
-	changed  bool
+	base          []byte
+	cfg           *Config
+	existing      bool
+	changed       bool
+	legacyUnicast bool
+	unicastOnly   []string
 }
 
 func newConfigSession(path string) (*configSession, error) {
@@ -188,7 +234,7 @@ func newConfigSession(path string) (*configSession, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	cfg, err := loadConfigData(base)
+	cfg, legacyUnicast, unicastOnly, err := loadConfigDataForMigration(base)
 	if err != nil {
 		if existing {
 			return nil, fmt.Errorf("configuration existante invalide, aucune modification: %w", err)
@@ -207,40 +253,49 @@ func newConfigSession(path string) (*configSession, error) {
 	if cfg.UPS == nil {
 		cfg.UPS = map[string]UPSConfig{}
 	}
-	return &configSession{base: base, cfg: cfg, existing: existing}, nil
+	return &configSession{base: base, cfg: cfg, existing: existing, legacyUnicast: legacyUnicast, unicastOnly: unicastOnly}, nil
 }
 
-func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	changed := false
 	for {
-		fmt.Fprintln(output, "\nRéseaux WoL :")
+		fmt.Fprintln(output, "\nRéseaux WoL configurés :")
 		printNetworks(output, cfg.Networks)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
+		printInteractiveMenu(output, "RÉSEAUX WOL", []helpRow{
+			{command: "[1] Ajouter", description: "Créer un réseau Wake-on-LAN"},
+			{command: "[2] Modifier", description: "Modifier un réseau existant"},
+			{command: "[3] Supprimer", description: "Supprimer un réseau inutilisé après confirmation"},
+			{command: "[4] Retour", description: "Revenir à la configuration générale"},
+			{command: "[?] Aide", description: "Expliquer CIDR, interface et transports"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
+			printInteractiveViewHeader(output, "AJOUTER UN RÉSEAU")
 			if addOrEditNetwork(reader, output, cfg, "") {
 				changed = true
 			}
 		case "2":
+			printInteractiveViewHeader(output, "MODIFIER UN RÉSEAU")
 			if addOrEditNetwork(reader, output, cfg, prompt(reader, output, "Identifiant du réseau à modifier: ")) {
 				changed = true
 			}
 		case "3":
+			printInteractiveViewHeader(output, "SUPPRIMER UN RÉSEAU")
 			id := prompt(reader, output, "Identifiant du réseau à supprimer: ")
 			if _, ok := cfg.Networks[id]; !ok {
 				fmt.Fprintln(output, "Réseau inconnu.")
-				continue
-			}
-			used := false
-			for serverID, server := range cfg.Servers {
-				if server.Network == id {
-					fmt.Fprintf(output, "Suppression refusée: réseau utilisé par la machine %s.\n", serverID)
-					used = true
+			} else {
+				used := false
+				for serverID, server := range cfg.Servers {
+					if server.Network == id {
+						fmt.Fprintf(output, "Suppression refusée: réseau utilisé par la machine %s.\n", serverID)
+						used = true
+					}
 				}
-			}
-			if !used && confirmPrompt(reader, output, "Supprimer le réseau "+id+" ?") {
-				delete(cfg.Networks, id)
-				changed = true
+				if !used && confirmPrompt(reader, output, "Supprimer le réseau "+id+" ?") {
+					delete(cfg.Networks, id)
+					changed = true
+				}
 			}
 		case "4":
 			return changed
@@ -248,6 +303,9 @@ func manageNetworks(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			printContextHelp(output, "network")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if interactive && !waitForMenuReturn(reader, output, true, "network", "menu des réseaux") {
+			return changed
 		}
 	}
 }
@@ -292,7 +350,7 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 			fmt.Fprintln(output, err, "Recommencez.")
 		}
 	}
-	n.Interface = promptDefault(reader, output, "Interface Linux (facultatif)", n.Interface)
+	n.Interface = promptDefault(reader, output, "Interface Linux (requise pour broadcast local)", n.Interface)
 	for {
 		n.SourceIP = promptDefault(reader, output, "Adresse IPv4 source (facultatif)", n.SourceIP)
 		if n.SourceIP == "" || net.ParseIP(n.SourceIP).To4() != nil {
@@ -300,12 +358,19 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 		}
 		fmt.Fprintln(output, "Adresse IPv4 invalide. Recommencez.")
 	}
-	fmt.Fprintln(output, "Transports: broadcast local (recommandé sur le même réseau), unicast (direct mais dépend d'ARP), broadcast dirigé (routé et plus risqué), relais (recommandé pour un réseau distant).")
+	printChoiceList(output, "TRANSPORTS DISPONIBLES", []helpRow{
+		{command: "Broadcast local", description: "Recommandé lorsque la machine est sur le même réseau"},
+		{command: "Broadcast dirigé", description: "Traverse un routeur et présente davantage de risques"},
+		{command: "Relais", description: "Recommandé pour joindre un réseau distant"},
+	})
 	n.AllowLocalBroadcast = promptBool(reader, output, "Autoriser le broadcast local", valueOrDefault(n.AllowLocalBroadcast, !editing))
-	n.AllowUnicast = promptBool(reader, output, "Autoriser l'unicast", valueOrDefault(n.AllowUnicast, !editing))
+	for n.AllowLocalBroadcast && n.Interface == "" {
+		fmt.Fprintln(output, "Le broadcast local exige une interface Linux explicite.")
+		n.Interface = promptDefault(reader, output, "Interface Linux", n.Interface)
+	}
 	n.AllowDirectedBroadcast = promptBool(reader, output, "Autoriser le broadcast dirigé", n.AllowDirectedBroadcast)
 	if len(cfg.Relays) > 0 {
-		fmt.Fprintln(output, "Relais disponibles:", strings.Join(sortedKeys(cfg.Relays), ", "))
+		printValueList(output, "RELAIS DISPONIBLES", sortedKeys(cfg.Relays))
 		for {
 			n.Relay = promptDefault(reader, output, "Identifiant du relais (facultatif)", n.Relay)
 			if n.Relay == "" {
@@ -331,32 +396,39 @@ func addOrEditNetwork(reader *bufio.Reader, output io.Writer, cfg *Config, id st
 	return true
 }
 
-func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	changed := false
 	for {
-		fmt.Fprintln(output, "\nMachines :")
-		printServers(output, cfg.Servers)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
+		printInteractiveMenu(output, "MACHINES", []helpRow{
+			{command: "[1] Ajouter", description: "Déclarer une machine à réveiller"},
+			{command: "[2] Modifier", description: "Modifier une machine existante"},
+			{command: "[3] Supprimer", description: "Supprimer une machine sans dépendance active"},
+			{command: "[4] Retour", description: "Revenir à la configuration générale"},
+			{command: "[?] Aide", description: "Expliquer identifiants, contrôles et délais"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
+			printInteractiveViewHeader(output, "AJOUTER UNE MACHINE")
 			if addOrEditServer(reader, output, cfg, "") {
 				changed = true
 			}
 		case "2":
+			printInteractiveViewHeader(output, "MODIFIER UNE MACHINE")
+			fmt.Fprintln(output, "\nMachines configurées :")
+			printServers(output, cfg.Servers)
 			if addOrEditServer(reader, output, cfg, prompt(reader, output, "Identifiant de la machine à modifier: ")) {
 				changed = true
 			}
 		case "3":
+			printInteractiveViewHeader(output, "SUPPRIMER UNE MACHINE")
+			fmt.Fprintln(output, "\nMachines configurées :")
+			printServers(output, cfg.Servers)
 			id := prompt(reader, output, "Identifiant de la machine à supprimer: ")
 			if _, ok := cfg.Servers[id]; !ok {
 				fmt.Fprintln(output, "Machine inconnue.")
-				continue
-			}
-			if reason := serverDeleteBlocker(cfg, id); reason != "" {
+			} else if reason := serverDeleteBlocker(cfg, id); reason != "" {
 				fmt.Fprintln(output, "Suppression refusée:", reason)
-				continue
-			}
-			if confirmPrompt(reader, output, "Supprimer la machine "+id+" ?") {
+			} else if confirmPrompt(reader, output, "Supprimer la machine "+id+" ?") {
 				delete(cfg.Servers, id)
 				changed = true
 			}
@@ -366,6 +438,9 @@ func manageServers(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			printContextHelp(output, "machine")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if interactive && !waitForMenuReturn(reader, output, true, "machine", "menu des machines") {
+			return changed
 		}
 	}
 }
@@ -402,7 +477,7 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		}
 		fmt.Fprintln(output, "Adresse IPv4 invalide. Recommencez.")
 	}
-	fmt.Fprintln(output, "Réseaux disponibles:", strings.Join(sortedKeys(cfg.Networks), ", "))
+	printValueList(output, "RÉSEAUX DISPONIBLES", sortedKeys(cfg.Networks))
 	for {
 		s.Network = promptDefault(reader, output, "Réseau", s.Network)
 		if _, ok := cfg.Networks[s.Network]; ok {
@@ -439,35 +514,41 @@ func addOrEditServer(reader *bufio.Reader, output io.Writer, cfg *Config, id str
 		return false
 	}
 	fmt.Fprintf(output, "Machine %s prête.\n", id)
+	showServerSummary(output, cfg, id)
 	return true
 }
 
-func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
+func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config, interactive bool) bool {
 	changed := false
 	for {
-		fmt.Fprintln(output, "\nGroupes :")
+		fmt.Fprintln(output, "\nGroupes configurés :")
 		printGroups(output, cfg.Groups)
-		fmt.Fprintln(output, "[1] Ajouter\n[2] Modifier\n[3] Supprimer\n[4] Retour\n[?] Aide")
+		printInteractiveMenu(output, "GROUPES ET DÉPENDANCES", []helpRow{
+			{command: "[1] Ajouter", description: "Créer un groupe et son ordre de réveil"},
+			{command: "[2] Modifier", description: "Modifier un groupe existant"},
+			{command: "[3] Supprimer", description: "Supprimer un groupe inutilisé"},
+			{command: "[4] Retour", description: "Revenir à la configuration générale"},
+			{command: "[?] Aide", description: "Expliquer priorités, dépendances et reprise NUT"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
+			printInteractiveViewHeader(output, "AJOUTER UN GROUPE")
 			if addOrEditGroup(reader, output, cfg, "") {
 				changed = true
 			}
 		case "2":
+			printInteractiveViewHeader(output, "MODIFIER UN GROUPE")
 			if addOrEditGroup(reader, output, cfg, prompt(reader, output, "Identifiant du groupe à modifier: ")) {
 				changed = true
 			}
 		case "3":
+			printInteractiveViewHeader(output, "SUPPRIMER UN GROUPE")
 			id := prompt(reader, output, "Identifiant du groupe à supprimer: ")
 			if _, ok := cfg.Groups[id]; !ok {
 				fmt.Fprintln(output, "Groupe inconnu.")
-				continue
-			}
-			if reason := groupDeleteBlocker(cfg, id); reason != "" {
+			} else if reason := groupDeleteBlocker(cfg, id); reason != "" {
 				fmt.Fprintln(output, "Suppression refusée:", reason)
-				continue
-			}
-			if confirmPrompt(reader, output, "Supprimer le groupe "+id+" ?") {
+			} else if confirmPrompt(reader, output, "Supprimer le groupe "+id+" ?") {
 				delete(cfg.Groups, id)
 				changed = true
 			}
@@ -477,6 +558,9 @@ func manageGroups(reader *bufio.Reader, output io.Writer, cfg *Config) bool {
 			printContextHelp(output, "group")
 		default:
 			fmt.Fprintln(output, "Choix invalide.")
+		}
+		if interactive && !waitForMenuReturn(reader, output, true, "group", "menu des groupes") {
+			return changed
 		}
 	}
 }
@@ -515,6 +599,7 @@ func addOrEditGroup(reader *bufio.Reader, output io.Writer, cfg *Config, id stri
 	}
 	g.Servers = promptKnownIDs(reader, output, "Machines du groupe (virgules, facultatif)", g.Servers, cfg.Servers)
 	g.Dependencies = promptKnownIDs(reader, output, "Dépendances machines (virgules, facultatif)", g.Dependencies, cfg.Servers)
+	g.UPS = promptUPSSafetyPolicy(reader, output, cfg, g.UPS, "ce groupe")
 	g.PowerRestore = promptPowerRestore(reader, output, cfg, g)
 	cfg.Groups[id] = g
 	if err := cfg.Validate(); err != nil {
@@ -536,16 +621,22 @@ func configSection(path, section string, input io.Reader, output io.Writer) erro
 		return err
 	}
 	reader := bufio.NewReader(input)
+	interactive := false
+	if inputFile, ok := input.(*os.File); ok {
+		if outputFile, ok := output.(*os.File); ok {
+			interactive = isTerminalFile(inputFile) && isTerminalFile(outputFile)
+		}
+	}
 	var changed bool
 	switch section {
 	case "network", "networks":
-		changed = manageNetworks(reader, output, session.cfg)
+		changed = manageNetworks(reader, output, session.cfg, interactive)
 	case "machine", "server", "servers":
-		changed = manageServers(reader, output, session.cfg)
+		changed = manageServers(reader, output, session.cfg, interactive)
 	case "group", "groups":
-		changed = manageGroups(reader, output, session.cfg)
+		changed = manageGroups(reader, output, session.cfg, interactive)
 	case "nut", "ups":
-		changed = configureNUT(reader, output, session.cfg)
+		changed = configureNUT(reader, output, session.cfg, interactive)
 	case "discovery":
 		changed = configureDiscovery(reader, output, session.cfg)
 	default:
@@ -667,47 +758,96 @@ func offerDryRun(reader *bufio.Reader, output io.Writer, cfg *Config) error {
 
 func showConfigSummary(output io.Writer, cfg *Config) {
 	fmt.Fprintf(output, "\nRésumé: %d réseau(x), %d machine(s), %d groupe(s), %d UPS.\n", len(cfg.Networks), len(cfg.Servers), len(cfg.Groups), len(cfg.UPS))
-	fmt.Fprintf(output, "- Découverte réseau: passive=%t active=%t CIDR=%s limite=%d débit=%g/s timeout=%s API_active=%t\n",
-		cfg.Discovery.PassiveEnabled, cfg.Discovery.ActiveEnabled,
-		emptyAs(strings.Join(cfg.Discovery.AllowedSubnets, ","), "aucun"),
-		cfg.Discovery.Safeguards.MaxPackets, cfg.Discovery.Safeguards.RatePPS,
-		cfg.Discovery.Safeguards.Timeout.Value(30*time.Second), cfg.API.ActiveDiscovery)
+	printInformationBlock(output, "Découverte réseau", []helpRow{
+		{command: "Passive", description: strconv.FormatBool(cfg.Discovery.PassiveEnabled)},
+		{command: "Active", description: strconv.FormatBool(cfg.Discovery.ActiveEnabled)},
+		{command: "CIDR autorisés", description: emptyAs(strings.Join(cfg.Discovery.AllowedSubnets, ", "), "aucun")},
+		{command: "Limite", description: strconv.Itoa(cfg.Discovery.Safeguards.MaxPackets)},
+		{command: "Débit", description: fmt.Sprintf("%g/s", cfg.Discovery.Safeguards.RatePPS)},
+		{command: "Timeout", description: cfg.Discovery.Safeguards.Timeout.Value(30 * time.Second).String()},
+		{command: "API active", description: strconv.FormatBool(cfg.API.ActiveDiscovery)},
+	})
+	fmt.Fprintln(output)
 	printNetworks(output, cfg.Networks)
-	for _, id := range sortedKeys(cfg.Servers) {
-		s := cfg.Servers[id]
-		initial, timeout, interval := cfg.effectiveVerification(id)
-		attempts, retries := cfg.effectiveVerificationAttempts(id)
-		checks := formatChecks(cfg.effectiveChecks(id))
-		selected, destination := "aucun", "indisponible"
-		if plan, _ := transportPlan(cfg, id); len(plan) > 0 {
-			for _, d := range plan {
-				if d.State == "selected" {
-					selected, destination = d.Name, emptyAs(d.Destination, "relais "+d.Relay)
-				}
+	if len(cfg.Servers) > 0 {
+		fmt.Fprintln(output)
+		rows := make([]helpRow, 0, len(cfg.Servers))
+		for _, id := range sortedKeys(cfg.Servers) {
+			s := cfg.Servers[id]
+			state := "active"
+			if !enabled(s) {
+				state = "inactive"
 			}
+			rows = append(rows, helpRow{
+				command:     id,
+				description: fmt.Sprintf("%s — %s — réseau %s — %s", emptyAs(s.Name, "sans nom"), s.IP, s.Network, state),
+			})
 		}
-		ups := "aucun"
-		if p := cfg.effectiveUPS(id); p != nil {
-			ups = p.UPS
-		}
-		fmt.Fprintf(output, "- machine %s (%s): active=%t ip=%s mac=%s réseau=%s transport=%s destination=%s contrôles=%s logique=%s délais(initial=%s timeout=%s interval=%s tentatives=%d nouveaux_paquets=%d) dépendances=%s UPS=%s\n", id, emptyAs(s.Name, "sans nom"), enabled(s), s.IP, s.MAC, s.Network, selected, destination, checks, cfg.effectiveCheckLogic(id), initial, timeout, interval, attempts, retries, emptyAs(strings.Join(cfg.dependencies(id), ","), "aucune"), ups)
+		printInformationBlock(output, "Machines configurées", rows)
+	}
+	if len(cfg.Groups) > 0 {
+		fmt.Fprintln(output)
 	}
 	printGroups(output, cfg.Groups)
 	for _, id := range sortedKeys(cfg.UPS) {
 		u := cfg.UPS[id]
-		fmt.Fprintf(output, "- UPS %s: serveur=%s identifiant_NUT=%s TLS=%t\n", id, u.Address, u.Name, u.TLS)
+		fmt.Fprintln(output)
+		printInformationBlock(output, "UPS "+id, []helpRow{
+			{command: "Serveur", description: u.Address},
+			{command: "Identifiant NUT", description: u.Name},
+			{command: "TLS", description: strconv.FormatBool(u.TLS)},
+		})
 	}
 }
 
+func showServerSummary(output io.Writer, cfg *Config, id string) {
+	s, ok := cfg.Servers[id]
+	if !ok {
+		return
+	}
+	selected, destination := "aucun", "indisponible"
+	if plan, _ := transportPlan(cfg, id); len(plan) > 0 {
+		for _, d := range plan {
+			if d.State == "selected" {
+				selected, destination = d.Name, emptyAs(d.Destination, "relais "+d.Relay)
+			}
+		}
+	}
+	fmt.Fprintln(output)
+	printInformationBlock(output, "Machine "+id+" — "+emptyAs(s.Name, "sans nom"), []helpRow{
+		{command: "Active", description: strconv.FormatBool(enabled(s))},
+		{command: "Adresse IP", description: s.IP},
+		{command: "Adresse MAC", description: s.MAC},
+		{command: "Réseau", description: s.Network},
+		{command: "Transport", description: selected},
+		{command: "Destination", description: destination},
+	})
+	fmt.Fprintln(output)
+	printInformationBlock(output, "COMPORTEMENT EFFECTIF DU RÉVEIL", wakeBehaviorRows(cfg, id))
+	renderHelpSection(output, helpSection{title: "SYNTHÈSE", text: []string{wakeSummary(cfg, id)}}, helpRenderOptions{
+		mode:  outputColorMode(output),
+		width: outputWidth(output),
+	})
+}
+
 func printNetworks(output io.Writer, networks map[string]Network) {
-	for _, id := range sortedKeys(networks) {
+	for index, id := range sortedKeys(networks) {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		n := networks[id]
 		port := n.Port
 		portLabel := strconv.Itoa(port)
 		if port == 0 {
 			portLabel = "9 (valeur par défaut)"
 		}
-		fmt.Fprintf(output, "- réseau %s: %s interface=%s source=%s transports=%s port=%s\n", id, n.CIDR, emptyAs(n.Interface, "auto"), emptyAs(n.SourceIP, "auto"), strings.Join(enabledTransports(n), ","), portLabel)
+		printInformationBlock(output, "Réseau "+id, []helpRow{
+			{command: "CIDR", description: n.CIDR},
+			{command: "Interface", description: emptyAs(n.Interface, "auto")},
+			{command: "Adresse source", description: emptyAs(n.SourceIP, "auto")},
+			{command: "Transports", description: strings.Join(enabledTransports(n), ", ")},
+			{command: "Port WoL", description: portLabel},
+		})
 	}
 }
 
@@ -719,13 +859,38 @@ func printServers(output io.Writer, servers map[string]Server) {
 }
 
 func printGroups(output io.Writer, groups map[string]Group) {
-	for _, id := range sortedKeys(groups) {
-		g := groups[id]
-		fmt.Fprintf(output, "- groupe %s: priorité=%d machines=%s dépendances=%s", id, g.Priority, emptyAs(strings.Join(g.Servers, ","), "aucune"), emptyAs(strings.Join(g.Dependencies, ","), "aucune"))
-		if p := g.PowerRestore; p != nil {
-			fmt.Fprintf(output, " reprise_NUT(active=%t UPS=%s seuils=%s/%s stabilité=%s fréquence=%s mode=%s ordre=%s échec=%s retries=%d/%s)", p.Enabled, p.UPS, percent(p.LowBattery), percent(p.HighBattery), p.StableFor.Value(30*time.Second), p.PollInterval.Value(5*time.Second), defaultString(p.Mode, "sequential"), emptyAs(strings.Join(p.Order, ","), "groupe"), defaultString(p.FailurePolicy, "stop"), p.RetryLimit, p.RetryInterval.Value(10*time.Second))
+	for index, id := range sortedKeys(groups) {
+		if index > 0 {
+			fmt.Fprintln(output)
 		}
-		fmt.Fprintln(output)
+		g := groups[id]
+		rows := []helpRow{
+			{command: "Priorité", description: strconv.Itoa(g.Priority)},
+			{command: "Machines", description: emptyAs(strings.Join(g.Servers, ", "), "aucune")},
+			{command: "Dépendances", description: emptyAs(strings.Join(g.Dependencies, ", "), "aucune")},
+		}
+		if p := g.UPS; p != nil {
+			rows = append(rows,
+				helpRow{command: "Sécurité UPS", description: "activée via " + p.UPS},
+				helpRow{command: "Secteur requis", description: strconv.FormatBool(p.RequireOnline)},
+				helpRow{command: "Batterie minimale", description: fmt.Sprintf("%d%%", p.MinBattery)},
+				helpRow{command: "Autonomie minimale", description: fmt.Sprintf("%ds", p.MinRuntime)},
+			)
+		}
+		if p := g.PowerRestore; p != nil {
+			rows = append(rows,
+				helpRow{command: "Reprise après coupure", description: strconv.FormatBool(p.Enabled)},
+				helpRow{command: "UPS de reprise", description: p.UPS},
+				helpRow{command: "Seuils", description: percent(p.LowBattery) + " / " + percent(p.HighBattery)},
+				helpRow{command: "Stabilité", description: p.StableFor.Value(30 * time.Second).String()},
+				helpRow{command: "Fréquence", description: p.PollInterval.Value(5 * time.Second).String()},
+				helpRow{command: "Mode", description: defaultString(p.Mode, "sequential")},
+				helpRow{command: "Ordre", description: emptyAs(strings.Join(p.Order, ", "), "groupe")},
+				helpRow{command: "Échec", description: defaultString(p.FailurePolicy, "stop")},
+				helpRow{command: "Nouvelles tentatives", description: fmt.Sprintf("%d, toutes les %s", p.RetryLimit, p.RetryInterval.Value(10*time.Second))},
+			)
+		}
+		printInformationBlock(output, "Groupe "+id, rows)
 	}
 }
 
@@ -749,6 +914,199 @@ func formatChecks(checks []Check) string {
 		items = append(items, item)
 	}
 	return strings.Join(items, ",")
+}
+
+func upsPolicyDetails(policy *UPSPolicy) string {
+	source := "héritée d’un groupe"
+	online := "secteur OL non exigé"
+	if policy.RequireOnline {
+		online = "secteur OL requis"
+	}
+	battery := "seuil batterie désactivé"
+	if policy.MinBattery > 0 {
+		battery = fmt.Sprintf("batterie minimale %d %%", policy.MinBattery)
+	}
+	runtime := "autonomie minimale désactivée"
+	if policy.MinRuntime > 0 {
+		runtime = fmt.Sprintf("autonomie minimale %d secondes", policy.MinRuntime)
+	}
+	return strings.Join([]string{source, online, battery, runtime}, ", ")
+}
+
+func printSetupExplanation(output io.Writer, title string, paragraphs ...string) {
+	printInteractiveViewHeader(output, title)
+	renderHelpSection(output, helpSection{title: "DESCRIPTION", text: paragraphs}, helpRenderOptions{mode: outputColorMode(output), width: clampWidth(outputWidth(output))})
+}
+
+func printUPSSafetySummary(output io.Writer, cfg *Config, policy UPSPolicy) {
+	online := "non exigé"
+	if policy.RequireOnline {
+		online = "obligatoire"
+	}
+	battery := "non contrôlée"
+	if policy.MinBattery > 0 {
+		battery = fmt.Sprintf("%d %%", policy.MinBattery)
+	}
+	runtime := "non contrôlée"
+	if policy.MinRuntime > 0 {
+		runtime = frenchDuration(time.Duration(policy.MinRuntime) * time.Second)
+	}
+	printInformationBlock(output, "PROTECTION AVANT CHAQUE MAGIC PACKET", []helpRow{
+		{command: "UPS consulté", description: policy.UPS},
+		{command: "Serveur NUT", description: cfg.UPS[policy.UPS].Address},
+		{command: "Secteur présent OL", description: online},
+		{command: "Charge minimale", description: battery},
+		{command: "Autonomie minimale", description: runtime},
+	})
+	checks := []string{"que le serveur NUT est accessible"}
+	if policy.RequireOnline {
+		checks = append(checks, "que le secteur est présent")
+	}
+	if policy.MinBattery > 0 {
+		checks = append(checks, fmt.Sprintf("que la batterie atteint au moins %d %%", policy.MinBattery))
+	}
+	if policy.MinRuntime > 0 {
+		checks = append(checks, "que l’autonomie estimée atteint au moins "+frenchDuration(time.Duration(policy.MinRuntime)*time.Second))
+	}
+	renderHelpSection(output, helpSection{title: "EN PRATIQUE", text: []string{"Avant chaque Magic Packet, WoL Manager vérifiera " + strings.Join(checks, ", ") + ". Si une condition n’est pas respectée, aucun paquet ne sera envoyé."}}, helpRenderOptions{mode: outputColorMode(output), width: clampWidth(outputWidth(output))})
+}
+
+func printPowerRestoreSummary(output io.Writer, policy PowerRestorePolicy) {
+	low, high := defaultPowerRestoreLowBattery, defaultPowerRestoreHighBattery
+	if policy.LowBattery != nil {
+		low = *policy.LowBattery
+	}
+	if policy.HighBattery != nil {
+		high = *policy.HighBattery
+	}
+	rearm := "après toute coupure OB, LB ou FSD"
+	if low > 0 {
+		rearm = fmt.Sprintf("à %d %% ou sur état LB/FSD", low)
+	}
+	mode := "séquentiel"
+	if policy.Mode == "parallel" {
+		mode = "parallèle"
+	}
+	failure := map[string]string{
+		"stop":           "arrêter la séquence",
+		"continue":       "continuer les machines indépendantes",
+		"retry":          "retenter la machine en échec",
+		"continue_retry": "continuer et retenter en parallèle",
+	}[policy.FailurePolicy]
+	printInformationBlock(output, "REPRISE AUTOMATIQUE APRÈS COUPURE", []helpRow{
+		{command: "UPS surveillé", description: policy.UPS},
+		{command: "Coupure reconnue", description: "OB, LB ou FSD"},
+		{command: "Réarmement", description: rearm},
+		{command: "Charge de démarrage", description: fmt.Sprintf("%d %%", high)},
+		{command: "Stabilité du secteur", description: frenchDuration(policy.StableFor.Value(30 * time.Second))},
+		{command: "Vérification NUT", description: "toutes les " + frenchDuration(policy.PollInterval.Value(5*time.Second))},
+		{command: "Mode de démarrage", description: mode},
+		{command: "En cas d’échec", description: failure},
+	})
+	rearmText := "Toute coupure réellement observée préparera la reprise."
+	if low > 0 {
+		rearmText = fmt.Sprintf("Une coupure courte sera ignorée si la batterie ne descend pas à %d %%, sauf état LB ou FSD.", low)
+	}
+	renderHelpSection(output, helpSection{title: "EN PRATIQUE", text: []string{fmt.Sprintf("%s Après le retour du secteur OL, WoL Manager attendra %s de stabilité et une charge d’au moins %d %% avant de commencer la reprise. Les protections configurées seront revérifiées avant chaque Magic Packet.", rearmText, frenchDuration(policy.StableFor.Value(30*time.Second)), high)}}, helpRenderOptions{mode: outputColorMode(output), width: clampWidth(outputWidth(output))})
+}
+
+func wakeBehaviorRows(cfg *Config, id string) []helpRow {
+	initial, timeout, interval := cfg.effectiveVerification(id)
+	attempts, retries := cfg.effectiveVerificationAttempts(id)
+	checks := formatChecks(cfg.effectiveChecks(id))
+	_, checksDisabled := cfg.effectiveCheckPolicy(id)
+
+	packets := "1 maximum (1 initial, aucun renvoi)"
+	if retries > 0 {
+		renvois := fmt.Sprintf("%d renvois", retries)
+		if retries == 1 {
+			renvois = "1 renvoi"
+		}
+		packets = fmt.Sprintf("%d maximum (1 initial, %s)", retries+1, renvois)
+	}
+	rows := []helpRow{
+		{command: "Contrôles utilisés", description: checks},
+		{command: "Magic Packets prévus", description: packets},
+		{command: "Premier paquet", description: "seulement si la machine est injoignable"},
+	}
+	if checksDisabled {
+		rows = append(rows, helpRow{command: "Vérification du démarrage", description: "désactivée"})
+	} else {
+		firstCheck := "immédiatement après l’envoi"
+		if initial > 0 {
+			firstCheck = frenchDuration(initial) + " après l’envoi"
+		}
+		validation := "dès qu’un contrôle réussit"
+		if cfg.effectiveCheckLogic(id) == "all" {
+			validation = "lorsque tous les contrôles réussissent"
+		}
+		maxChecks := fmt.Sprintf("%d", attempts)
+		if attempts == 0 {
+			maxChecks = "sans limite dans les " + frenchDuration(timeout)
+		}
+		rows = append(rows,
+			helpRow{command: "Première vérification", description: firstCheck},
+			helpRow{command: "Vérifications suivantes", description: "toutes les " + frenchDuration(interval)},
+			helpRow{command: "Temps d’attente maximal", description: frenchDuration(timeout)},
+			helpRow{command: "Validation du démarrage", description: validation},
+			helpRow{command: "Nombre maximal de contrôles", description: maxChecks},
+		)
+	}
+	rows = append(rows, helpRow{
+		command:     "Machines à démarrer avant",
+		description: emptyAs(strings.Join(cfg.dependencies(id), ", "), "aucune"),
+	})
+	ups := "désactivée"
+	if policy := cfg.effectiveUPS(id); policy != nil {
+		ups = fmt.Sprintf("activée via %s (%s)", policy.UPS, upsPolicyDetails(policy))
+	}
+	return append(rows, helpRow{command: "Politique de sécurité UPS", description: ups})
+}
+
+func wakeSummary(cfg *Config, id string) string {
+	initial, timeout, interval := cfg.effectiveVerification(id)
+	attempts, retries := cfg.effectiveVerificationAttempts(id)
+	_, checksDisabled := cfg.effectiveCheckPolicy(id)
+
+	packets := "un seul Magic Packet"
+	if retries > 0 {
+		packets = fmt.Sprintf("jusqu’à %d Magic Packets", retries+1)
+	}
+	parts := []string{}
+	if checksDisabled {
+		parts = append(parts, fmt.Sprintf("En pratique : si la machine n’est pas déjà joignable, WoL Manager tentera d’envoyer %s sans vérifier qu’elle a démarré.", packets))
+	} else {
+		firstCheck := "immédiatement"
+		if initial > 0 {
+			firstCheck = "après " + frenchDuration(initial)
+		}
+		parts = append(parts, fmt.Sprintf("En pratique : si la machine n’est pas déjà joignable, WoL Manager tentera d’envoyer %s, puis la vérifiera %s et recommencera toutes les %s pendant %s maximum.", packets, firstCheck, frenchDuration(interval), frenchDuration(timeout)))
+		if attempts == 0 {
+			parts = append(parts, "Le nombre de cycles de vérification n’a pas d’autre limite que ce délai.")
+		} else if attempts == 1 {
+			parts = append(parts, "Il effectuera au maximum un cycle de vérification.")
+		} else {
+			parts = append(parts, fmt.Sprintf("Il effectuera au maximum %d cycles de vérification.", attempts))
+		}
+		if cfg.effectiveCheckLogic(id) == "all" {
+			parts = append(parts, "Le réveil sera confirmé seulement lorsque tous les contrôles configurés réussiront.")
+		} else {
+			parts = append(parts, "Le réveil sera confirmé dès qu’un des contrôles configurés réussira.")
+		}
+	}
+
+	dependencies := cfg.dependencies(id)
+	if len(dependencies) == 0 {
+		parts = append(parts, "Aucune autre machine ne doit être réveillée avant celle-ci.")
+	} else {
+		parts = append(parts, "WoL Manager réveillera d’abord : "+strings.Join(dependencies, ", ")+".")
+	}
+	if policy := cfg.effectiveUPS(id); policy == nil {
+		parts = append(parts, "Aucune politique UPS ne conditionne l’envoi.")
+	} else {
+		parts = append(parts, fmt.Sprintf("L’envoi restera soumis à la politique UPS %s (%s).", policy.UPS, upsPolicyDetails(policy)))
+	}
+	return strings.Join(parts, " ")
 }
 
 func readinessIssues(cfg *Config) []string {
@@ -844,9 +1202,6 @@ func enabledTransports(n Network) []string {
 	if n.AllowLocalBroadcast {
 		out = append(out, "broadcast local")
 	}
-	if n.AllowUnicast {
-		out = append(out, "unicast")
-	}
 	if n.AllowDirectedBroadcast {
 		out = append(out, "broadcast dirigé")
 	}
@@ -909,7 +1264,11 @@ func confirmPrompt(reader *bufio.Reader, output io.Writer, label string) bool {
 
 func promptKnownIDs[T any](reader *bufio.Reader, output io.Writer, label string, current []string, known map[string]T) []string {
 	if len(known) > 0 {
-		fmt.Fprintln(output, "Valeurs disponibles:", strings.Join(sortedKeys(known), ", "))
+		title := "MACHINES DISPONIBLES"
+		if strings.HasPrefix(strings.ToLower(label), "groupes") {
+			title = "GROUPES DISPONIBLES"
+		}
+		printValueList(output, title, sortedKeys(known))
 	}
 	for {
 		value := promptDefault(reader, output, label+" (- pour vider)", strings.Join(current, ","))
@@ -944,10 +1303,18 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check, curre
 	} else if len(current) > 0 {
 		currentText = formatChecks(current)
 	}
-	fmt.Fprintf(output, "Vérification après réveil actuelle: %s\n", currentText)
-	fmt.Fprintln(output, "ICMP: ping simple mais parfois bloqué. TCP: vérifie un port ouvert (22/80/443). ARP: présence locale, preuve plus faible. Aucune: paquet envoyé sans confirmation de démarrage.")
+	printInformationBlock(output, "Vérification après réveil", []helpRow{{command: "Valeur actuelle", description: currentText}})
 	for {
-		fmt.Fprintln(output, "[1] ICMP\n[2] TCP\n[3] ARP\n[4] Aucune vérification\n[5] Plusieurs contrôles\n[6] Hériter des vérifications globales\n[Entrée] Conserver\n[?] Aide")
+		printInteractiveMenu(output, "VÉRIFICATION APRÈS RÉVEIL", []helpRow{
+			{command: "[1] ICMP", description: "Vérifier la réponse au ping"},
+			{command: "[2] TCP", description: "Vérifier l’ouverture d’un port précis"},
+			{command: "[3] ARP", description: "Vérifier la présence sur le réseau local"},
+			{command: "[4] Aucune vérification", description: "Envoyer le paquet sans confirmer le démarrage"},
+			{command: "[5] Plusieurs contrôles", description: "Combiner ICMP, TCP et ARP"},
+			{command: "[6] Hériter", description: "Utiliser les vérifications globales"},
+			{command: "[Entrée] Conserver", description: "Garder la valeur actuelle"},
+			{command: "[?] Aide", description: "Expliquer les contrôles et leur logique"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			return []Check{{Type: "icmp", Timeout: Duration(3 * time.Second)}}, false
@@ -975,7 +1342,7 @@ func promptChecks(reader *bufio.Reader, output io.Writer, current []Check, curre
 		case "6":
 			return nil, false
 		case "?", "aide", "help":
-			fmt.Fprintln(output, fieldHelp("contrôles"))
+			printFieldHelp(output, "contrôles")
 		case "":
 			return current, currentDisabled
 		default:
@@ -1022,23 +1389,59 @@ func promptCheckLogic(reader *bufio.Reader, output io.Writer, current string) st
 	}
 }
 
+func promptUPSSafetyPolicy(reader *bufio.Reader, output io.Writer, cfg *Config, current *UPSPolicy, scope string) *UPSPolicy {
+	if len(cfg.UPS) == 0 {
+		return current
+	}
+	printSetupExplanation(output, "SÉCURITÉ AVANT RÉVEIL",
+		"Cette politique est vérifiée juste avant chaque envoi de Magic Packet.",
+		"Si une condition exigée n’est pas respectée, aucun paquet n’est envoyé. Elle protège les réveils manuels et automatiques.",
+		"Elle ne détecte pas les coupures : la reprise après coupure est configurée séparément.",
+	)
+	if !promptBool(reader, output, "Appliquer une politique de sécurité UPS à "+scope+" ?", current != nil) {
+		return nil
+	}
+	policy := UPSPolicy{RequireOnline: true}
+	if current != nil {
+		policy = *current
+	}
+	printFieldHelp(output, "Politique de sécurité UPS")
+	printValueList(output, "UPS DISPONIBLES", sortedKeys(cfg.UPS))
+	for {
+		policy.UPS = promptDefault(reader, output, "UPS de sécurité", policy.UPS)
+		if _, ok := cfg.UPS[policy.UPS]; ok {
+			break
+		}
+		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
+	}
+	policy.RequireOnline = promptBool(reader, output, "Exiger que le secteur soit présent avant le réveil ?", policy.RequireOnline)
+	policy.MinBattery = promptIntRange(reader, output, "Charge minimale avant chaque Magic Packet (%) — 0 = ne pas contrôler", policy.MinBattery, 0, 100)
+	policy.MinRuntime = promptDurationSecondsRange(reader, output, "Autonomie minimale avant chaque Magic Packet — 0 = ne pas contrôler", policy.MinRuntime, 7*24*time.Hour)
+	printUPSSafetySummary(output, cfg, policy)
+	return &policy
+}
+
 func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, group Group) *PowerRestorePolicy {
 	if len(cfg.UPS) == 0 {
 		fmt.Fprintln(output, "Reprise automatique indisponible: aucun UPS NUT configuré.")
 		return group.PowerRestore
 	}
+	printSetupExplanation(output, "REPRISE AUTOMATIQUE APRÈS COUPURE",
+		"Cette fonction surveille l’état NUT de l’onduleur.",
+		"Une coupure est enregistrée uniquement lorsque NUT annonce OB, LB ou FSD. Un serveur NUT inaccessible correspond à un état inconnu, pas à une coupure confirmée.",
+		"Après le retour du secteur OL, WoL Manager attend la stabilité configurée et la charge de démarrage avant de reprendre uniquement les machines nécessaires.",
+	)
 	enabled := group.PowerRestore != nil && group.PowerRestore.Enabled
 	if !promptBool(reader, output, "Activer la reprise automatique NUT pour ce groupe ?", enabled) {
 		return nil
 	}
-	fmt.Fprintln(output, "Aide: le seuil bas réarme un cycle observé; le seuil haut et la stabilité secteur autorisent le démarrage. Une mesure inconnue ou un état OB/LB/FSD bloque tout nouveau réveil.")
 	fmt.Fprintln(output, "Le mode sequential attend chaque machine et ses dépendances; parallel autorise les machines indépendantes sans contourner leurs prérequis.")
 	policy := PowerRestorePolicy{Enabled: true, Mode: "sequential", FailurePolicy: "stop"}
 	if group.PowerRestore != nil {
 		policy = *group.PowerRestore
 		policy.Enabled = true
 	}
-	fmt.Fprintln(output, "UPS disponibles:", strings.Join(sortedKeys(cfg.UPS), ", "))
+	printValueList(output, "UPS DISPONIBLES", sortedKeys(cfg.UPS))
 	for {
 		policy.UPS = promptDefault(reader, output, "UPS", policy.UPS)
 		if _, ok := cfg.UPS[policy.UPS]; ok {
@@ -1046,22 +1449,32 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		}
 		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
 	}
-	fmt.Fprintln(output, "Seuils batterie: [1] 40/70 %  [2] 20/80 %  [3] personnalisés")
-	low, high := 40, 70
+	printInteractiveMenu(output, "RÉARMEMENT ET CHARGE DE DÉMARRAGE", []helpRow{
+		{command: "[1] Toute coupure", description: "Réarmer sur OB, LB ou FSD; reprendre à 70 % (recommandé)"},
+		{command: "[2] 40 / 70 %", description: "Avancé : réarmer à 40 %, reprendre à 70 %"},
+		{command: "[3] 20 / 80 %", description: "Avancé : réarmer à 20 %, reprendre à 80 %"},
+		{command: "[4] Personnalisés", description: "Avancé : saisir les deux seuils manuellement"},
+		{command: "[?] Aide", description: "Expliquer le réarmement et la charge de démarrage"},
+	})
+	low, high := defaultPowerRestoreLowBattery, defaultPowerRestoreHighBattery
 	if policy.LowBattery != nil && policy.HighBattery != nil {
 		low, high = *policy.LowBattery, *policy.HighBattery
 	}
 	thresholdsReady := false
 	for !thresholdsReady {
 		switch prompt(reader, output, "> ") {
-		case "", "1":
+		case "":
 			thresholdsReady = true
+		case "1":
+			low, high, thresholdsReady = 0, 70, true
 		case "2":
-			low, high, thresholdsReady = 20, 80, true
+			low, high, thresholdsReady = 40, 70, true
 		case "3":
+			low, high, thresholdsReady = 20, 80, true
+		case "4":
 			for {
-				low = promptIntRange(reader, output, "Seuil bas (%)", low, 0, 99)
-				high = promptIntRange(reader, output, "Seuil haut (%)", high, 1, 100)
+				low = promptIntRange(reader, output, "Seuil avancé de réarmement (%)", low, 0, 99)
+				high = promptIntRange(reader, output, "Charge minimale pour commencer la reprise (%)", high, 1, 100)
 				if high > low {
 					break
 				}
@@ -1069,31 +1482,51 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 			}
 			thresholdsReady = true
 		case "?":
-			fmt.Fprintln(output, "Aide: le seuil bas réarme la surveillance; le seuil haut, strictement supérieur, autorise le démarrage lorsque le secteur est stable.")
+			printFieldHelp(output, "Seuils batterie")
 		default:
 			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
 	}
 	policy.LowBattery, policy.HighBattery = intPointer(low), intPointer(high)
-	fmt.Fprintln(output, "Stabilité secteur: [1] 30s  [2] 1m  [3] 5m  [4] personnalisée")
+	printInteractiveMenu(output, "STABILITÉ DU SECTEUR", []helpRow{
+		{command: "[1] 30s", description: "Attendre 30 secondes de secteur stable"},
+		{command: "[2] 1m", description: "Attendre une minute de secteur stable"},
+		{command: "[3] 5m", description: "Attendre cinq minutes de secteur stable"},
+		{command: "[4] Personnalisée", description: "Saisir une durée Go comme 1m30s"},
+	})
 	stableFor, err := chooseDuration(reader, output, []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute}, policy.StableFor.Value(30*time.Second), true)
 	if err != nil {
 		fmt.Fprintf(output, "Stabilité refusée: %v; politique précédente conservée.\n", err)
 		return group.PowerRestore
 	}
 	policy.StableFor = stableFor
-	fmt.Fprintln(output, "Fréquence NUT: [1] 5s  [2] 10s  [3] 30s  [4] personnalisée")
+	printInteractiveMenu(output, "FRÉQUENCE NUT", []helpRow{
+		{command: "[1] 5s", description: "Interroger NUT toutes les 5 secondes"},
+		{command: "[2] 10s", description: "Interroger NUT toutes les 10 secondes"},
+		{command: "[3] 30s", description: "Interroger NUT toutes les 30 secondes"},
+		{command: "[4] Personnalisée", description: "Saisir une durée Go comme 15s"},
+	})
 	pollInterval, err := chooseDuration(reader, output, []time.Duration{5 * time.Second, 10 * time.Second, 30 * time.Second}, policy.PollInterval.Value(5*time.Second), false)
 	if err != nil {
 		fmt.Fprintf(output, "Fréquence refusée: %v; politique précédente conservée.\n", err)
 		return group.PowerRestore
 	}
 	policy.PollInterval = pollInterval
-	policy.Mode = promptEnum(reader, output, "Mode (sequential=un par un / parallel=indépendants en parallèle)", defaultString(policy.Mode, "sequential"), "sequential", "parallel")
+	policy.Mode = promptMenuValue(reader, output, "MODE DE DÉMARRAGE", defaultString(policy.Mode, "sequential"), "Mode de démarrage", []string{"sequential", "parallel"}, []helpRow{
+		{command: "[1] Séquentiel", description: "Réveiller les machines une par une dans l’ordre configuré"},
+		{command: "[2] Parallèle", description: "Réveiller ensemble les machines indépendantes"},
+		{command: "[?] Aide", description: "Expliquer les dépendances dans chaque mode"},
+	})
 	if policy.Mode == "sequential" {
 		policy.Order = promptKnownIDs(reader, output, "Ordre de démarrage (virgules, facultatif)", policy.Order, cfg.Servers)
 	}
-	policy.FailurePolicy = promptEnum(reader, output, "Échec (stop=bloquer / continue=indépendants / retry=retenter / continue_retry=les deux)", defaultString(policy.FailurePolicy, "stop"), "stop", "continue", "retry", "continue_retry")
+	policy.FailurePolicy = promptMenuValue(reader, output, "COMPORTEMENT EN CAS D’ÉCHEC", defaultString(policy.FailurePolicy, "stop"), "Comportement en cas d’échec", []string{"stop", "continue", "retry", "continue_retry"}, []helpRow{
+		{command: "[1] Bloquer", description: "Arrêter la séquence au premier échec"},
+		{command: "[2] Continuer", description: "Poursuivre uniquement avec les machines indépendantes"},
+		{command: "[3] Retenter", description: "Réessayer la machine en échec avant de poursuivre"},
+		{command: "[4] Continuer et retenter", description: "Poursuivre les indépendantes et retenter en parallèle"},
+		{command: "[?] Aide", description: "Expliquer les quatre comportements"},
+	})
 	if policy.FailurePolicy == "retry" || policy.FailurePolicy == "continue_retry" {
 		retryDefault := policy.RetryLimit
 		if retryDefault == 0 {
@@ -1110,6 +1543,7 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 			fmt.Fprintln(output, "Intervalle invalide. Utilisez 30s, 2m ou 1m30s.")
 		}
 	}
+	printPowerRestoreSummary(output, policy)
 	return &policy
 }
 
@@ -1123,15 +1557,50 @@ func promptIntRange(reader *bufio.Reader, output io.Writer, label string, curren
 	}
 }
 
-func promptEnum(reader *bufio.Reader, output io.Writer, label, current string, allowed ...string) string {
+func promptDurationSecondsRange(reader *bufio.Reader, output io.Writer, label string, current int, max time.Duration) int {
+	shown := "0"
+	maxSeconds := int(max / time.Second)
+	if current > 0 {
+		shown = (time.Duration(current) * time.Second).String()
+	}
 	for {
-		value := strings.ToLower(promptDefault(reader, output, label, current))
-		for _, candidate := range allowed {
-			if value == candidate {
-				return value
-			}
+		raw := promptDefault(reader, output, label+" (exemples: 10m, 30m, 1h; nombre seul = secondes)", shown)
+		if seconds, err := strconv.Atoi(raw); err == nil && seconds >= 0 && seconds <= maxSeconds {
+			return seconds
 		}
-		fmt.Fprintln(output, "Valeur invalide. Choix autorisés:", strings.Join(allowed, ", "))
+		value, err := time.ParseDuration(raw)
+		if err == nil && value >= 0 && value <= max && value%time.Second == 0 {
+			return int(value / time.Second)
+		}
+		fmt.Fprintf(output, "Durée invalide. Utilisez 30m, 1h, 1h30m ou un nombre de secondes entre 0 et %d.\n", maxSeconds)
+	}
+}
+
+func promptMenuValue(reader *bufio.Reader, output io.Writer, title, current, helpLabel string, values []string, rows []helpRow) string {
+	defaultChoice := 1
+	for index, value := range values {
+		if value == current {
+			defaultChoice = index + 1
+			break
+		}
+	}
+	printInteractiveMenu(output, title, rows)
+	for {
+		fmt.Fprintf(output, "Choix [%d]: ", defaultChoice)
+		line, _ := reader.ReadString('\n')
+		answer := strings.TrimSpace(line)
+		if answer == "" {
+			return values[defaultChoice-1]
+		}
+		if answer == "?" {
+			printFieldHelp(output, helpLabel)
+			continue
+		}
+		choice, err := strconv.Atoi(answer)
+		if err == nil && choice >= 1 && choice <= len(values) {
+			return values[choice-1]
+		}
+		fmt.Fprintf(output, "Choix invalide. Saisissez un numéro entre 1 et %d.\n", len(values))
 	}
 }
 
@@ -1139,7 +1608,7 @@ func chooseDuration(reader *bufio.Reader, output io.Writer, presets []time.Durat
 	for {
 		choice := prompt(reader, output, "> ")
 		if choice == "?" {
-			fmt.Fprintln(output, fieldHelp("durée"))
+			printFieldHelp(output, "durée")
 			continue
 		}
 		if index, err := strconv.Atoi(choice); err == nil && index >= 1 && index <= len(presets) {
@@ -1192,7 +1661,7 @@ func promptVerification(reader *bufio.Reader, output io.Writer, current Verifica
 		retriesFallback = "0 (aucun nouvel envoi)"
 	}
 	var err error
-	if current.InitialDelay, err = promptDurationOverride(reader, output, "Attente avant la première vérification", current.InitialDelay, true, initialFallback); err != nil {
+	if current.InitialDelay, err = promptDurationOverride(reader, output, "Après le Magic Packet, attendre avant la première vérification", current.InitialDelay, true, initialFallback); err != nil {
 		return current, err
 	}
 	if current.Timeout, err = promptDurationOverride(reader, output, "Durée maximale des vérifications", current.Timeout, false, timeoutFallback); err != nil {
@@ -1379,7 +1848,13 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 			err = errors.New("aucun UPS disponible")
 		}
 		fmt.Fprintf(output, "Échec: %v\n", err)
-		fmt.Fprintln(output, "[1] Réessayer\n[2] Modifier l'adresse ou le port\n[3] Configurer un autre serveur\n[4] Reporter la configuration")
+		printInteractiveMenu(output, "CONNEXION NUT IMPOSSIBLE", []helpRow{
+			{command: "[1] Réessayer", description: "Retenter avec les mêmes paramètres"},
+			{command: "[2] Modifier", description: "Corriger l’adresse ou le port"},
+			{command: "[3] Autre serveur", description: "Configurer une autre adresse NUT"},
+			{command: "[4] Reporter", description: "Continuer sans enregistrer ce serveur"},
+			{command: "[?] Aide", description: "Expliquer les causes possibles de l’échec"},
+		})
 		switch prompt(reader, output, "> ") {
 		case "1":
 			continue
@@ -1388,7 +1863,7 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 		case "4":
 			return errors.New("serveur NUT non enregistré")
 		case "?":
-			fmt.Fprintln(output, "Aide: réessayez après une erreur temporaire, modifiez l'adresse/port, choisissez un autre serveur ou reportez sans bloquer l'installation.")
+			printFieldHelp(output, "Erreur de connexion NUT")
 		default:
 			fmt.Fprintln(output, "Choix invalide. Recommencez.")
 		}
@@ -1396,14 +1871,11 @@ func configureRemoteNUT(reader *bufio.Reader, output io.Writer, configured map[s
 }
 
 func selectNUTDevices(reader *bufio.Reader, output io.Writer, serverID string, server UPSConfig, devices []NUTDevice, configured map[string]UPSConfig) error {
-	fmt.Fprintln(output, "UPS disponibles :")
+	rows := make([]helpRow, 0, len(devices))
 	for i, device := range devices {
-		fmt.Fprintf(output, "[%d] %s", i+1, device.Name)
-		if device.Description != "" {
-			fmt.Fprintf(output, " — %s", device.Description)
-		}
-		fmt.Fprintln(output)
+		rows = append(rows, helpRow{command: fmt.Sprintf("[%d] %s", i+1, device.Name), description: device.Description})
 	}
+	printChoiceList(output, "UPS DISPONIBLES", rows)
 	var indices []int
 	for {
 		selection := prompt(reader, output, "Sélectionnez un ou plusieurs UPS (ex. 1,2 ou tous): ")
@@ -1487,11 +1959,6 @@ func removeConfiguredUPS(reader *bufio.Reader, output io.Writer, cfg *Config) {
 	for _, index := range selection {
 		id := ids[index]
 		blocked := ""
-		for serverID, server := range cfg.Servers {
-			if server.UPS != nil && server.UPS.UPS == id {
-				blocked = "politique UPS de la machine " + serverID
-			}
-		}
 		for groupID, group := range cfg.Groups {
 			if group.UPS != nil && group.UPS.UPS == id {
 				blocked = "politique UPS du groupe " + groupID
@@ -1549,6 +2016,9 @@ func writeManagedConfig(path string, base []byte, cfg *Config, backup bool) erro
 		return err
 	}
 	if err := replaceGlobalCheckLogic(root, cfg.Global.CheckLogic); err != nil {
+		return err
+	}
+	if err := replaceGlobalTransportOrder(root, cfg.Global.TransportOrder); err != nil {
 		return err
 	}
 	for _, section := range []struct {
@@ -1756,6 +2226,28 @@ func replaceGlobalCheckLogic(root *yaml.Node, value string) error {
 	return nil
 }
 
+func replaceGlobalTransportOrder(root *yaml.Node, value []string) error {
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != "global" || root.Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		global := root.Content[i+1]
+		for j := 0; j+1 < len(global.Content); j += 2 {
+			if global.Content[j].Value != "transport_order" {
+				continue
+			}
+			node := &yaml.Node{}
+			if err := node.Encode(value); err != nil {
+				return err
+			}
+			global.Content[j+1] = node
+			return nil
+		}
+		return errors.New("global.transport_order absent")
+	}
+	return errors.New("section global YAML absente")
+}
+
 func rejectConfigSymlinks(path string) error {
 	if info, err := os.Lstat(filepath.Dir(path)); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("configuration refusée: le répertoire cible est un lien symbolique")
@@ -1776,7 +2268,7 @@ func prompt(reader *bufio.Reader, output io.Writer, text string) string {
 		if value != "?" || strings.TrimSpace(text) == ">" {
 			return value
 		}
-		fmt.Fprintln(output, fieldHelp(text))
+		printFieldHelp(output, text)
 	}
 }
 
@@ -1810,9 +2302,11 @@ func fieldHelp(label string) string {
 	case strings.Contains(key, "adresse mac"):
 		return "Aide: adresse matérielle de la machine au format 02:00:00:00:00:01. Elle sert à construire le Magic Packet."
 	case strings.Contains(key, "adresse ipv4") && !strings.Contains(key, "source"):
-		return "Aide: adresse IPv4 actuelle de la machine, par exemple 192.168.1.20. Elle sert à l'unicast et aux contrôles de disponibilité."
+		return "Aide: adresse IPv4 actuelle de la machine, par exemple 192.168.1.20. Elle sert aux contrôles de disponibilité."
 	case strings.Contains(key, "machines du groupe"):
 		return "Aide: machines réveillées par « wol wake --group GROUPE ». Elles peuvent aussi avoir leurs propres dépendances obligatoires."
+	case key == "machines" || strings.HasPrefix(key, "machines [") || strings.HasPrefix(key, "machines (-"):
+		return "Aide: identifiants de machines existantes, séparés par des virgules. Utilisez uniquement les valeurs affichées comme disponibles."
 	case strings.Contains(key, "groupes"):
 		return "Aide: groupes auxquels appartient cette machine, séparés par des virgules. Un groupe permet « wol wake --group GROUPE » et peut porter une politique de reprise NUT."
 	case strings.Contains(key, "dépendances"):
@@ -1825,13 +2319,11 @@ func fieldHelp(label string) string {
 		return "Aide: adresse locale utilisée comme source. Entrée conserve l'adresse détectée; utilisez - pour revenir au choix automatique."
 	case strings.Contains(key, "broadcast local"):
 		return "Aide: recommandé sur le même réseau; envoie au broadcast local et reste limité au segment directement connecté."
-	case strings.Contains(key, "unicast"):
-		return "Aide: envoie directement à l'IP de la machine; simple mais dépend de la conservation de l'entrée ARP."
 	case strings.Contains(key, "broadcast dirigé"):
 		return "Aide: traverse un routeur vers un autre sous-réseau; plus risqué et à activer seulement si le routeur est configuré pour cela."
 	case strings.Contains(key, "relais"):
 		return "Aide: un relais WoL authentifié envoie le paquet depuis le réseau distant; recommandé lorsque le broadcast routé est interdit."
-	case strings.Contains(key, "attente avant"):
+	case strings.Contains(key, "attente avant") || strings.Contains(key, "première vérification"):
 		return "Aide: délai après l'envoi du Magic Packet avant le premier contrôle. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
 	case strings.Contains(key, "durée maximale"):
 		return "Aide: temps total maximal consacré aux contrôles après l'attente initiale. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
@@ -1839,6 +2331,8 @@ func fieldHelp(label string) string {
 		return "Aide: pause entre deux contrôles de disponibilité. Utilisez 30s, 2m ou 1m30s; « hérité » signifie la valeur globale effective."
 	case strings.Contains(key, "nombre maximal de vérifications"):
 		return "Aide: limite le nombre de contrôles; 0 laisse le timeout fixer la limite. « hérité » signifie la valeur globale effective."
+	case key == "nombre maximal" || strings.HasPrefix(key, "nombre maximal ["):
+		return "Aide: limite le nombre de contrôles après le réveil; 0 laisse le timeout fixer la limite. « hérité » signifie la valeur globale effective."
 	case strings.Contains(key, "nouveaux magic packets"):
 		return "Aide: nombre de nouveaux envois WoL autorisés après un échec complet de vérification. 0 n'envoie aucun nouveau paquet; ce réglage est distinct des nouvelles tentatives de contrôle."
 	case strings.Contains(key, "ordre de démarrage"):
@@ -1847,18 +2341,20 @@ func fieldHelp(label string) string {
 		return "Aide: nombre de reprises après un échec de serveur. 0 désactive effectivement retry; une nouvelle politique retry propose 3 par défaut."
 	case strings.Contains(key, "intervalle entre tentatives"):
 		return "Aide: pause entre deux reprises après échec, par exemple 30s, 2m ou 1m30s."
-	case strings.Contains(key, "seuil bas"):
-		return "Aide: niveau de batterie qui réarme la surveillance après une coupure observée; il doit rester inférieur au seuil haut."
-	case strings.Contains(key, "seuil haut"):
-		return "Aide: niveau minimal de batterie autorisant le réveil après retour stable du secteur; il doit dépasser le seuil bas."
+	case strings.Contains(key, "seuil bas") || strings.Contains(key, "seuil avancé de réarmement"):
+		return "Aide: réglage avancé. Le groupe est réarmé si la batterie atteint ce niveau pendant une coupure; les états LB et FSD le réarment toujours. La valeur 0 signifie que toute coupure OB, LB ou FSD est retenue."
+	case strings.Contains(key, "seuils batterie"):
+		return "Aide: le réarmement décide si une coupure doit préparer une reprise. Le choix recommandé retient toute coupure OB, LB ou FSD. La charge de démarrage est le niveau minimal attendu après le retour stable du secteur."
+	case strings.Contains(key, "seuil haut") || strings.Contains(key, "charge minimale pour commencer"):
+		return "Aide: charge minimale autorisant le réveil automatique après le retour stable du secteur; elle doit dépasser le seuil avancé de réarmement."
 	case strings.Contains(key, "stabilité secteur"):
 		return "Aide: durée pendant laquelle l'état OL doit rester stable avant tout nouveau réveil, par exemple 30s ou 5m."
 	case strings.Contains(key, "fréquence nut"):
 		return "Aide: intervalle entre deux lectures NUT en attente de conditions sûres; une petite valeur réagit plus vite mais interroge davantage le serveur."
-	case strings.Contains(key, "mode ("):
-		return "Aide: sequential réveille dans l'ordre et attend chaque validation; parallel lance seulement les machines indépendantes en parallèle."
-	case strings.Contains(key, "échec ("):
-		return "Aide: stop bloque la séquence; continue poursuit les indépendants; retry retente l'échec; continue_retry combine les deux."
+	case strings.Contains(key, "mode (") || strings.Contains(key, "mode de démarrage"):
+		return "Aide: Séquentiel réveille les machines dans l'ordre et attend chaque validation; Parallèle lance ensemble uniquement les machines dont les dépendances sont satisfaites."
+	case strings.Contains(key, "échec (") || strings.Contains(key, "comportement en cas d’échec"):
+		return "Aide: Bloquer arrête la séquence; Continuer poursuit les machines indépendantes; Retenter réessaie la machine en échec; Continuer et retenter combine les deux."
 	case strings.Contains(key, "timeout de découverte"):
 		return "Aide: durée maximale du diagnostic actif, par exemple 30s ou 2m. Elle limite le scan sans modifier le réseau."
 	case strings.Contains(key, "limite maximale de paquets"):
@@ -1874,12 +2370,22 @@ func fieldHelp(label string) string {
 	case strings.Contains(key, "découverte active"):
 		return "Aide: autorise un diagnostic borné des seuls CIDR configurés. Chaque appel CLI exige encore --allow-active-scan."
 	case strings.Contains(key, "reprise automatique nut"):
-		return "Aide: après un cycle de coupure réellement observé, WoL Manager attend le retour secteur stable et le seuil batterie avant de réveiller ce groupe. Aucun ordre électrique n'est envoyé à l'UPS."
+		return "Aide: après une coupure OB, LB ou FSD réellement observée, WoL Manager attend le retour du secteur OL, sa stabilité et la charge de démarrage avant de réveiller ce groupe. Un serveur NUT inaccessible n'est pas considéré comme une coupure confirmée."
+	case strings.Contains(key, "politique de sécurité ups"):
+		return "Aide: cette protection appartient au groupe et vérifie l'état NUT avant chaque réveil de ses machines. Pour une machine seule, créez un groupe ne contenant qu'elle."
+	case strings.Contains(key, "secteur ol") || strings.Contains(key, "secteur soit présent"):
+		return "Aide: exige l'état NUT OL (secteur présent) avant d'autoriser le Magic Packet. Un état inconnu, OB, LB ou FSD bloque le réveil."
+	case strings.Contains(key, "batterie minimale") || strings.Contains(key, "charge minimale avant chaque"):
+		return "Aide: charge vérifiée juste avant chaque Magic Packet. Par exemple, 70 bloque le réveil sous 70 %. La valeur 0 ignore cette mesure; si un seuil est exigé mais que battery.charge est absente, le réveil est bloqué."
+	case strings.Contains(key, "autonomie minimale"):
+		return "Aide: estimation de la durée pendant laquelle l’onduleur peut encore alimenter les appareils, vérifiée juste avant chaque Magic Packet. Utilisez 10m, 30m, 1h ou un nombre seul en secondes; 0 ignore cette mesure. Si une valeur est exigée mais que battery.runtime est absente, le réveil est bloqué."
 	case strings.Contains(key, "icmp") || strings.Contains(key, "contrôle") || strings.Contains(key, "logique"):
 		return "Aide: ICMP est un ping simple mais parfois bloqué; TCP vérifie un port réellement ouvert (22, 80, 443); ARP indique une présence locale mais constitue une preuve plus faible. Avec any, un succès suffit; avec all, tous doivent réussir."
 	case strings.Contains(key, "durée") || strings.Contains(key, "intervalle"):
 		return "Aide: utilisez une durée Go comme 30s, 2m ou 1m30s."
-	case strings.Contains(key, "nut") || strings.Contains(key, "ups") || strings.Contains(key, "starttls"):
+	case strings.Contains(key, "erreur de connexion nut"):
+		return "Aide: réessayez après une erreur temporaire, modifiez l'adresse ou le port, choisissez un autre serveur ou reportez sans bloquer l'installation."
+	case strings.Contains(key, "nut") || strings.Contains(key, "ups") || strings.Contains(key, "starttls") || strings.Contains(key, "tls"):
 		return "Aide: NUT (Network UPS Tools) lit l'état d'un onduleur. OL=secteur présent, OB=sur batterie, LB=batterie faible, FSD=arrêt forcé. STARTTLS chiffre la connexion; WoL Manager ne commande jamais l'onduleur."
 	case strings.Contains(key, "priorité"):
 		return "Aide: les groupes sont traités par priorité croissante: 1 avant 10. Deux groupes ne peuvent pas partager la même priorité."
@@ -1935,7 +2441,7 @@ func uniqueUPSID(configured map[string]UPSConfig, base string) string {
 const minimalConfig = `version: 1
 global:
   port: 9
-  transport_order: [local_broadcast, unicast, directed_broadcast, relay]
+  transport_order: [local_broadcast, directed_broadcast, relay]
   checks:
     - {type: tcp, port: 22, timeout: 2s}
 api:

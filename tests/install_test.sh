@@ -119,6 +119,16 @@ if [ "\${1:-}" = completion ] && [ "\${2:-}" = bash ]; then
 fi
 if [ "\${1:-}" = --config ] && [ "\${3:-}" = setup ]; then
   mkdir -p "\$(dirname "\$2")"
+  if [ -f "\$2" ] && grep -Eq 'allow_unicast|unicast' "\$2"; then
+    if [ "\${WOL_TEST_AUTO_MIGRATE:-0}" != 1 ]; then
+      echo "migration unicast non confirmée" >&2
+      exit 1
+    fi
+    sed -e '/allow_unicast:/d' -e 's/, *unicast//g' -e 's/unicast, *//g' "\$2" >"\$2.migrated"
+    mv "\$2.migrated" "\$2"
+    echo "migration unicast confirmée"
+    exit 0
+  fi
   printf 'version: 1\n' >"\$2"
   exit 0
 fi
@@ -129,7 +139,14 @@ if [ "\${1:-}" = --config ] && [ "\${3:-}" = token ] && [ "\${4:-}" = create ]; 
   echo 'JETON (simulation): test-only'
   exit 0
 fi
-if [ "\${3:-}" = config ] && [ "\${4:-}" = check ]; then exit 0; fi
+if [ "\${3:-}" = config ] && [ "\${4:-}" = check ]; then
+  if [ -f "\$2" ] && grep -Eq 'allow_unicast|unicast' "\$2"; then
+    echo "global.transport_order: transport inconnu unicast" >&2
+    echo "allow_unicast n'est plus pris en charge; utilisez wol setup pour une migration confirmée" >&2
+    exit 1
+  fi
+  exit 0
+fi
 exit 0
 EOF
   chmod +x "$path"
@@ -195,10 +212,11 @@ EOF
 
 prepare_payload() {
   local payload=$1 version=$2 revision=$3 channel=${4:-main}
-  mkdir -p "$payload/configs" "$payload/packaging/systemd" "$payload/dist"
+  mkdir -p "$payload/configs" "$payload/packaging/systemd" "$payload/packaging/logrotate" "$payload/dist"
   cp "$REPO/install.sh" "$payload/install.sh"
   cp "$REPO/configs/wol.example.yaml" "$payload/configs/wol.example.yaml"
   cp "$REPO/packaging/systemd/wol-manager.service" "$payload/packaging/systemd/wol-manager.service"
+  cp "$REPO/packaging/logrotate/wol-manager" "$payload/packaging/logrotate/wol-manager"
   cp "$PUBLIC_KEY" "$payload/packaging/release-public.pem"
   make_distribution "$payload/dist" "$version" "$revision" "$channel"
   chmod +x "$payload/install.sh"
@@ -228,13 +246,14 @@ PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.1"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.2.3"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
 assert_contains "$WORK/install-help.log" "main  version stable"
 assert_contains "$WORK/install-help.log" "dev   version de développement/BETA"
 assert_contains "$WORK/install-help.log" "paquet local signé"
+assert_contains "$WORK/install-help.log" "migration guidée"
 
 echo "[1/16] Debian 12 AMD64, binaire local, sans Go"
 ROOT12="$WORK/root12"
@@ -251,6 +270,8 @@ assert_contains "$ROOT12/etc/bash_completion.d/wol-manager" "complete -F _wol wo
 [[ $(sha256sum "$ROOT12/usr/share/bash-completion/completions/wol" | awk '{print $1}') = "$DEBIAN_COMPLETION_SHA" ]] || fail "le fichier de complétion Debian a été modifié"
 bash --noprofile --norc -c 'source "$1"; complete -p wol | grep -Fq "complete -F _wol wol"' _ "$ROOT12/etc/bash_completion.d/wol-manager" || fail "la complétion WoL Manager ne se charge pas"
 assert_file "$ROOT12/etc/wol-manager/secrets/tokens.json"
+assert_file "$ROOT12/etc/logrotate.d/wol-manager"
+assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "rotate 12"
 [[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "permissions dangereuses sur le fichier de jetons"
 [[ ! -s "$WORK/go.log" ]] || fail "Go a été utilisé pendant l'installation"
 
@@ -278,7 +299,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.2.1"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.2.3"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"
@@ -287,8 +308,28 @@ WOL_TEST_APT_COUNT=206 run_installer "$PAYLOAD" "$ROOT_APT" amd64 --non-interact
 assert_contains "$WORK/apt-summary.log" "Mises à jour Debian disponibles (cache APT actuel): 206"
 assert_contains "$WORK/apt-summary.log" "Aucune mise à jour Debian n'a été installée"
 assert_not_contains "$WORK/apt-summary.log" "package-001/stable"
-APT_INSTALL_LOG=$(find "$ROOT_APT/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+APT_INSTALL_LOG=$(find "$ROOT_APT/var/log/wol-manager-installer" -type f -name 'install-*.log' -print -quit)
 assert_contains "$APT_INSTALL_LOG" "package-001/stable"
+
+echo "[sécurité installateur] journaux et sauvegardes root séparés"
+[[ $(stat -c %a "$ROOT_APT/var/log/wol-manager-installer") = 700 ]] || fail "répertoire de journaux installateur trop permissif"
+[[ $(stat -c %a "$ROOT_APT/var/lib/wol-manager-installer") = 700 ]] || fail "répertoire d'état installateur trop permissif"
+[[ $(stat -c %a "$ROOT_APT/var/lib/wol-manager-installer/backups") = 700 ]] || fail "répertoire de sauvegardes installateur trop permissif"
+[[ $(stat -c %u "$ROOT_APT/var/log/wol-manager-installer") = $(id -u) ]] || fail "mauvais propriétaire du répertoire de journaux installateur"
+[[ $(stat -c %u "$ROOT_APT/var/lib/wol-manager-installer/backups") = $(id -u) ]] || fail "mauvais propriétaire du répertoire de sauvegardes installateur"
+[[ ! -e "$ROOT_APT/var/lib/wol-manager/backups" ]] || fail "les sauvegardes root restent sous l'état du service"
+
+ROOT_LOG_LINK="$WORK/root-log-link"
+prepare_root "$ROOT_LOG_LINK" 13
+mkdir -p "$ROOT_LOG_LINK/var/log/wol-manager-installer"
+chmod 0700 "$ROOT_LOG_LINK/var/log/wol-manager-installer"
+LOG_SENTINEL="$WORK/log-sentinel"
+printf 'sentinelle-journal\n' >"$LOG_SENTINEL"
+ln -s "$LOG_SENTINEL" "$ROOT_LOG_LINK/var/log/wol-manager-installer/install-hostile.log"
+if ! (export WOL_TEST_TIMESTAMP=hostile; run_installer "$PAYLOAD" "$ROOT_LOG_LINK" amd64 --non-interactive --yes --service cli) >"$WORK/hostile-log.log" 2>&1; then
+  fail "un journal symbolique préexistant a empêché la création exclusive d'un autre journal"
+fi
+assert_contains "$LOG_SENTINEL" "sentinelle-journal"
 
 echo "[permissions] ajout idempotent de SUDO_USER au groupe client"
 ROOT_GROUP="$WORK/root-group"
@@ -377,6 +418,46 @@ run_update_from() {
   "$root/usr/local/lib/wol-manager/install.sh" --update "$@"
 }
 
+echo "[sécurité installateur] refus des emplacements de backup préexistants"
+ROOT_BACKUP_LINK="$WORK/root-backup-link"
+prepare_root "$ROOT_BACKUP_LINK" 13
+(export WOL_TEST_TIMESTAMP=initial; run_installer "$PAYLOAD" "$ROOT_BACKUP_LINK" amd64 --non-interactive --yes --service cli) >/dev/null
+BACKUP_SENTINEL="$WORK/backup-sentinel"
+mkdir -p "$BACKUP_SENTINEL"
+printf 'sentinelle-backup\n' >"$BACKUP_SENTINEL/keep"
+ln -s "$BACKUP_SENTINEL" "$ROOT_BACKUP_LINK/var/lib/wol-manager-installer/backups/install-hostile"
+if ! (export WOL_TEST_TIMESTAMP=hostile; run_update "$ROOT_BACKUP_LINK" main --yes --non-interactive) >"$WORK/hostile-backup.log" 2>&1; then
+  fail "un répertoire de backup symbolique préexistant a empêché une nouvelle sauvegarde exclusive"
+fi
+assert_contains "$BACKUP_SENTINEL/keep" "sentinelle-backup"
+
+ROOT_BACKUP_MODE="$WORK/root-backup-mode"
+prepare_root "$ROOT_BACKUP_MODE" 13
+(export WOL_TEST_TIMESTAMP=initial; run_installer "$PAYLOAD" "$ROOT_BACKUP_MODE" amd64 --non-interactive --yes --service cli) >/dev/null
+mkdir "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile"
+chmod 0777 "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile"
+if [ "$(id -u)" -eq 0 ]; then chown 65534 "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile"; fi
+if ! (export WOL_TEST_TIMESTAMP=hostile; run_update "$ROOT_BACKUP_MODE" main --yes --non-interactive) >"$WORK/open-backup.log" 2>&1; then
+  fail "un backup existant trop permissif a empêché une nouvelle sauvegarde exclusive"
+fi
+[[ $(stat -c %a "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile") = 777 ]] || fail "le backup hostile a été modifié"
+if [ "$(id -u)" -eq 0 ]; then
+  [[ $(stat -c %u "$ROOT_BACKUP_MODE/var/lib/wol-manager-installer/backups/install-hostile") = 65534 ]] || fail "le backup de mauvais propriétaire a été réutilisé"
+fi
+
+ROOT_BACKUP_FILE_LINK="$WORK/root-backup-file-link"
+prepare_root "$ROOT_BACKUP_FILE_LINK" 13
+(export WOL_TEST_TIMESTAMP=initial; run_installer "$PAYLOAD" "$ROOT_BACKUP_FILE_LINK" amd64 --non-interactive --yes --service cli) >/dev/null
+BIN_SENTINEL="$WORK/bin-sentinel"
+cp "$ROOT_BACKUP_FILE_LINK/usr/local/bin/wol" "$BIN_SENTINEL"
+BIN_SENTINEL_SHA=$(sha256sum "$BIN_SENTINEL" | awk '{print $1}')
+rm "$ROOT_BACKUP_FILE_LINK/usr/local/bin/wol"
+ln -s "$BIN_SENTINEL" "$ROOT_BACKUP_FILE_LINK/usr/local/bin/wol"
+if (export WOL_TEST_TIMESTAMP=hostile; run_update "$ROOT_BACKUP_FILE_LINK" main --yes --non-interactive) >"$WORK/hostile-backup-file.log" 2>&1; then
+  fail "une source de backup symbolique a été suivie"
+fi
+[[ $(sha256sum "$BIN_SENTINEL" | awk '{print $1}') = "$BIN_SENTINEL_SHA" ]] || fail "la sentinelle d'un backup symbolique a été modifiée"
+
 SUDO_USER=alice WOL_TEST_GROUP_LOG="$GROUP_LOG" run_update "$ROOT_GROUP" main --yes --non-interactive >"$WORK/group-update.log" 2>&1
 [[ $(grep -Fxc alice "$GROUP_LOG") = 1 ]] || fail "la mise à jour a dupliqué l'appartenance au groupe"
 assert_contains "$WORK/group-update.log" "déjà membre du groupe wol-manager"
@@ -409,6 +490,50 @@ echo "[8/16] vérification main sans installation"
 run_update "$ROOT12" main --check --non-interactive >"$WORK/check.log"
 assert_contains "$WORK/check.log" "Mise à jour disponible"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "--check a modifié le binaire"
+
+echo "[migration update] ancienne configuration unicast"
+ROOT_LEGACY_UPDATE="$WORK/root-legacy-update"
+prepare_root "$ROOT_LEGACY_UPDATE" 13
+run_installer "$PAYLOAD" "$ROOT_LEGACY_UPDATE" amd64 --non-interactive --yes --service cli >/dev/null
+mkdir -p "$ROOT_LEGACY_UPDATE/etc/wol-manager"
+cat >"$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" <<'EOF'
+version: 1
+global:
+  transport_order: [local_broadcast, unicast]
+networks:
+  lan:
+    cidr: 192.0.2.0/24
+    interface: eth0
+    source_ip: 192.0.2.10
+    allow_local_broadcast: true
+    allow_unicast: true
+servers: {}
+groups: {}
+ups: {}
+EOF
+cp "$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" "$WORK/legacy-before.yaml"
+if run_update "$ROOT_LEGACY_UPDATE" main --yes --non-interactive >"$WORK/legacy-update-non-interactive.log" 2>&1; then
+  fail "une mise à jour non interactive a ignoré la migration unicast requise"
+fi
+assert_contains "$WORK/legacy-update-non-interactive.log" "migration guidée"
+cmp -s "$WORK/legacy-before.yaml" "$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" || fail "le refus non interactif a modifié la configuration"
+[[ $("$ROOT_LEGACY_UPDATE/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "le refus de migration a remplacé le binaire"
+
+WOL_TEST_AUTO_MIGRATE=1 run_update "$ROOT_LEGACY_UPDATE" main --yes >"$WORK/legacy-update-interactive.log" 2>&1
+assert_contains "$WORK/legacy-update-interactive.log" "migration guidée"
+assert_contains "$WORK/legacy-update-interactive.log" "Configuration migrée et validée"
+assert_not_contains "$ROOT_LEGACY_UPDATE/etc/wol-manager/wol.yaml" "unicast"
+[[ $("$ROOT_LEGACY_UPDATE/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "la mise à jour après migration n'a pas remplacé le binaire"
+
+echo "[migration update] agencement 1.2.1 sans ressource logrotate embarquée"
+ROOT_LEGACY_LAYOUT="$WORK/root-legacy-layout"
+prepare_root "$ROOT_LEGACY_LAYOUT" 13
+run_installer "$PAYLOAD" "$ROOT_LEGACY_LAYOUT" amd64 --non-interactive --yes --service cli >/dev/null
+rm -f "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+rm -f "$ROOT_LEGACY_LAYOUT/etc/logrotate.d/wol-manager"
+run_update "$ROOT_LEGACY_LAYOUT" main --yes --non-interactive >"$WORK/legacy-layout-update.log" 2>&1
+assert_contains "$WORK/legacy-layout-update.log" "rotation Logrotate non installée"
+[[ $("$ROOT_LEGACY_LAYOUT/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "la ressource logrotate optionnelle a bloqué la mise à jour"
 
 echo "[9/16] mise à jour main et préservation des données"
 mkdir -p "$ROOT12/etc/wol-manager/secrets" "$ROOT12/var/lib/wol-manager" "$ROOT12/var/log/wol-manager"
@@ -540,6 +665,11 @@ make_distribution "$REMOTE_VERSIONS/dev" 1.2.1 121212121212121212121212121212121
 run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" dev --channel dev --check --non-interactive >"$WORK/dev-newer.log"
 assert_contains "$WORK/dev-newer.log" "Mise à jour disponible"
 
+make_distribution "$REMOTE_VERSIONS/main" 1.2.0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee main
+run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-main-same-source.log"
+assert_contains "$WORK/dev-to-main-same-source.log" "Mise à jour disponible: passage du canal dev vers main"
+assert_not_contains "$WORK/dev-to-main-same-source.log" "WoL Manager est à jour"
+
 make_distribution "$REMOTE_VERSIONS/main" 1.2.0 2020202020202020202020202020202020202020 main
 run_update_from "$REMOTE_VERSIONS" "$ROOT_VERSION" main --check --non-interactive >"$WORK/dev-to-same-main.log"
 assert_contains "$WORK/dev-to-same-main.log" "Mise à jour disponible: même version"
@@ -579,6 +709,7 @@ ROOT_ROLL="$WORK/root-roll"
 prepare_root "$ROOT_ROLL" 12
 run_installer "$PAYLOAD" "$ROOT_ROLL" amd64 --non-interactive --yes --service install
 printf 'ancienne complétion WoL Manager\n' >"$ROOT_ROLL/etc/bash_completion.d/wol-manager"
+printf 'ancienne rotation\n' >"$ROOT_ROLL/etc/logrotate.d/wol-manager"
 cp "$REPO/configs/wol.example.yaml" "$ROOT_ROLL/etc/wol-manager/wol.yaml"
 : >"$ROOT_ROLL/systemd-state/enabled"
 : >"$ROOT_ROLL/systemd-state/active"
@@ -594,6 +725,7 @@ fi
 assert_file "$ROOT_ROLL/systemd-state/enabled"
 assert_file "$ROOT_ROLL/systemd-state/active"
 assert_contains "$ROOT_ROLL/etc/bash_completion.d/wol-manager" "ancienne complétion WoL Manager"
+assert_contains "$ROOT_ROLL/etc/logrotate.d/wol-manager" "ancienne rotation"
 assert_contains "$ROOT_ROLL/usr/share/bash-completion/completions/wol" "_comp_cmd_wol"
 assert_contains "$WORK/rollback.log" "Rollback terminé"
 
@@ -618,7 +750,7 @@ assert_file "$ROOT_ENABLE/etc/wol-manager/wol.yaml"
 assert_contains "$ROOT_ENABLE/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
 assert_file "$ROOT_ENABLE/systemd-state/enabled"
 assert_file "$ROOT_ENABLE/systemd-state/active"
-ENABLE_LOG=$(find "$ROOT_ENABLE/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+ENABLE_LOG=$(find "$ROOT_ENABLE/var/log/wol-manager-installer" -type f -name 'install-*.log' -print -quit)
 assert_file "$ENABLE_LOG"
 assert_not_contains "$ENABLE_LOG" 'test-only'
 
@@ -631,7 +763,7 @@ WOL_TEST_SYSTEMD=1 run_installer "$PAYLOAD" "$ROOT_ENABLE_EXISTING" amd64 --non-
 assert_contains "$ROOT_ENABLE_EXISTING/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
 assert_file "$ROOT_ENABLE_EXISTING/systemd-state/enabled"
 assert_file "$ROOT_ENABLE_EXISTING/systemd-state/active"
-EXISTING_LOG=$(find "$ROOT_ENABLE_EXISTING/var/log/wol-manager" -type f -name 'install-*.log' -print -quit)
+EXISTING_LOG=$(find "$ROOT_ENABLE_EXISTING/var/log/wol-manager-installer" -type f -name 'install-*.log' -print -quit)
 assert_file "$EXISTING_LOG"
 assert_not_contains "$EXISTING_LOG" 'test-only'
 
@@ -652,6 +784,7 @@ APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_REMOTE/system
   WOL_ROOT="$ROOT_REMOTE" WOL_OS_RELEASE="$ROOT_REMOTE/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
   PATH="$MOCK_BIN:$PATH" "$ROOT_REMOTE/usr/local/lib/wol-manager/install.sh" --uninstall --non-interactive
 [[ ! -e "$ROOT_REMOTE/etc/bash_completion.d/wol-manager" ]] || fail "la complétion WoL Manager n'a pas été supprimée"
+[[ ! -e "$ROOT_REMOTE/etc/logrotate.d/wol-manager" ]] || fail "la rotation WoL Manager n'a pas été supprimée"
 assert_contains "$ROOT_REMOTE/usr/share/bash-completion/completions/wol" "fichier Debian mis à jour"
 assert_file "$ROOT_REMOTE/etc/wol-manager/secrets/tokens.json"
 run_installer "$PAYLOAD" "$ROOT_REMOTE" amd64 --non-interactive --yes --service cli >"$WORK/reinstall-after-uninstall.log" 2>&1

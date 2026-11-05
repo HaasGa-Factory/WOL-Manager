@@ -5,6 +5,8 @@
 !.env.example
 .codex-ssh-known-hosts
 .codex-remote-attachments/
+.codex-attachments/
+release-output/
 
 # Artefacts temporaires de développement
 dist/.build.*/

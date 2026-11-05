@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-labelledby="title description">
+  <title id="title">Aperçu de l'aide en ligne de commande de WoL Manager</title>
+  <desc id="description">Terminal sombre présentant la version 1.2.3, l'utilisation et les principales commandes de WoL Manager.</desc>
+  <rect width="1100" height="650" rx="18" fill="#0d1117"/>
+  <rect x="1" y="1" width="1098" height="648" rx="17" fill="none" stroke="#30363d" stroke-width="2"/>
+  <path d="M0 58h1100" stroke="#30363d" stroke-width="2"/>
+  <circle cx="30" cy="29" r="7" fill="#ff5f57"/>
+  <circle cx="54" cy="29" r="7" fill="#febc2e"/>
+  <circle cx="78" cy="29" r="7" fill="#28c840"/>
+  <text x="550" y="36" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="17" text-anchor="middle">wol --help</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace" font-size="19">
+    <text x="28" y="96" fill="#fbbf24">⚡</text>
+    <text x="56" y="96" fill="#22d3ee" font-weight="700">WoL Manager</text>
+    <text x="194" y="96" fill="#9ca3af">v1.2.3</text>
+    <text x="28" y="130" fill="#d1d5db">Gestion centralisée du Wake-on-LAN</text>
+
+    <text x="28" y="178" fill="#fbbf24" font-weight="700">UTILISATION</text>
+    <text x="28" y="208" fill="#d1d5db">wol [--config FILE] [--json] [--no-color] COMMANDE</text>
+
+    <text x="28" y="256" fill="#fbbf24" font-weight="700">COMMANDES PRINCIPALES</text>
+    <g fill="#4ade80">
+      <text x="28" y="290">wol setup</text>
+      <text x="28" y="322">wol list</text>
+      <text x="28" y="354">wol status MACHINE</text>
+      <text x="28" y="386">wol wake MACHINE</text>
+      <text x="28" y="418">wol wake --group GROUPE</text>
+      <text x="28" y="450">wol wake --all</text>
+      <text x="28" y="482">wol menu</text>
+    </g>
+    <g fill="#d1d5db">
+      <text x="390" y="290">Assistant de configuration</text>
+      <text x="390" y="322">Liste les machines</text>
+      <text x="390" y="354">Vérifie une machine</text>
+      <text x="390" y="386">Réveille une machine et ses dépendances</text>
+      <text x="390" y="418">Réveille un groupe</text>
+      <text x="390" y="450">Réveille toutes les machines actives</text>
+      <text x="390" y="482">Ouvre l'interface interactive</text>
+    </g>
+
+    <text x="28" y="532" fill="#fbbf24" font-weight="700">MAINTENANCE</text>
+    <text x="28" y="566" fill="#4ade80">wol update --check</text>
+    <text x="390" y="566" fill="#d1d5db">Vérifie les mises à jour</text>
+    <text x="28" y="598" fill="#4ade80">wol --help</text>
+    <text x="390" y="598" fill="#d1d5db">Affiche cette aide</text>
+    <text x="28" y="630" fill="#9ca3af">Astuce : wol wake --help affiche les options détaillées du réveil.</text>
+  </g>
+</svg>

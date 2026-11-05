@@ -20,7 +20,7 @@ func setupWriteAccessError(path string, euid int) error {
 	if euid == 0 || !(cleanTarget == "/etc/wol-manager/wol.yaml" || strings.HasPrefix(cleanTarget, "/etc/wol-manager/")) {
 		return nil
 	}
-	return fmt.Errorf("la configuration %s est administrée par root; relancez avec « sudo wol setup »", cleanTarget)
+	return fmt.Errorf("la configuration %s est administrée par root\nRelancez avec :\n  sudo wol menu\nou directement :\n  sudo wol setup", cleanTarget)
 }
 
 func secureConfigFile(actualPath, targetPath string) error {

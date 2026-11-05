@@ -45,3 +45,13 @@ func TestAuditorMirrorsServiceEventsWhenRequested(t *testing.T) {
 		t.Fatalf("audit du service absent du journal du processus: %s", processLog.String())
 	}
 }
+
+func TestAuditorReturnsWriteErrors(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Auditor{path: filepath.Join(parent, "audit.jsonl")}).write("wake", "tester", "one", "requested", nil); err == nil {
+		t.Fatal("erreur d'écriture audit silencieusement ignorée")
+	}
+}

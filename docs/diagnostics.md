@@ -1,4 +1,49 @@
-# Diagnostics réseau
+# Diagnostics
+
+## Mise à jour refusée pour configuration incompatible
+
+Si `sudo wol update --channel dev` signale une configuration incompatible, consultez le journal
+indiqué par la commande. Si le journal mentionne `unicast` et que la commande suivante annonce
+l'installateur `1.2.1`, appliquez d'abord l'amorçage vérifié du guide des
+[mises à jour](updates.md) :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh --version
+```
+
+Ne copiez pas un `install.sh` non vérifié. Le fichier attendu est `dist/install.sh` du paquet `1.2.3`,
+après validation de la signature du manifeste avec la clé publique déjà installée et comparaison de
+son SHA-256 signé.
+
+Une fois l'installateur système `1.2.3` en place, relancez la mise à jour dans un terminal, acceptez
+l'ouverture de la migration guidée, vérifiez qu'un broadcast ou relais utilisable reste configuré,
+puis confirmez le résumé. La configuration originale reçoit une sauvegarde datée avant l'écriture.
+
+Si l'installateur `1.2.2` a déjà été copié et échoue parce que
+`packaging/logrotate/wol-manager` est absent, le paquet stable `WOL-Manager-main` ne contient pas ce
+fichier. Copiez le fichier depuis le paquet `dev` correspondant, vérifiez que son SHA-256 vaut
+`cead19ee7daf701832736c08859abe0199391d57270facc9baf65738ad87a500`, puis installez-le ainsi :
+
+```sh
+sudo install -d -o root -g root -m 0755 \
+  /usr/local/lib/wol-manager/packaging/logrotate
+sudo install -o root -g root -m 0644 \
+  ./packaging/logrotate/wol-manager \
+  /usr/local/lib/wol-manager/packaging/logrotate/wol-manager
+sudo wol update --channel dev
+```
+
+Le correctif `1.2.3` rend cette ressource optionnelle pendant la transition depuis l'ancien
+agencement, afin qu'une ressource auxiliaire manquante ne bloque plus le remplacement du binaire.
+
+Avec `--non-interactive`, cette migration est volontairement refusée sans modifier la configuration
+ni remplacer le binaire. Relancez alors la commande sans cette option :
+
+```sh
+sudo wol update --channel dev
+```
+
+## Diagnostics réseau
 
 La découverte passive lit interfaces, adresses et, sous Linux, `ip -j route` et `ip -j neigh`. Elle n'émet aucun paquet.
 
@@ -7,9 +52,13 @@ La découverte active demande une activation YAML et `--allow-active-scan`. Elle
 Chaque résultat distingue :
 
 - `connectivity` : route ou socket disponible ;
-- `packet` : bloqué, simulé, émis ou en erreur ;
+- `packet` : bloqué, simulé, accepté par le socket ou en erreur ;
 - `reception` : confirmation instrumentée ou inconnue ;
 - `wake` : machine observée joignable ou non observée.
+
+Un succès de `WriteToUDP` ne constitue pas une preuve de présence du paquet sur le câble. Sans
+capture ou observation équivalente, l'émission reste non vérifiée. Les résultats de `wol wake`
+exposent séparément `socket_accepted`, `packet_emitted` et `wake_verified`.
 
 Le test actif peut réveiller une machine. Il n'est jamais lancé par une automatisation, une reprise ou un échec de réveil.
 
@@ -21,3 +70,25 @@ wol automation status
 ```
 
 Le premier affiche les états et mesures réellement lisibles. Le second indique le cycle enregistré, les groupes armés/terminés, la stabilité secteur, les tâches et la raison d'une attente. Une batterie inconnue, un état `OB`, `LB`, `FSD` ou `unknown` doit rester visible comme blocage ; ce n'est pas une valeur zéro implicite.
+
+## Diagnostic guidé : une machine ne se réveille pas
+
+1. `wol config check` : corrigez d'abord toute erreur de configuration.
+2. `wol list` : vérifiez l'identifiant de la cible.
+3. `wol network test IDENTIFIANT` : contrôlez le transport sélectionné.
+4. `wol status IDENTIFIANT` : interprétez les contrôles de disponibilité.
+5. `wol wake IDENTIFIANT --dry-run` : vérifiez le plan et les dépendances sans
+   émettre de paquet.
+6. `wol wake IDENTIFIANT` : effectuez le réveil réel uniquement si le plan est
+   correct.
+7. `wol jobs` : consultez les tâches et résultats persistés.
+
+`socket_accepted: true` signifie seulement que le socket local a accepté
+l'envoi. `packet_emitted: unverified` n'est pas une preuve de réception.
+`wake_verified: true` exige une observation positive par les contrôles
+configurés. Un état `unknown` sans contrôle n'est ni une réussite ni un échec
+prouvé.
+
+Pour une panne liée à un onduleur, complétez avec `wol ups test` et
+`wol automation status`. Ne désactivez pas une politique UPS uniquement pour
+faire passer un test.

@@ -35,8 +35,8 @@ func testConfig(t *testing.T) *Config {
 	f := false
 	c := &Config{
 		Version:  1,
-		Global:   Defaults{Port: 9, TransportOrder: []string{"unicast", "directed_broadcast"}},
-		Networks: map[string]Network{"lan": {CIDR: "127.0.0.0/8", AllowUnicast: true}},
+		Global:   Defaults{Port: 9, TransportOrder: []string{"directed_broadcast"}},
+		Networks: map[string]Network{"lan": {CIDR: "127.0.0.0/8", AllowDirectedBroadcast: true}},
 		Groups:   map[string]Group{"core": {Priority: 10, Servers: []string{"one"}}},
 		Servers: map[string]Server{
 			"one": {Name: "One", MAC: "02:00:00:00:00:01", IP: "127.0.0.1", Network: "lan", Enabled: &f},
@@ -67,6 +67,7 @@ func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h"`,
 		`automation) COMPREPLY=( $(compgen -W "status --help -h"`,
 		`version) COMPREPLY=( $(compgen -W "--channel --source-revision --commit --help -h"`,
+		`--config --json --no-color`,
 		`complete -F _wol wol`,
 	} {
 		if !strings.Contains(bashCompletion, expected) {
@@ -85,7 +86,7 @@ func TestOpenAPIDocumentIsValidYAMLAndExposesAutomations(t *testing.T) {
 		t.Fatalf("OpenAPI YAML invalide: %v", err)
 	}
 	text := string(content)
-	for _, expected := range []string{"version: 1.2.1", "/automations:"} {
+	for _, expected := range []string{"version: 1.2.3", "/automations:"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("OpenAPI incomplet, fragment absent: %s", expected)
 		}
@@ -98,16 +99,17 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 		t.Fatalf("aide générale: %v", err)
 	}
 	commands := [][]string{
-		{"setup", "--help"}, {"update", "--help"}, {"completion", "bash", "--help"},
+		{"setup", "--help"}, {"update", "--help"}, {"completion", "--help"}, {"completion", "bash", "--help"},
 		{"list", "--help"}, {"status", "--help"}, {"wake", "--help"},
 		{"config", "--help"}, {"config", "check", "--help"}, {"config", "edit", "--help"},
 		{"config", "network", "--help"}, {"config", "machine", "--help"},
 		{"config", "group", "--help"}, {"config", "nut", "--help"},
-		{"config", "discovery", "--help"}, {"token", "create", "--help"},
+		{"config", "discovery", "--help"}, {"token", "--help"}, {"token", "create", "--help"},
 		{"token", "list", "--help"}, {"token", "revoke", "--help"}, {"network", "test", "--help"},
-		{"network", "discover", "--help"}, {"ups", "status", "--help"},
+		{"network", "--help"}, {"network", "discover", "--help"}, {"ups", "--help"}, {"ups", "status", "--help"},
 		{"ups", "test", "--help"}, {"jobs", "--help"}, {"automation", "status", "--help"},
-		{"menu", "--help"}, {"api", "serve", "--help"}, {"relay", "serve", "--help"},
+		{"automation", "--help"}, {"menu", "--help"}, {"api", "--help"}, {"api", "serve", "--help"},
+		{"relay", "--help"}, {"relay", "serve", "--help"},
 		{"relay", "check", "--help"}, {"version", "--help"},
 	}
 	for _, command := range commands {
@@ -118,6 +120,22 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Fatalf("l'aide a créé ou modifié la configuration: %v", err)
+	}
+}
+
+func TestAllDetailedHelpsUseModernRendererWithoutLosingContent(t *testing.T) {
+	for key, raw := range commandHelp {
+		var output bytes.Buffer
+		renderCommandHelp(&output, raw, helpRenderOptions{mode: colorNone, width: 80})
+		text := output.String()
+		for _, expected := range []string{"WoL Manager", "Gestion centralisée du Wake-on-LAN", "UTILISATION", "wol"} {
+			if !strings.Contains(text, expected) {
+				t.Errorf("aide %q sans %q", key, expected)
+			}
+		}
+		if strings.Contains(text, "\x1b[") {
+			t.Errorf("aide %q contient ANSI en mode texte", key)
+		}
 	}
 }
 
@@ -252,8 +270,11 @@ func TestRealWakeSelectionRequiresExplicitKnownMachine(t *testing.T) {
 	if id, ok := selectMenuServer(bufio.NewReader(strings.NewReader("99\ntwo\n")), &output, cfg); !ok || id != "two" {
 		t.Fatalf("sélection explicite échouée: %q %t", id, ok)
 	}
-	if !strings.Contains(output.String(), "One") || !strings.Contains(output.String(), "Two") {
+	if !strings.Contains(output.String(), "MACHINES DISPONIBLES") || !strings.Contains(output.String(), "One") || !strings.Contains(output.String(), "Two") {
 		t.Fatalf("noms de machines absents: %s", output.String())
+	}
+	if strings.Contains(output.String(), "Machines disponibles:") {
+		t.Fatalf("ancien affichage compact encore présent: %s", output.String())
 	}
 }
 
@@ -304,6 +325,122 @@ func TestMenuAnnouncesPreflightCheckBeforeRealWakeConfirmation(t *testing.T) {
 	}
 }
 
+func TestMenuViewWaitSupportsHelpAndReturn(t *testing.T) {
+	var output bytes.Buffer
+	reader := bufio.NewReader(strings.NewReader("?\nretour\n"))
+	if !waitForMenuReturn(reader, &output, true, "machine") {
+		t.Fatal("le retour interactif aurait dû redessiner le menu principal")
+	}
+	text := output.String()
+	for _, expected := range []string{"Appuyez sur Entrée", "AIDE MACHINES"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("%q absent de la pause interactive:\n%s", expected, text)
+		}
+	}
+}
+
+func TestMenuViewDoesNotWaitWhenRedirected(t *testing.T) {
+	var output bytes.Buffer
+	reader := bufio.NewReader(strings.NewReader("reste\n"))
+	if waitForMenuReturn(reader, &output, false, "machine") {
+		t.Fatal("une vue redirigée ne doit pas demander de retour au menu")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("une vue redirigée ne doit pas afficher de pause: %q", output.String())
+	}
+	remaining, err := reader.ReadString('\n')
+	if err != nil || remaining != "reste\n" {
+		t.Fatalf("l'entrée redirigée a été consommée: %q, %v", remaining, err)
+	}
+}
+
+func TestRedirectedMenuPrintsOneViewWithoutRedrawingMainMenu(t *testing.T) {
+	cfg := testConfig(t)
+	inputReader, inputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputReader, outputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldInput, oldOutput := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = inputReader, outputWriter
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = oldInput, oldOutput
+		_ = inputReader.Close()
+		_ = outputReader.Close()
+	})
+	if _, err := inputWriter.WriteString("1\n0\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = inputWriter.Close()
+	if err := menu("", cfg, &Engine{cfg: cfg, audit: &Auditor{}}, false); err != nil {
+		t.Fatal(err)
+	}
+	_ = outputWriter.Close()
+	text, err := io.ReadAll(outputReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := string(text)
+	if strings.Count(plain, "WoL Manager — MENU PRINCIPAL") != 1 {
+		t.Fatalf("le menu principal doit être imprimé une seule fois:\n%s", plain)
+	}
+	if !strings.Contains(plain, "WoL Manager — MACHINES") || !strings.Contains(plain, "One") {
+		t.Fatalf("la vue Machines est absente:\n%s", plain)
+	}
+	if strings.Contains(plain, "Appuyez sur Entrée") || strings.Contains(plain, "\x1b[") {
+		t.Fatalf("une sortie redirigée ne doit contenir ni pause ni ANSI:\n%q", plain)
+	}
+}
+
+func TestRedirectedMenuWakeWithoutMachineDoesNotRedraw(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Servers = map[string]Server{}
+	for _, choice := range []string{"7", "8"} {
+		t.Run(choice, func(t *testing.T) {
+			inputReader, inputWriter, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			outputReader, outputWriter, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldInput, oldOutput := os.Stdin, os.Stdout
+			os.Stdin, os.Stdout = inputReader, outputWriter
+			t.Cleanup(func() {
+				os.Stdin, os.Stdout = oldInput, oldOutput
+				_ = inputReader.Close()
+				_ = outputReader.Close()
+			})
+			if _, err := inputWriter.WriteString(choice + "\n"); err != nil {
+				t.Fatal(err)
+			}
+			_ = inputWriter.Close()
+			if err := menu("", cfg, &Engine{cfg: cfg, audit: &Auditor{}}, false); err != nil {
+				t.Fatal(err)
+			}
+			_ = outputWriter.Close()
+			text, err := io.ReadAll(outputReader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plain := string(text)
+			if strings.Count(plain, "WoL Manager — MENU PRINCIPAL") != 1 {
+				t.Fatalf("le menu principal ne doit pas être réaffiché:\n%s", plain)
+			}
+			if !strings.Contains(plain, "Aucune machine configurée.") || !strings.Contains(plain, "aucune machine sélectionnée") {
+				t.Fatalf("le résultat d'annulation est incomplet:\n%s", plain)
+			}
+			if strings.Contains(plain, "Appuyez sur Entrée") {
+				t.Fatalf("une sortie redirigée ne doit pas attendre:\n%s", plain)
+			}
+		})
+	}
+}
+
 func TestDisabledChecksReturnUnknownImmediately(t *testing.T) {
 	cfg := testConfig(t)
 	server := cfg.Servers["two"]
@@ -345,7 +482,7 @@ func TestHumanMenuPresentationAvoidsRawJSONAndNanoseconds(t *testing.T) {
 		[]Job{{ID: "job-1", Kind: "wake", Target: "two", State: "running"}},
 	)
 	text := output.String()
-	for _, expected := range []string{"délais=", "port=9", "stabilité=30s", "fréquence=5s", "batterie=75%", "état=running"} {
+	for _, expected := range []string{"Attente initiale", "Port WoL", "Stabilité", "30s", "Fréquence", "5s", "Batterie", "75%", "État", "running"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("%q absent de la sortie humaine:\n%s", expected, text)
 		}
@@ -355,17 +492,38 @@ func TestHumanMenuPresentationAvoidsRawJSONAndNanoseconds(t *testing.T) {
 	}
 }
 
+func TestNetworkInformationUsesIndentedLabels(t *testing.T) {
+	var output bytes.Buffer
+	printNetworks(&output, map[string]Network{"lan": {
+		CIDR: "192.168.1.0/24", Interface: "ens18", SourceIP: "192.168.1.231", AllowLocalBroadcast: true,
+	}})
+	text := output.String()
+	for _, expected := range []string{
+		"- Réseau lan",
+		"  CIDR           : 192.168.1.0/24",
+		"  Interface      : ens18",
+		"  Adresse source : 192.168.1.231",
+		"  Transports     : broadcast local",
+		"  Port WoL       : 9 (valeur par défaut)",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("%q absent de la présentation réseau:\n%s", expected, text)
+		}
+	}
+}
+
 func TestHumanWakeResultsAvoidRawJSON(t *testing.T) {
 	var output bytes.Buffer
 	printWakeResults(&output, []WakeResult{{
-		Server:      "two",
-		Transport:   "local_broadcast",
-		Destination: "192.0.2.255:9",
-		Packet:      "dry_run",
-		Note:        "simulation: aucun paquet émis",
+		Server:        "two",
+		Transport:     "local_broadcast",
+		Destination:   "192.0.2.255:9",
+		Packet:        "dry_run",
+		PacketEmitted: "not_emitted",
+		Note:          "simulation: aucun paquet émis",
 	}})
 	text := output.String()
-	for _, expected := range []string{"two", "simulation, aucun paquet émis", "transport=local_broadcast", "destination=192.0.2.255:9", "vérifié=false"} {
+	for _, expected := range []string{"Résultat two", "simulation, aucun paquet émis", "Transport", "local_broadcast", "Destination", "192.0.2.255:9", "Émission réseau", "not_emitted", "Réveil vérifié", "false"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("%q absent de la sortie humaine: %s", expected, text)
 		}
@@ -381,7 +539,7 @@ func TestConfigHelpContent(t *testing.T) {
 		if err := printCommandHelp(&output, []string{"config", section, "--help"}); err != nil {
 			t.Fatal(err)
 		}
-		for _, expected := range []string{"Usage:", "Actions:", "Paramètres:", "Contraintes:"} {
+		for _, expected := range []string{"UTILISATION", "ACTIONS", "PARAMÈTRES", "CONTRAINTES"} {
 			if !strings.Contains(output.String(), expected) {
 				t.Fatalf("aide %s incomplète: %q absent", section, expected)
 			}
@@ -467,7 +625,7 @@ func TestStrictYAML(t *testing.T) {
 func TestTransportRestrictionsAndDryRun(t *testing.T) {
 	c := testConfig(t)
 	p, err := transportPlan(c, "two")
-	if err != nil || p[0].Name != "unicast" || p[0].State != "selected" {
+	if err != nil || p[0].Name != "directed_broadcast" || p[0].State != "selected" {
 		t.Fatalf("plan inattendu: %#v %v", p, err)
 	}
 	c.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowDirectedBroadcast: true, TransportOrder: []string{"directed_broadcast"}}
@@ -483,6 +641,115 @@ func TestTransportRestrictionsAndDryRun(t *testing.T) {
 	}
 }
 
+func TestLocalBroadcastUsesResolvedInterfaceAndDirectedSubnetAddress(t *testing.T) {
+	c := testConfig(t)
+	c.Global.TransportOrder = []string{"local_broadcast"}
+	n := c.Networks["lan"]
+	n.AllowDirectedBroadcast = false
+	n.AllowLocalBroadcast = true
+	n.Interface = "ens-test"
+	n.CIDR = "192.0.2.0/24"
+	c.Networks["lan"] = n
+	s := c.Servers["two"]
+	s.IP = "192.0.2.20"
+	c.Servers["two"] = s
+
+	original := localBroadcastResolver
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{Interface: "ens-test", Source: "192.0.2.10", Destination: "192.0.2.255:9"}, nil
+	}
+	t.Cleanup(func() { localBroadcastResolver = original })
+
+	plan, err := transportPlan(c, "two")
+	if err != nil || len(plan) != 1 || plan[0].State != "selected" || plan[0].Destination != "192.0.2.255:9" || plan[0].Interface != "ens-test" || plan[0].Source != "192.0.2.10" {
+		t.Fatalf("plan broadcast local inattendu: %#v, %v", plan, err)
+	}
+}
+
+func TestLocalBroadcastRejectsUnavailableInterfaceUnusableCIDRAndDisabledNetwork(t *testing.T) {
+	if _, err := resolveLocalBroadcast(Network{CIDR: "192.0.2.0/24", Interface: "wol-interface-that-does-not-exist"}, 9); err == nil || !strings.Contains(err.Error(), "indisponible") {
+		t.Fatalf("interface inexistante acceptée: %v", err)
+	}
+	if _, err := resolveLocalBroadcast(Network{CIDR: "192.0.2.0/31", Interface: "unused"}, 9); err == nil || !strings.Contains(err.Error(), "sans adresse de broadcast") {
+		t.Fatalf("CIDR sans broadcast accepté: %v", err)
+	}
+	c := testConfig(t)
+	c.Global.TransportOrder = []string{"local_broadcast"}
+	n := c.Networks["lan"]
+	n.AllowLocalBroadcast = false
+	c.Networks["lan"] = n
+	plan, err := transportPlan(c, "two")
+	if err == nil || len(plan) != 1 || plan[0].State != "disabled" {
+		t.Fatalf("réseau non autorisé accepté: plan=%#v err=%v", plan, err)
+	}
+}
+
+func TestLocalBroadcastSendUsesResolvedSource(t *testing.T) {
+	c := testConfig(t)
+	c.Global.TransportOrder = []string{"local_broadcast"}
+	n := c.Networks["lan"]
+	n.AllowDirectedBroadcast = false
+	n.AllowLocalBroadcast = true
+	n.Interface = "ens-test"
+	n.ChecksDisabled = true
+	n.CIDR = "192.0.2.0/24"
+	c.Networks["lan"] = n
+	s := c.Servers["two"]
+	s.IP = "192.0.2.20"
+	c.Servers["two"] = s
+
+	original := localBroadcastResolver
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{Interface: "ens-test", Source: "192.0.2.10", Destination: "192.0.2.255:9"}, nil
+	}
+	t.Cleanup(func() { localBroadcastResolver = original })
+	var destination, source string
+	result, err := (&Engine{cfg: c, audit: &Auditor{}, sendPacket: func(gotDestination, gotSource string, broadcast bool, _ []byte) error {
+		destination, source = gotDestination, gotSource
+		if !broadcast {
+			t.Fatal("envoi local sans option broadcast")
+		}
+		return nil
+	}}).wakeOne(context.Background(), "two")
+	if err != nil || destination != "192.0.2.255:9" || source != "192.0.2.10" || !result.SocketAccepted || result.PacketEmitted != "unverified" {
+		t.Fatalf("émission locale incorrecte: destination=%q source=%q result=%#v err=%v", destination, source, result, err)
+	}
+}
+
+func TestLegacyUnicastRequiresExplicitMigration(t *testing.T) {
+	data := []byte(`version: 1
+global:
+  transport_order: [unicast, local_broadcast]
+networks:
+  lan:
+    cidr: 192.0.2.0/24
+    interface: ens-test
+    allow_unicast: true
+    allow_local_broadcast: true
+groups: {}
+servers:
+  one: {mac: "02:00:00:00:00:01", ip: 192.0.2.20, network: lan}
+api: {listen: 127.0.0.1:8080}
+storage: {}
+network_discovery: {safeguards: {max_packets: 20, rate_limit_pps: 2}}
+ups: {}
+relays: {}
+automations: []
+`)
+	if _, err := loadConfigData(data); err == nil || !strings.Contains(err.Error(), "unicast") {
+		t.Fatalf("configuration unicast acceptée sans migration: %v", err)
+	}
+	cfg, legacy, only, err := loadConfigDataForMigration(data)
+	if err != nil || !legacy || len(only) != 0 || cfg.Networks["lan"].AllowUnicast {
+		t.Fatalf("migration contrôlée incorrecte: legacy=%v only=%v err=%v cfg=%#v", legacy, only, err, cfg)
+	}
+	for _, transport := range cfg.Global.TransportOrder {
+		if transport == "unicast" {
+			t.Fatal("unicast conservé après migration")
+		}
+	}
+}
+
 func TestConfigurationInheritance(t *testing.T) {
 	c := testConfig(t)
 	one := 1
@@ -490,7 +757,7 @@ func TestConfigurationInheritance(t *testing.T) {
 	n := c.Networks["lan"]
 	n.Checks = []Check{{Type: "tcp", Port: 80}}
 	n.WakeRetries = &one
-	n.TransportOrder = []string{"unicast"}
+	n.TransportOrder = []string{"directed_broadcast"}
 	c.Networks["lan"] = n
 	g := c.Groups["core"]
 	g.Checks = []Check{{Type: "tcp", Port: 443}}
@@ -499,12 +766,12 @@ func TestConfigurationInheritance(t *testing.T) {
 	c.Groups["core"] = g
 	s := c.Servers["one"]
 	s.Checks = []Check{{Type: "tcp", Port: 22}}
-	s.Transports = []string{"unicast"}
+	s.Transports = []string{"directed_broadcast"}
 	c.Servers["one"] = s
 	if got := c.effectiveChecks("one")[0].Port; got != 22 {
 		t.Fatalf("checks serveur non prioritaire: %d", got)
 	}
-	if got := c.effectiveTransportOrder("one")[0]; got != "unicast" {
+	if got := c.effectiveTransportOrder("one")[0]; got != "directed_broadcast" {
 		t.Fatalf("transport serveur non prioritaire: %s", got)
 	}
 	_, retries, _ := c.effectiveTiming("one")
@@ -618,6 +885,42 @@ func TestJobPersistenceCancellationAndRestart(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("tâche non reprise: %s", x.State)
+}
+
+func TestTerminalJobRetentionIsBounded(t *testing.T) {
+	store, err := openJobs(filepath.Join(testDir(t), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	store.jobs["expired"] = &Job{ID: "expired", State: "completed", Updated: now.Add(-terminalJobTTL - time.Second)}
+	for i := 0; i < maxTerminalJobs+10; i++ {
+		id := fmt.Sprintf("terminal-%04d", i)
+		store.jobs[id] = &Job{ID: id, State: "completed", Updated: now.Add(-time.Duration(i) * time.Second)}
+	}
+	store.jobs["active"] = &Job{ID: "active", State: "running", Updated: now.Add(-terminalJobTTL * 2)}
+	store.pruneTerminalLocked(now)
+	if len(store.jobs) != maxTerminalJobs+1 || store.jobs["active"] == nil || store.jobs["expired"] != nil {
+		t.Fatalf("rétention incorrecte: %d jobs", len(store.jobs))
+	}
+}
+
+func TestJobPersistsAuthenticatedActor(t *testing.T) {
+	store, err := openJobs(filepath.Join(testDir(t), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	job, err := store.createForActor("wake_group", "core", "token-a", func(ctx context.Context) (any, error) {
+		done <- auditActor(ctx)
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Actor != "token-a" || <-done != "token-a" {
+		t.Fatalf("acteur perdu: %#v", job)
+	}
 }
 
 func TestCancellationIsTerminalWhenWorkerReturnsSuccess(t *testing.T) {
@@ -834,6 +1137,42 @@ func TestAPIPermissions(t *testing.T) {
 	srv.handler().ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("requête anonyme acceptée: %d", w.Code)
+	}
+}
+
+func TestAPIRefusesWakeWhenAuthoritativeAuditIsUnavailable(t *testing.T) {
+	c := testConfig(t)
+	store, _ := openJobs(c.Storage.StateFile)
+	plain := "wake-secret"
+	sum := sha256.Sum256([]byte(plain))
+	parent := filepath.Join(testDir(t), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine := &Engine{cfg: c, audit: &Auditor{path: filepath.Join(parent, "audit.jsonl")}, dry: true}
+	srv := &APIServer{cfg: c, jobs: store, engine: engine, tokens: []TokenRecord{{ID: "operator", Hash: hex.EncodeToString(sum[:]), Permissions: []string{"wake"}}}, rates: map[string]rateEntry{}}
+	r := httptest.NewRequest("POST", "/api/v1/groups/core/wake", nil)
+	r.Header.Set("Authorization", "Bearer "+plain)
+	w := httptest.NewRecorder()
+	srv.handler().ServeHTTP(w, r)
+	if w.Code != http.StatusServiceUnavailable || len(store.list()) != 0 {
+		t.Fatalf("action non refusée sans audit: HTTP %d jobs=%#v body=%s", w.Code, store.list(), w.Body.String())
+	}
+}
+
+func TestBulkWakeJobKeepsAuthenticatedPrincipal(t *testing.T) {
+	c := testConfig(t)
+	store, _ := openJobs(c.Storage.StateFile)
+	plain := "wake-secret"
+	sum := sha256.Sum256([]byte(plain))
+	engine := &Engine{cfg: c, audit: &Auditor{path: filepath.Join(testDir(t), "audit.jsonl")}, dry: true}
+	srv := &APIServer{cfg: c, jobs: store, engine: engine, tokens: []TokenRecord{{ID: "operator", Hash: hex.EncodeToString(sum[:]), Permissions: []string{"wake"}}}, rates: map[string]rateEntry{}}
+	r := httptest.NewRequest("POST", "/api/v1/groups/core/wake", nil)
+	r.Header.Set("Authorization", "Bearer "+plain)
+	w := httptest.NewRecorder()
+	srv.handler().ServeHTTP(w, r)
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"actor":"operator"`) {
+		t.Fatalf("principal absent du réveil groupé: HTTP %d body=%s", w.Code, w.Body.String())
 	}
 }
 

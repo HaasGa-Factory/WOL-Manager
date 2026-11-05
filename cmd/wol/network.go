@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -20,8 +21,18 @@ type TransportDecision struct {
 	State       string `json:"state"`
 	Reason      string `json:"reason"`
 	Destination string `json:"destination,omitempty"`
+	Interface   string `json:"interface,omitempty"`
+	Source      string `json:"source,omitempty"`
 	Relay       string `json:"relay,omitempty"`
 }
+
+type localBroadcastTarget struct {
+	Interface   string
+	Source      string
+	Destination string
+}
+
+var localBroadcastResolver = resolveLocalBroadcast
 
 func transportPlan(c *Config, id string) ([]TransportDecision, error) {
 	s, ok := c.Servers[id]
@@ -51,21 +62,17 @@ func transportPlan(c *Config, id string) ([]TransportDecision, error) {
 			if !n.AllowLocalBroadcast {
 				d.State = "disabled"
 				d.Reason = "non autorisé par le réseau"
-			} else if !localNetwork(ipnet, n.Interface) {
-				d.Reason = "aucune interface locale correspondante"
 			} else {
-				d.Destination = fmt.Sprintf("%s:%d", broadcastIP(ipnet), port)
-				d.Reason = "réseau directement connecté"
-				d.State = "candidate"
-			}
-		case "unicast":
-			if !n.AllowUnicast {
-				d.State = "disabled"
-				d.Reason = "non autorisé par le réseau"
-			} else {
-				d.Destination = fmt.Sprintf("%s:%d", s.IP, port)
-				d.Reason = "adresse du serveur configurée"
-				d.State = "candidate"
+				target, targetErr := localBroadcastResolver(n, port)
+				if targetErr != nil {
+					d.Reason = targetErr.Error()
+				} else {
+					d.Destination = target.Destination
+					d.Interface = target.Interface
+					d.Source = target.Source
+					d.Reason = "interface " + target.Interface + ", source " + target.Source
+					d.State = "candidate"
+				}
 			}
 		case "directed_broadcast":
 			if !n.AllowDirectedBroadcast {
@@ -107,21 +114,48 @@ func broadcastIP(n *net.IPNet) net.IP {
 	}
 	return out
 }
-func localNetwork(target *net.IPNet, ifaceName string) bool {
-	ifaces, _ := net.Interfaces()
-	for _, i := range ifaces {
-		if ifaceName != "" && i.Name != ifaceName {
+
+func resolveLocalBroadcast(n Network, port int) (localBroadcastTarget, error) {
+	if n.Interface == "" {
+		return localBroadcastTarget{}, errors.New("interface explicite requise pour le broadcast local")
+	}
+	configured, err := parseIPv4CIDR(n.CIDR)
+	if err != nil {
+		return localBroadcastTarget{}, err
+	}
+	ones, bits := configured.Mask.Size()
+	if bits != 32 || ones > 30 {
+		return localBroadcastTarget{}, fmt.Errorf("CIDR %s sans adresse de broadcast utilisable", n.CIDR)
+	}
+	iface, err := net.InterfaceByName(n.Interface)
+	if err != nil {
+		return localBroadcastTarget{}, fmt.Errorf("interface %s indisponible", n.Interface)
+	}
+	if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagBroadcast == 0 {
+		return localBroadcastTarget{}, fmt.Errorf("interface %s non disponible pour le broadcast", n.Interface)
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return localBroadcastTarget{}, fmt.Errorf("adresses de l'interface %s: %w", n.Interface, err)
+	}
+	for _, addr := range addrs {
+		ip, actual, parseErr := net.ParseCIDR(addr.String())
+		if parseErr != nil || ip.To4() == nil || !configured.Contains(ip) {
 			continue
 		}
-		addrs, _ := i.Addrs()
-		for _, a := range addrs {
-			ip, _, e := net.ParseCIDR(a.String())
-			if e == nil && ip.To4() != nil && target.Contains(ip) {
-				return true
-			}
+		if n.SourceIP != "" && !ip.Equal(net.ParseIP(n.SourceIP)) {
+			continue
 		}
+		if actual.String() != configured.String() {
+			return localBroadcastTarget{}, fmt.Errorf("CIDR %s différent du réseau réel %s de %s", configured, actual, n.Interface)
+		}
+		return localBroadcastTarget{
+			Interface:   n.Interface,
+			Source:      ip.String(),
+			Destination: net.JoinHostPort(broadcastIP(actual).String(), fmt.Sprint(port)),
+		}, nil
 	}
-	return false
+	return localBroadcastTarget{}, fmt.Errorf("interface %s sans adresse IPv4 autorisée dans %s", n.Interface, n.CIDR)
 }
 
 func sourceForNetwork(n Network) string {
@@ -310,13 +344,17 @@ func activeDiscovery(ctx context.Context, c *Config, dry bool) DiscoveryReport {
 					t.Reception = "relay_health_confirmed"
 				}
 			} else {
-				err = sendMagic(d.Destination, sourceForNetwork(netCfg), d.Name != "unicast", magicPacket(mac))
+				source := sourceForNetwork(netCfg)
+				if d.Name == "local_broadcast" {
+					source = d.Source
+				}
+				err = sendMagic(d.Destination, source, true, magicPacket(mac))
 				budget--
 				if err != nil {
 					t.Packet = "failed"
 					t.Detail = err.Error()
 				} else {
-					t.Packet = "sent"
+					t.Packet = "socket_accepted"
 					status := checkServer(ctx, c, id)
 					if status.State == "reachable" {
 						t.Wake = "observed_reachable"

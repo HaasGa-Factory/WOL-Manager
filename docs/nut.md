@@ -20,6 +20,47 @@ Les états reconnus sont `OL`, `OB`, `LB`, `FSD` et `unknown`, ainsi que `batter
 
 Pour un serveur NUT distant, activer `tls: true` : le client négocie `STARTTLS`, vérifie le nom du serveur et accepte une CA privée via `ca_cert`. Une connexion distante en clair est refusée sauf `allow_insecure_remote: true`, réservé à un tunnel ou réseau administratif déjà protégé. Les identifiants sont lus depuis des fichiers privés.
 
+## Protection UPS et reprise automatique
+
+Ces deux fonctions sont complémentaires, mais différentes :
+
+- `ups_policy`, configuré sur un groupe, est un verrou de sécurité vérifié avant chaque réveil de ses machines, manuel ou automatique ;
+- `power_restore` décide si WoL Manager doit déclencher lui-même le réveil d'un groupe après une coupure réellement observée.
+
+Une machine seule peut utiliser un groupe dédié. Une machine ne peut pas hériter de politiques UPS
+différentes depuis plusieurs groupes.
+
+```mermaid
+flowchart TD
+    P["Surveillance permanente de l'UPS"]
+    C{"Conditions automatiques satisfaites ?"}
+    W["Cycle en attente<br/>Aucun paquet envoyé"]
+    R["Reprendre uniquement les machines nécessaires"]
+    S{"Dernier contrôle UPS<br/>avant le Magic Packet"}
+    OK["Magic Packet autorisé"]
+    B["Suspendre la reprise<br/>Conserver l'état du cycle"]
+    F["Échec fonctionnel définitif"]
+
+    P --> C
+    C -->|Non| W
+    W -->|"Nouvelle lecture après poll_interval"| P
+    C -->|Oui| R
+    R --> S
+    S -->|UPS sûr| OK
+    S -->|"UPS inaccessible, batterie insuffisante,<br/>secteur absent ou mesure inconnue"| B
+    B -->|"Nouvelle lecture après poll_interval"| P
+    R -->|"Configuration invalide ou<br/>erreur non récupérable"| F
+```
+
+Pendant une reprise automatique, un refus UPS temporaire remet le cycle en attente : aucun nouveau Magic Packet n'est envoyé et l'UPS est relu après `poll_interval`. Les groupes déjà terminés restent enregistrés et seules les machines encore nécessaires sont revalidées. Une erreur de configuration ou d'exécution non récupérable reste terminale. Pour un réveil manuel, un refus UPS termine simplement la commande en erreur ; aucune boucle automatique n'est créée.
+
+Pour toute nouvelle politique créée par l'assistant, le réglage recommandé et
+sélectionné par défaut est 0 % / 70 % : tout épisode `OB`, `LB` ou `FSD`
+observé peut armer le groupe, puis la reprise attend 70 % de batterie. Un seuil
+bas supérieur à 0 % est un réglage avancé : un épisode seulement `OB` qui ne
+descend jamais jusqu'à ce seuil peut être ignoré. En revanche, `LB` ou `FSD`
+arme le cycle par sécurité, quelle que soit la charge mesurée.
+
 ## Reprise automatique V1.2
 
 Une reprise est possible uniquement après un cycle `OB`, `LB` ou `FSD` réellement observé et enregistré. L'état `OL` initial au lancement ne crée jamais de cycle. Le seuil bas réarme le groupe ; le seuil haut et la durée `stable_for` l'autorisent ensuite. `OB`, `LB`, `FSD`, une erreur NUT, un état inconnu ou une batterie requise mais absente interdisent tout nouveau réveil automatique.
@@ -44,3 +85,27 @@ obligatoire n'est jamais contournée. Les politiques d'échec sont :
 - `continue` : continuer uniquement avec les machines indépendantes ;
 - `retry` : retenter de manière bornée avant de poursuivre ;
 - `continue_retry` : continuer les éléments indépendants et retenter en parallèle.
+
+## Scénario pratique
+
+Commencez par `wol ups test` et vérifiez que `ups.status` est lisible. Si la
+politique exige une charge ou une autonomie, la mesure correspondante doit
+également être connue. Configurez ensuite la protection et la reprise dans un
+groupe avec `sudo wol config group` ; une machine seule peut être placée dans
+un groupe dédié.
+
+Une reprise automatique exige le processus permanent `wol api serve`, un
+épisode `OB`, `LB` ou `FSD` effectivement observé, puis le retour `OL`, la
+batterie au seuil haut et la stabilité secteur complète. Un service qui
+démarre alors que l'UPS est déjà `OL` ne réveille rien.
+
+```sh
+wol ups test
+wol automation status
+wol jobs
+```
+
+En cas d'attente, contrôlez dans cet ordre : service actif, UPS joignable,
+coupure enregistrée, seuils, stabilité, dépendances et contrôles des machines.
+Ne provoquez pas de coupure réelle sur une infrastructure de production pour
+tester cette fonction.

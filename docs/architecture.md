@@ -20,6 +20,25 @@ Le code reste volontairement regroupé dans `cmd/wol` : une seule application, u
 
 Le service observe les états NUT par UPS. L'état initial `OL` n'est pas un retour secteur. Un cycle doit d'abord être enregistré pendant `OB`, `LB` ou `FSD`, puis réarmé au seuil bas. Le secteur `OL` doit rester stable pendant `stable_for` et la batterie atteindre le seuil haut. Une valeur absente ou invalide bloque la décision au lieu d'être interprétée comme zéro.
 
+Un refus UPS temporaire pendant une reprise remet le cycle en attente, annule l'ancienne durée de stabilité et déclenche une nouvelle validation aux lectures suivantes. Les groupes déjà terminés restent persistés ; seules les erreurs non récupérables rendent le cycle terminal.
+
 Les groupes éligibles sont ordonnés par priorité puis identifiant. Le mode séquentiel respecte l'ordre configuré ; le mode parallèle conserve les dépendances obligatoires. Un coordinateur partagé évite les doublons lorsqu'une machine appartient à plusieurs groupes. Le verrou de puissance est revérifié immédiatement avant chaque émission.
 
 Une nouvelle coupure bloque l'UPS concerné et annule les tâches automatiques actives. Après redémarrage, les cycles incomplets repassent en attente et doivent reconstruire leur durée de stabilité avant toute reprise.
+
+## Lecture simplifiée des composants
+
+Le **fichier YAML** décrit les machines, réseaux, groupes, dépendances,
+transports et politiques UPS. La **CLI** et le **menu** permettent de gérer et
+d'utiliser cette configuration. Le **moteur WoL** prépare les plans, applique
+les autorisations et contrôle les résultats. L'**API REST** déclenche des
+tâches asynchrones authentifiées. Le **processus permanent** assure également
+la surveillance NUT et la reprise après coupure.
+
+Un relais distant est une instance du même programme exposée avec mTLS. Il ne
+reçoit pas d'adresse libre à réveiller : il résout un identifiant déjà déclaré.
+Le journal durable doit être disponible avant qu'une opération réseau demandée
+par l'API soit acceptée.
+
+Ce document s'adresse aux contributeurs et administrateurs avancés. Pour une
+première utilisation, commencez par les [premiers pas](premiers-pas.md).

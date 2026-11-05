@@ -15,6 +15,19 @@ import (
 	"time"
 )
 
+type auditActorKey struct{}
+
+func withAuditActor(ctx context.Context, actor string) context.Context {
+	return context.WithValue(ctx, auditActorKey{}, actor)
+}
+
+func auditActor(ctx context.Context) string {
+	if actor, _ := ctx.Value(auditActorKey{}).(string); actor != "" {
+		return actor
+	}
+	return "engine"
+}
+
 type Engine struct {
 	cfg               *Config
 	audit             *Auditor
@@ -29,13 +42,16 @@ type Engine struct {
 	sendPacket        func(destination, source string, broadcast bool, packet []byte) error
 }
 type WakeResult struct {
-	Server      string        `json:"server"`
-	Transport   string        `json:"transport"`
-	Destination string        `json:"destination,omitempty"`
-	Packet      string        `json:"packet"`
-	Verified    bool          `json:"verified"`
-	Status      *StatusResult `json:"status,omitempty"`
-	Note        string        `json:"note"`
+	Server         string        `json:"server"`
+	Transport      string        `json:"transport"`
+	Destination    string        `json:"destination,omitempty"`
+	Packet         string        `json:"packet"`
+	SocketAccepted bool          `json:"socket_accepted"`
+	PacketEmitted  string        `json:"packet_emitted"`
+	WakeVerified   bool          `json:"wake_verified"`
+	Verified       bool          `json:"verified"`
+	Status         *StatusResult `json:"status,omitempty"`
+	Note           string        `json:"note"`
 }
 
 func (e *Engine) wakeTree(ctx context.Context, id string, done map[string]bool) ([]WakeResult, error) {
@@ -66,7 +82,7 @@ func (e *Engine) wakeTreeCore(ctx context.Context, id string, done map[string]bo
 		status := checkServer(ctx, e.cfg, id)
 		if status.State == "reachable" {
 			done[id] = true
-			return []WakeResult{{Server: id, Packet: "not_sent", Verified: true, Status: &status, Note: "machine déjà joignable; aucun paquet émis"}}, nil
+			return []WakeResult{{Server: id, Packet: "not_sent", PacketEmitted: "not_emitted", Verified: true, WakeVerified: true, Status: &status, Note: "machine déjà joignable; aucun paquet émis"}}, nil
 		}
 	}
 	var out []WakeResult
@@ -102,7 +118,7 @@ func (e *Engine) wakeTreeCore(ctx context.Context, id string, done map[string]bo
 func (e *Engine) wakeOne(ctx context.Context, id string) (WakeResult, error) {
 	plan, err := transportPlan(e.cfg, id)
 	if err != nil {
-		return WakeResult{Server: id, Packet: "not_sent", Note: err.Error()}, err
+		return WakeResult{Server: id, Packet: "not_sent", PacketEmitted: "not_emitted", Note: err.Error()}, err
 	}
 	var d TransportDecision
 	for _, x := range plan {
@@ -111,11 +127,15 @@ func (e *Engine) wakeOne(ctx context.Context, id string) (WakeResult, error) {
 			break
 		}
 	}
-	r := WakeResult{Server: id, Transport: d.Name, Destination: d.Destination, Packet: "not_sent", Note: "un paquet émis ne garantit pas le réveil"}
+	r := WakeResult{Server: id, Transport: d.Name, Destination: d.Destination, Packet: "not_sent", PacketEmitted: "not_emitted", Note: "aucune émission réseau confirmée"}
+	if err := e.audit.write("wake", auditActor(ctx), id, "requested", map[string]any{"dry_run": e.dry, "transport": d.Name}); err != nil {
+		return r, fmt.Errorf("journal d'audit indisponible; action refusée: %w", err)
+	}
 	if e.dry {
 		r.Packet = "dry_run"
+		r.PacketEmitted = "not_emitted"
 		r.Note = "simulation: aucun paquet émis; disponibilité et politique UPS à revalider lors de l'exécution"
-		e.audit.write("wake", "cli", id, "dry_run", d)
+		_ = e.audit.write("wake", auditActor(ctx), id, "dry_run", d)
 		return r, nil
 	}
 	mac, _ := net.ParseMAC(e.cfg.Servers[id].MAC)
@@ -148,22 +168,32 @@ attemptsLoop:
 			if e.sendPacket == nil {
 				err = fmt.Errorf("émetteur Magic Packet non configuré")
 			} else {
-				err = e.sendPacket(d.Destination, sourceForNetwork(n), d.Name != "unicast", packet)
+				source := sourceForNetwork(n)
+				if d.Name == "local_broadcast" {
+					source = d.Source
+				}
+				err = e.sendPacket(d.Destination, source, true, packet)
 			}
 		}
 		if err != nil {
 			if attempt == packetAttempts {
-				e.audit.write("wake", "engine", id, "failed", err.Error())
+				e.audit.write("wake", auditActor(ctx), id, "failed", err.Error())
 				return r, err
 			}
 			continue
 		}
-		r.Packet = "sent"
+		r.Packet = "send_unverified"
+		r.SocketAccepted = d.Name != "relay"
+		r.PacketEmitted = "unverified"
 		if _, disabled := e.cfg.effectiveCheckPolicy(id); disabled {
 			status := StatusResult{Server: id, State: "unknown", Note: "aucune vérification configurée"}
 			r.Status = &status
-			r.Note = "paquet émis sans vérification de disponibilité"
-			e.audit.write("wake", "engine", id, "sent", r)
+			if d.Name == "relay" {
+				r.Note = "requête acceptée par le relais; émission réseau et réveil non vérifiés"
+			} else {
+				r.Note = "socket UDP accepté; émission réseau et réveil non vérifiés"
+			}
+			e.audit.write("wake", auditActor(ctx), id, "send_unverified", r)
 			return r, nil
 		}
 		if !verificationStarted {
@@ -189,13 +219,14 @@ attemptsLoop:
 			checks++
 			r.Status = &status
 			r.Verified = status.State == "reachable"
+			r.WakeVerified = r.Verified
 			if r.Verified {
-				r.Note = "paquet émis et machine joignable selon les vérifications configurées"
-				e.audit.write("wake", "engine", id, "verified", r)
+				r.Note = "socket UDP accepté et machine joignable selon les vérifications configurées"
+				e.audit.write("wake", auditActor(ctx), id, "verified", r)
 				return r, nil
 			}
 			if e.noWait {
-				e.audit.write("wake", "engine", id, "sent", r)
+				e.audit.write("wake", auditActor(ctx), id, "send_unverified", r)
 				return r, nil
 			}
 			if maxChecks > 0 && checks >= maxChecks {
@@ -226,7 +257,7 @@ attemptsLoop:
 			}
 		}
 	}
-	e.audit.write("wake", "engine", id, "sent", r)
+	e.audit.write("wake", auditActor(ctx), id, "send_unverified", r)
 	return r, nil
 }
 

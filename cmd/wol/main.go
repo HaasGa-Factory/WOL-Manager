@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	version        = "1.2.1"
+	version        = "1.2.3"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -40,6 +40,7 @@ func main() {
 	}
 }
 func run(args []string) error {
+	args, cliNoColor = presentationArgs(args)
 	root := flag.NewFlagSet("wol", flag.ContinueOnError)
 	configPath := root.String("config", envOr("WOL_CONFIG", "/etc/wol-manager/wol.yaml"), "fichier de configuration")
 	jsonOut := root.Bool("json", false, "sortie JSON")
@@ -203,34 +204,23 @@ func usage() error {
 }
 
 func printUsage(output io.Writer) {
-	fmt.Fprintln(output, `WoL Manager `+version+`
-Usage: wol [--config FILE] [--json] COMMAND
-  setup                         assistant de configuration
-  update [--check] [--channel main|dev]
-                                vérifie ou installe une mise à jour
-  completion bash               génère l'autocomplétion Bash
-  list                          liste des serveurs
-  status SERVER                 vérifie un serveur
-  wake SERVER [--dry-run] [--verification-delay DURÉE]
-                                réveille un serveur et ses dépendances
-  wake --group GROUP            réveille un groupe
-  wake --all                    réveille tous les serveurs actifs
-  config check                  valide la configuration
-  config network|machine|group|nut|discovery
-                                gestion guidée sans édition YAML
-  config edit                   édition avancée manuelle
-  token create|list|revoke      gestion sûre des jetons API
-  network test [SERVER...]      explique les transports
-  network discover [options]    découverte passive ou active
-  ups status|test               état/diagnostic en lecture seule des UPS NUT
-  jobs                          liste les tâches persistées
-  automation status             état et raisons d'attente des reprises NUT
-  menu                          interface interactive
-  api serve                     démarre l'API
-  relay serve|check             relais distant
-  version                       version, canal ou révision source
+	renderRootHelp(output, helpRenderOptions{mode: outputColorMode(output), width: outputWidth(output)})
+}
 
-Utilisez "wol COMMANDE --help" pour l'aide détaillée.`)
+func presentationArgs(args []string) ([]string, bool) {
+	filtered := make([]string, 0, len(args))
+	disabled := false
+	for _, arg := range args {
+		if arg == "--no-color" {
+			disabled = true
+			continue
+		}
+		if arg == "--json" {
+			disabled = true
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered, disabled
 }
 
 const bashCompletion = `# bash completion for WoL Manager
@@ -240,12 +230,12 @@ _wol() {
     for ((i=1; i<COMP_CWORD; i++)); do
         case "${COMP_WORDS[i]}" in
             --config) ((i++)) ;;
-            --json) ;;
+			--json|--no-color) ;;
             *) cmd="${COMP_WORDS[i]}"; break ;;
         esac
     done
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs automation menu api relay version completion --config --json" -- "$cur") )
+		COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs automation menu api relay version completion --config --json --no-color" -- "$cur") )
         return
     fi
     case "$cmd" in
@@ -390,11 +380,13 @@ func networkCLI(c *Config, audit *Auditor, args []string, jsonOut bool) error {
 				return errors.New("découverte active annulée")
 			}
 		}
-		audit.write("network.discovery.active", "cli", "configured_networks", "started", map[string]bool{"dry_run": *dry})
+		if err := audit.write("network.discovery.active", "cli", "configured_networks", "requested", map[string]bool{"dry_run": *dry}); err != nil {
+			return fmt.Errorf("journal d'audit indisponible; diagnostic actif refusé: %w", err)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), c.Discovery.Safeguards.Timeout.Value(30*time.Second))
 		defer cancel()
 		report := activeDiscovery(ctx, c, *dry)
-		audit.write("network.discovery.active", "cli", "configured_networks", "completed", report)
+		_ = audit.write("network.discovery.active", "cli", "configured_networks", "completed", report)
 		return output(jsonOut, report, "")
 	default:
 		return errUsage
@@ -476,31 +468,58 @@ func editConfig(path string) error {
 }
 func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 	r := bufio.NewReader(os.Stdin)
+	interactive := isTerminalFile(os.Stdin) && isTerminalFile(os.Stdout)
 	for {
-		fmt.Print("\n1 Machines  2 Réseaux  3 Groupes  4 UPS  5 Valider  6 Configurer  7 Simulation WoL  8 Réveil réel  9 Automatismes  0 Quitter  ? Aide\n> ")
+		printInteractiveMenu(os.Stdout, "MENU PRINCIPAL", []helpRow{
+			{command: "[1] Machines", description: "Consulter les machines configurées"},
+			{command: "[2] Réseaux", description: "Consulter les réseaux Wake-on-LAN"},
+			{command: "[3] Groupes", description: "Consulter les groupes et dépendances"},
+			{command: "[4] UPS", description: "Consulter l’état des onduleurs NUT"},
+			{command: "[5] Valider", description: "Valider la configuration actuelle"},
+			{command: "[6] Configurer", description: "Ouvrir l’assistant de configuration"},
+			{command: "[7] Simulation WoL", description: "Simuler un réveil sans envoyer de paquet"},
+			{command: "[8] Réveil réel", description: "Envoyer un paquet après confirmation explicite"},
+			{command: "[9] Automatismes", description: "Consulter les reprises NUT, cycles et tâches"},
+			{command: "[0] Quitter", description: "Fermer le menu"},
+			{command: "[?] Aide", description: "Afficher l’aide détaillée du menu"},
+		})
+		fmt.Print("> ")
 		x, _ := r.ReadString('\n')
 		switch strings.TrimSpace(x) {
 		case "0":
 			return nil
 		case "1":
+			printInteractiveViewHeader(os.Stdout, "MACHINES")
 			if jsonOut {
 				_ = output(true, c.Servers, "")
 			} else {
 				printMenuMachines(os.Stdout, c)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "machine") {
+				return nil
+			}
 		case "2":
+			printInteractiveViewHeader(os.Stdout, "RÉSEAUX")
 			if jsonOut {
 				_ = output(true, c.Networks, "")
 			} else {
 				printNetworks(os.Stdout, c.Networks)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "network") {
+				return nil
+			}
 		case "3":
+			printInteractiveViewHeader(os.Stdout, "GROUPES")
 			if jsonOut {
 				_ = output(true, c.Groups, "")
 			} else {
 				printGroups(os.Stdout, c.Groups)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "group") {
+				return nil
+			}
 		case "4":
+			printInteractiveViewHeader(os.Stdout, "UPS")
 			out := map[string]UPSStatus{}
 			for id, u := range c.UPS {
 				out[id] = nutStatus(context.Background(), id, u)
@@ -510,15 +529,25 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			} else {
 				printMenuUPS(os.Stdout, out)
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "nut") {
+				return nil
+			}
 		case "5":
+			printInteractiveViewHeader(os.Stdout, "VALIDATION")
 			if err := c.Validate(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else {
 				fmt.Println("configuration valide")
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "menu") {
+				return nil
+			}
 		case "6":
-			if err := setupWithIO(configPath, r, os.Stdout); err != nil {
+			if err := setupWithIOMode(configPath, r, os.Stdout, interactive); err != nil {
 				fmt.Fprintln(os.Stderr, err)
+				if !waitForMenuReturn(r, os.Stdout, interactive, "setup") {
+					return nil
+				}
 				continue
 			}
 			updated, err := LoadConfig(configPath)
@@ -532,6 +561,9 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			id, ok := selectMenuServer(r, os.Stdout, c)
 			if !ok {
 				fmt.Println("Simulation annulée: aucune machine sélectionnée.")
+				if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+					return nil
+				}
 				continue
 			}
 			dryEngine := &Engine{cfg: c, audit: e.audit, dry: true, noWait: true}
@@ -545,10 +577,16 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 					printWakeResults(os.Stdout, v)
 				}
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+				return nil
+			}
 		case "8":
 			id, ok := selectMenuServer(r, os.Stdout, c)
 			if !ok {
 				fmt.Println("Réveil annulé: aucune machine sélectionnée.")
+				if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+					return nil
+				}
 				continue
 			}
 			if _, disabled := c.effectiveCheckPolicy(id); disabled {
@@ -561,6 +599,9 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			fmt.Printf("État courant de %s: %s\n", id, status.State)
 			if !confirmPrompt(r, os.Stdout, "Envoyer réellement un paquet WoL à "+id+" ?") {
 				fmt.Println("Réveil annulé.")
+				if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+					return nil
+				}
 				continue
 			}
 			v, err := e.wakeTree(context.Background(), id, map[string]bool{})
@@ -573,57 +614,111 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 					printWakeResults(os.Stdout, v)
 				}
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "wake") {
+				return nil
+			}
 		case "9":
+			printInteractiveViewHeader(os.Stdout, "AUTOMATISMES")
 			jobs, err := openJobs(c.Storage.StateFile)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
-				continue
-			}
-			if jsonOut {
+			} else if jsonOut {
 				_ = output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
 			} else {
 				printMenuAutomations(os.Stdout, c.restorePlans(), jobs.listCycles(), jobs.list())
 			}
+			if !waitForMenuReturn(r, os.Stdout, interactive, "menu") {
+				return nil
+			}
 		case "?", "aide", "help":
 			printContextHelp(os.Stdout, "menu")
+			if !waitForMenuReturn(r, os.Stdout, interactive, "menu") {
+				return nil
+			}
 		default:
 			fmt.Println("Choix invalide.")
 		}
 	}
 }
 
+func waitForMenuReturn(reader *bufio.Reader, output io.Writer, interactive bool, helpTopic string, destination ...string) bool {
+	if !interactive {
+		return false
+	}
+	target := "menu principal"
+	if len(destination) > 0 {
+		target = destination[0]
+	}
+	for {
+		fmt.Fprintf(output, "\nAppuyez sur Entrée pour revenir au %s: ", target)
+		answer, err := reader.ReadString('\n')
+		if err != nil {
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "", "0", "retour", "annuler":
+			return true
+		case "?", "aide", "help":
+			printContextHelp(output, helpTopic)
+		default:
+			fmt.Fprintln(output, "Réponse invalide: appuyez sur Entrée, ou saisissez retour, annuler, 0 ou ?.")
+		}
+	}
+}
+
 func printWakeResults(output io.Writer, results []WakeResult) {
-	for _, result := range results {
+	for index, result := range results {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		packet := result.Packet
 		switch packet {
 		case "dry_run":
 			packet = "simulation, aucun paquet émis"
-		case "sent":
-			packet = "paquet annoncé comme émis"
+		case "send_unverified", "socket_accepted":
+			if result.SocketAccepted {
+				packet = "socket UDP accepté; émission réseau non vérifiée"
+			} else {
+				packet = "requête relais acceptée; émission réseau non vérifiée"
+			}
 		case "not_sent":
 			packet = "aucun paquet émis"
 		}
-		fmt.Fprintf(output, "- %s: %s", result.Server, packet)
+		rows := []helpRow{{command: "Paquet", description: packet}}
 		if result.Transport != "" {
-			fmt.Fprintf(output, "; transport=%s", result.Transport)
+			rows = append(rows, helpRow{command: "Transport", description: result.Transport})
 		}
 		if result.Destination != "" {
-			fmt.Fprintf(output, "; destination=%s", result.Destination)
+			rows = append(rows, helpRow{command: "Destination", description: result.Destination})
 		}
-		fmt.Fprintf(output, "; vérifié=%t", result.Verified)
+		rows = append(rows,
+			helpRow{command: "Émission réseau", description: emptyAs(result.PacketEmitted, "inconnue")},
+			helpRow{command: "Réveil vérifié", description: strconv.FormatBool(result.WakeVerified)},
+		)
 		if result.Note != "" {
-			fmt.Fprintf(output, "; %s", result.Note)
+			rows = append(rows, helpRow{command: "Information", description: result.Note})
 		}
-		fmt.Fprintln(output)
+		printInformationBlock(output, "Résultat "+result.Server, rows)
 	}
 }
 
 func printMenuMachines(output io.Writer, c *Config) {
-	for _, id := range sortedKeys(c.Servers) {
+	for index, id := range sortedKeys(c.Servers) {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		s := c.Servers[id]
 		initial, timeout, interval := c.effectiveVerification(id)
-		fmt.Fprintf(output, "- %s — %s: IP=%s MAC=%s réseau=%s actif=%t contrôles=%s délais=%s/%s/%s\n",
-			id, emptyAs(s.Name, "sans nom"), s.IP, s.MAC, s.Network, enabled(s), formatChecks(c.effectiveChecks(id)), initial, timeout, interval)
+		printInformationBlock(output, "Machine "+id+" — "+emptyAs(s.Name, "sans nom"), []helpRow{
+			{command: "Adresse IP", description: s.IP},
+			{command: "Adresse MAC", description: s.MAC},
+			{command: "Réseau", description: s.Network},
+			{command: "Active", description: strconv.FormatBool(enabled(s))},
+			{command: "Contrôles", description: formatChecks(c.effectiveChecks(id))},
+			{command: "Attente initiale", description: initial.String()},
+			{command: "Délai maximal", description: timeout.String()},
+			{command: "Intervalle", description: interval.String()},
+		})
 	}
 }
 
@@ -632,17 +727,23 @@ func printMenuUPS(output io.Writer, statuses map[string]UPSStatus) {
 		fmt.Fprintln(output, "Aucun UPS NUT configuré.")
 		return
 	}
-	for _, id := range sortedKeys(statuses) {
+	for index, id := range sortedKeys(statuses) {
+		if index > 0 {
+			fmt.Fprintln(output)
+		}
 		status := statuses[id]
 		if status.Error != "" {
-			fmt.Fprintf(output, "- %s: erreur=%s\n", id, status.Error)
+			printInformationBlock(output, "UPS "+id, []helpRow{{command: "Erreur", description: status.Error}})
 			continue
 		}
 		battery := "inconnue"
 		if status.BatteryKnown {
 			battery = fmt.Sprintf("%.0f%%", status.Battery)
 		}
-		fmt.Fprintf(output, "- %s: état=%s batterie=%s\n", id, emptyAs(status.RawStatus, "inconnu"), battery)
+		printInformationBlock(output, "UPS "+id, []helpRow{
+			{command: "État", description: emptyAs(status.RawStatus, "inconnu")},
+			{command: "Batterie", description: battery},
+		})
 	}
 }
 
@@ -650,15 +751,43 @@ func printMenuAutomations(output io.Writer, plans []restorePlan, cycles []PowerC
 	if len(plans) == 0 {
 		fmt.Fprintln(output, "Aucune politique de reprise NUT configurée.")
 	}
+	printed := false
 	for _, plan := range plans {
-		fmt.Fprintf(output, "- groupe %s: UPS=%s mode=%s stabilité=%s fréquence=%s échec=%s tentatives=%d intervalle=%s\n",
-			plan.Group, plan.UPS, plan.Mode, plan.StableFor, plan.PollInterval, plan.FailurePolicy, plan.RetryLimit, plan.RetryInterval)
+		if printed {
+			fmt.Fprintln(output)
+		}
+		printInformationBlock(output, "Politique du groupe "+plan.Group, []helpRow{
+			{command: "UPS", description: plan.UPS},
+			{command: "Mode", description: plan.Mode},
+			{command: "Stabilité", description: plan.StableFor.String()},
+			{command: "Fréquence", description: plan.PollInterval.String()},
+			{command: "Échec", description: plan.FailurePolicy},
+			{command: "Tentatives", description: strconv.Itoa(plan.RetryLimit)},
+			{command: "Intervalle", description: plan.RetryInterval.String()},
+		})
+		printed = true
 	}
 	for _, cycle := range cycles {
-		fmt.Fprintf(output, "- cycle UPS %s: état=%s raison=%s batterie=%s\n", cycle.UPS, cycle.State, emptyAs(cycle.Reason, "aucune"), formatBattery(cycle))
+		if printed {
+			fmt.Fprintln(output)
+		}
+		printInformationBlock(output, "Cycle UPS "+cycle.UPS, []helpRow{
+			{command: "État", description: cycle.State},
+			{command: "Raison", description: emptyAs(cycle.Reason, "aucune")},
+			{command: "Batterie", description: formatBattery(cycle)},
+		})
+		printed = true
 	}
 	for _, job := range jobs {
-		fmt.Fprintf(output, "- tâche %s: type=%s cible=%s état=%s\n", job.ID, job.Kind, job.Target, job.State)
+		if printed {
+			fmt.Fprintln(output)
+		}
+		printInformationBlock(output, "Tâche "+job.ID, []helpRow{
+			{command: "Type", description: job.Kind},
+			{command: "Cible", description: job.Target},
+			{command: "État", description: job.State},
+		})
+		printed = true
 	}
 }
 
@@ -675,14 +804,15 @@ func selectMenuServer(reader *bufio.Reader, output io.Writer, c *Config) (string
 		fmt.Fprintln(output, "Aucune machine configurée.")
 		return "", false
 	}
-	fmt.Fprintln(output, "Machines disponibles:")
+	rows := make([]helpRow, 0, len(ids))
 	for i, id := range ids {
-		fmt.Fprintf(output, "[%d] %s — %s\n", i+1, id, emptyAs(c.Servers[id].Name, "sans nom"))
+		rows = append(rows, helpRow{command: fmt.Sprintf("[%d] %s", i+1, id), description: emptyAs(c.Servers[id].Name, "sans nom")})
 	}
+	printChoiceList(output, "MACHINES DISPONIBLES", rows)
 	for {
 		value := prompt(reader, output, "Choisissez un numéro ou un identifiant (Entrée=annuler): ")
 		if value == "?" || value == "aide" || value == "help" {
-			fmt.Fprintln(output, "Aide: choisissez le numéro affiché ou l'identifiant exact de la machine. Entrée annule sans envoyer de paquet.")
+			printFieldHelp(output, "Choisissez un numéro ou un identifiant")
 			continue
 		}
 		if value == "" || value == "annuler" || value == "retour" {

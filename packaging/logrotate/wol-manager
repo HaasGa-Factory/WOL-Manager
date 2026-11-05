@@ -1,0 +1,11 @@
+/var/log/wol-manager/audit.jsonl {
+    weekly
+    rotate 12
+    maxsize 10M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 wol-manager wol-manager
+    su wol-manager wol-manager
+}

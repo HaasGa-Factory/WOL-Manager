@@ -1,14 +1,14 @@
 # CLI
 
-Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
+Syntaxe générale : `wol [--config FILE] [--json] [--no-color] COMMANDE`.
 
 | Commande | Fonction |
 |---|---|
-| `wol setup` | assistant complet : réseaux, machines, groupes, dépendances et NUT |
+| `sudo wol setup` | assistant complet : réseaux, machines, groupes, dépendances et NUT |
 | `wol update --check` | vérifie `main` sans privilèges ni modification |
-| `wol update` | met à jour depuis les binaires signés de `main` |
+| `sudo wol update` | met à jour depuis les binaires signés de `main` |
 | `wol update --check --channel dev` | vérifie temporairement le canal `dev` |
-| `wol update --channel dev` | installe temporairement le canal `dev` |
+| `sudo wol update --channel dev` | installe temporairement le canal `dev` |
 | `wol version` | affiche la version installée |
 | `wol list` | liste les serveurs |
 | `wol status ID` | exécute les vérifications configurées |
@@ -16,27 +16,33 @@ Syntaxe générale : `wol [--config FILE] [--json] COMMANDE`.
 | `wol wake --group ID` | groupe |
 | `wol wake --all` | tous les serveurs actifs |
 | `wol config check` | validation stricte |
-| `wol config network` | ajoute, modifie ou supprime un réseau avec validation |
-| `wol config machine` | ajoute, modifie ou supprime une machine avec validation |
-| `wol config group` | ajoute, modifie ou supprime un groupe avec validation |
-| `wol config nut` | configure et teste les serveurs NUT et leurs UPS |
-| `wol config discovery` | configure les verrous et limites de découverte active |
-| `wol config edit` | édition YAML avancée, non requise pour un usage normal |
-| `wol token create` | ajoute un hash et affiche le jeton une fois |
-| `wol token list` | liste les identifiants, permissions et états sans secret ni hash |
-| `wol token revoke --id ID` | révoque un jeton après confirmation |
-| `wol network test [ID]` | explique les transports |
+| `sudo wol config network` | ajoute, modifie ou supprime un réseau avec validation |
+| `sudo wol config machine` | ajoute, modifie ou supprime une machine avec validation |
+| `sudo wol config group` | ajoute, modifie ou supprime un groupe avec validation |
+| `sudo wol config nut` | configure et teste les serveurs NUT et leurs UPS |
+| `sudo wol config discovery` | configure les verrous et limites de découverte active |
+| `sudo wol config edit` | édition YAML avancée, non requise pour un usage normal |
+| `sudo wol token create` | ajoute un hash et affiche le jeton une fois |
+| `sudo wol token list` | liste les identifiants, permissions et états sans secret ni hash |
+| `sudo wol token revoke --id ID` | révoque un jeton après confirmation |
+| `wol network test [MACHINE...]` | explique les transports d'une ou plusieurs machines |
 | `wol network discover` | découverte passive |
 | `wol network discover --active --allow-active-scan` | diagnostic actif |
 | `wol ups status` | états NUT |
 | `wol ups test` | diagnostic en lecture seule de tous les UPS configurés |
 | `wol jobs` | état persistant des tâches |
 | `wol automation status` | cycles NUT, politiques, progressions et raisons d'attente |
-| `wol menu` | consultation, configuration, simulation et réveil confirmé |
+| `sudo wol menu` | consultation, configuration, simulation et réveil réel après confirmation utilisateur |
 | `wol api serve` | API et moteur de surveillance/reprise NUT |
 | `wol relay serve` | relais HTTPS mTLS |
 | `wol relay check ID` | disponibilité d'un relais |
 | `wol completion bash` | génère le script d'autocomplétion Bash |
+
+Avec l'installateur système `1.2.3`, `sudo wol update` détecte les anciennes configurations
+`unicast`. Après vérification du manifeste, de sa signature et du binaire candidat, la commande
+propose une migration guidée avant le remplacement. Une installation qui utilise encore
+l'installateur `1.2.1` doit d'abord suivre la procédure d'amorçage documentée dans
+[mises à jour](updates.md) ; sinon l'ancien installateur s'arrête sur « Configuration incompatible ».
 
 `wol COMMANDE --help` affiche l'aide détaillée avant de charger la configuration. Cette aide ne
 nécessite donc ni privilèges, ni fichier YAML, ni accès au réseau. Les commandes composées acceptent
@@ -99,8 +105,33 @@ le moniteur à lui seul.
 
 Codes de sortie : `0` succès, `1` erreur d'exécution/configuration/politique, `2` syntaxe invalide. Les diagnostics actifs affichent toujours un avertissement sur stderr.
 
-Sur un terminal compatible, la CLI met en évidence les erreurs en rouge, les avertissements en jaune, les validations réussies en vert et les informations importantes en cyan. Les couleurs sont automatiquement désactivées pour une redirection, une sortie JSON, un terminal `dumb` ou lorsque la variable standard `NO_COLOR` est définie. Les textes et codes de sortie restent identiques pour les scripts.
+Sur un terminal compatible, la CLI utilise TrueColor lorsque cette capacité est annoncée, puis se
+replie sur ANSI 256 couleurs et ANSI 16 couleurs. Elle met en évidence les erreurs en rouge, les
+avertissements et titres en jaune, les commandes et validations réussies en vert, et les informations
+importantes en bleu ou cyan. Les couleurs sont automatiquement désactivées pour une redirection, une
+sortie JSON, un terminal `dumb`, avec `NO_COLOR`, ou avec l'option globale `--no-color`. Les textes et
+codes de sortie restent identiques pour les scripts. La largeur de l'aide s'adapte au terminal sans
+tronquer les commandes.
 
 L'installateur place automatiquement l'autocomplétion Bash au bon emplacement. Dans un nouveau terminal, `wol m<Tab>` complète `menu` et `wol config m<Tab>` complète `machine`. Les options d'aide et de version sont également proposées. La commande `wol completion bash` permet aussi d'afficher le script sans l'installer.
 
 `wol --help` affiche l'aide générale sans charger la configuration. Chaque commande et sous-commande documentée ci-dessus possède également une aide contextuelle.
+
+## Index des aides vérifiées
+
+Les 35 aides ci-dessous sont définies dans `cmd/wol/help.go` et ont été
+exécutées avec un code de retour nul pendant cette revue :
+
+| Famille | Aides disponibles |
+|---|---|
+| Général | `setup`, `update`, `completion`, `completion bash`, `list`, `status`, `wake`, `version` |
+| Configuration | `config`, `config check`, `config edit`, `config network`, `config machine`, `config group`, `config nut`, `config discovery` |
+| Jetons | `token`, `token create`, `token list`, `token revoke` |
+| Réseau et UPS | `network`, `network test`, `network discover`, `ups`, `ups status`, `ups test` |
+| Tâches et service | `jobs`, `automation`, `automation status`, `menu`, `api`, `api serve` |
+| Relais | `relay`, `relay serve`, `relay check` |
+
+Ajoutez `--help` à la commande correspondante. Les alias d'aide
+`config networks`, `config server`, `config servers`, `config groups` et
+`config ups` sont normalisés vers les rubriques canoniques ; les exemples de
+ce guide utilisent les noms canoniques.

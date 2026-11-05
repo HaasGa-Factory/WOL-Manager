@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -142,11 +143,29 @@ func TestWakeWithChecksDisabledSendsOnceAndReturnsImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent != 1 || len(result) != 1 || result[0].Verified || result[0].Status == nil || result[0].Status.State != "unknown" {
+	if sent != 1 || len(result) != 1 || result[0].Verified || result[0].WakeVerified || !result[0].SocketAccepted || result[0].PacketEmitted != "unverified" || result[0].Packet != "send_unverified" || result[0].Status == nil || result[0].Status.State != "unknown" {
 		t.Fatalf("réveil sans vérification incorrect: sent=%d result=%#v", sent, result)
 	}
 	if time.Since(start) > 500*time.Millisecond {
 		t.Fatalf("réveil sans vérification a attendu %s", time.Since(start))
+	}
+}
+
+func TestWakeReportsUDPSendFailureWithoutFalseSuccess(t *testing.T) {
+	cfg := testConfig(t)
+	server := cfg.Servers["two"]
+	server.ChecksDisabled = true
+	cfg.Servers["two"] = server
+	want := errors.New("échec UDP simulé")
+	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, sendPacket: func(string, string, bool, []byte) error {
+		return want
+	}}).wakeTree(context.Background(), "two", map[string]bool{})
+	if !errors.Is(err, want) || len(result) != 1 {
+		t.Fatalf("échec UDP mal propagé: result=%#v err=%v", result, err)
+	}
+	got := result[0]
+	if got.SocketAccepted || got.PacketEmitted != "not_emitted" || got.WakeVerified || got.Packet != "not_sent" {
+		t.Fatalf("faux succès après échec UDP: %#v", got)
 	}
 }
 

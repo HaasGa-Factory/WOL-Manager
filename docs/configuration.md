@@ -5,6 +5,24 @@ La méthode recommandée est `sudo wol setup`. L'assistant détecte les interfac
 Chaque section accepte `--help` sans charger le YAML. Dans un assistant ouvert, saisissez `?` pour
 afficher une explication du menu courant sans modifier les données préparées.
 
+## Parcours guidé pour une première machine
+
+1. Dans `sudo wol setup`, créez d'abord le réseau. Avec une seule interface
+   IPv4, l'assistant propose le CIDR, l'interface et l'adresse source détectés.
+2. Ajoutez une machine avec un identifiant technique (par exemple `truenas`),
+   un nom lisible, son adresse MAC, son IP et le réseau créé.
+3. Choisissez au moins un contrôle si vous souhaitez confirmer le démarrage :
+   ICMP (ping), TCP (port réellement ouvert) ou ARP (présence locale).
+4. Relisez le transport, la destination, les délais et dépendances dans le
+   résumé. La simulation finale ne transmet aucun Magic Packet.
+5. Confirmez seulement lorsque le contrôle de préparation ne signale aucune
+   machine active sans transport utilisable.
+
+`checks: []` signifie « hériter » ; ce n'est pas « aucune vérification ».
+L'assistant utilise `checks_disabled: true` pour désactiver explicitement les
+contrôles. `any` valide dès qu'un contrôle réussit ; `all` exige tous les
+contrôles configurés.
+
 Avant chaque enregistrement, la configuration complète est validée. Une configuration existante reçoit une sauvegarde datée, puis le nouveau fichier est remplacé atomiquement. Les cibles symboliques sont refusées et, sous Debian avec une installation standard, le fichier final est `root:wol-manager` en mode `0640`. Une suppression référencée est refusée au lieu de provoquer une cascade silencieuse.
 
 `wol config discovery` enregistre ensemble les deux parties de la fonction : `network_discovery`
@@ -13,6 +31,28 @@ la commande affiche explicitement que la configuration a été enregistrée. Une
 pas le fichier. Le résumé final présente toutes ces valeurs avant l'écriture.
 
 Le YAML est lu avec rejet des champs inconnus. `wol config check` vérifie notamment les MAC/IP dupliquées, CIDR, références, priorités de groupe, cycles, TLS, réseaux actifs autorisés et transports.
+
+## Migration des transports WoL
+
+Le transport opérationnel `unicast` a été supprimé. Un broadcast local exige désormais un nom
+d'interface explicite et une adresse IPv4 de cette interface appartenant exactement au CIDR déclaré.
+La destination est le broadcast calculé du sous-réseau ; `255.255.255.255` n'est pas utilisé comme
+solution de repli.
+
+Une simple lecture (`wol config check`, API ou démarrage du service) ne modifie jamais un ancien
+fichier. Elle refuse `unicast` et `allow_unicast` avec une indication de migration. `sudo wol setup`
+charge l'ancienne configuration en mémoire, annonce les machines qui ne disposaient que d'unicast,
+demande une première confirmation de conversion puis la confirmation finale habituelle. La
+conversion retire uniquement les références à l'unicast. Avant l'écriture atomique, le fichier
+original reçoit une sauvegarde datée. Une configuration unicast uniquement doit donc recevoir un
+transport broadcast ou relais valide avant de pouvoir être enregistrée.
+
+Lorsque l'installateur système `1.2.3` est déjà en place, `sudo wol update` utilise directement le
+binaire candidat authentifié pour ouvrir ce même assistant. Une installation provenant de `1.2.1`
+doit auparavant remplacer uniquement l'ancien installateur système par le `dist/install.sh` signé
+du paquet `1.2.3`; la procédure complète est décrite dans les
+[mises à jour](updates.md). La mise à jour ne
+remplace le binaire qu'après enregistrement et nouvelle validation de la configuration.
 
 L'assistant couvre les paramètres usuels. Les réglages avancés de réseau et de machine — relais,
 ordre détaillé des transports, politiques UPS historiques, CA NUT privée et fichiers d'identifiants —
@@ -44,7 +84,7 @@ servers:
       interval: 5s
 ```
 
-`initial_delay` attend après l'envoi effectif du paquet, avant la première vérification. `timeout` limite la fenêtre totale de vérification et `interval` espace les tentatives. `attempts: 0` conserve une limite basée uniquement sur `timeout`; une valeur positive borne aussi le nombre de contrôles. `packet_retries` borne séparément les nouveaux Magic Packets. Les durées utilisent la syntaxe Go (`5s`, `90s`, `3m`). Une machine déjà joignable, une simulation `--dry-run` ou un envoi échoué n'attendent jamais ce délai. L'attente est liée au contexte du job et s'interrompt immédiatement lors d'une annulation.
+`initial_delay` attend après l'acceptation de la demande d'envoi, avant la première vérification. `timeout` limite la fenêtre totale de vérification et `interval` espace les tentatives. `attempts: 0` conserve une limite basée uniquement sur `timeout`; une valeur positive borne aussi le nombre de contrôles. `packet_retries` borne séparément les nouveaux Magic Packets. Les durées utilisent la syntaxe Go (`5s`, `90s`, `3m`). Une machine déjà joignable, une simulation `--dry-run` ou un envoi échoué n'attendent jamais ce délai. L'attente est liée au contexte du job et s'interrompt immédiatement lors d'une annulation.
 
 Chaque machine peut déclarer plusieurs contrôles, y compris plusieurs ports TCP. `check_logic: any` considère la machine joignable dès qu'un contrôle réussit ; `all` exige la réussite de tous les contrôles. Un résultat absent ou indéterminé n'est jamais transformé en succès.
 
@@ -56,6 +96,12 @@ est effective, `wol status ID` retourne immédiatement l'état `unknown`, sans a
 envoie au plus les paquets prévus mais ne prétend pas confirmer le démarrage et n'applique ni délai de
 vérification, ni tentative de contrôle, ni nouvel envoi motivé par un échec de vérification.
 
+Les résultats de réveil séparent trois preuves : `socket_accepted` indique seulement que l'appel
+d'envoi UDP a réussi, `packet_emitted` vaut `unverified` tant qu'aucune observation réseau adaptée
+n'existe, et `wake_verified` exige la réussite des contrôles ICMP, TCP ou ARP configurés. Une
+machine déjà joignable peut avoir `wake_verified: true` sans émission ; un `--dry-run` conserve
+`packet_emitted: not_emitted`.
+
 Sans ces champs, le comportement historique reste inchangé : aucune attente initiale, fenêtre de 45 secondes et intervalle de 2 secondes. `wake_timeout` reste accepté pour les anciennes configurations. Une surcharge ponctuelle ne modifie pas le fichier :
 
 ```sh
@@ -63,6 +109,18 @@ wol wake truenas --verification-delay 90s
 ```
 
 Deux groupes ne peuvent pas partager la même priorité. Cette règle rend les surcharges déterministes. Les listes `servers` d'un groupe et `groups` d'un serveur sont réunies sans doublon.
+
+## Sécurité UPS avant réveil
+
+L'assistant `sudo wol config group` permet d'appliquer une politique NUT avant chaque réveil des
+machines du groupe. Elle peut exiger le secteur `OL`, une charge minimale et une
+autonomie minimale. Une mesure requise mais absente ou un état inconnu bloque le Magic Packet au
+lieu d'être interprété comme une valeur sûre.
+
+Une machine seule peut être placée dans un groupe dédié. Si une machine appartient à plusieurs
+groupes, leurs politiques UPS doivent être identiques afin d'éviter toute ambiguïté. Ce contrôle
+`ups_policy` reste distinct de `power_restore` : le premier protège chaque réveil, tandis que le
+second orchestre la reprise d'un groupe après une coupure observée.
 
 ## Reprise automatique après coupure
 
