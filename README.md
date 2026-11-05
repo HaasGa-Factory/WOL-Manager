@@ -1,6 +1,8 @@
 <div align="center">
 
-# ⚡ WoL Manager
+<a href="https://github.com/HaasGa-Factory/WOL-Manager">
+  <img src="docs/images/wol-manager-logo.jpg" width="430" alt="WoL Manager — Wake on LAN Manager">
+</a>
 
 **Gestion centralisée du Wake-on-LAN pour Linux**
 
