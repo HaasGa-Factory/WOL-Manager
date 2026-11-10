@@ -17,8 +17,30 @@
 - Magasin de jetons relu après chaque remplacement atomique afin qu'une révocation soit effective à
   la requête suivante sans interrompre les requêtes déjà authentifiées.
 - Commandes système limitées à `ip`, `ping` et l'éditeur local, avec arguments construits par le programme.
+- Sauvegardes administratives stockées par défaut sous `/var/backups/wol-manager`, hors de l'arbre
+  `/var/lib/wol-manager` détenu par le service, avec répertoire `0700` et archives `0600`.
+- Archives `.wolbackup` bornées en nombre d'entrées et en taille, limitées à des chemins internes
+  connus, avec refus des liens symboliques, traversées de chemin, doublons et cibles système hors périmètre.
 
 Le compte systemd utilise des restrictions de fichiers, processus et privilèges. L'accès à des interfaces particulières peut nécessiter une adaptation locale soigneusement documentée.
+
+## Sécurité des sauvegardes
+
+Le niveau par défaut de `wol backup create` sauvegarde seulement la
+configuration validée. Les jetons et l'état persistant ne sont inclus que sur
+demande explicite. Les binaires, journaux, caches, clés privées et secrets NUT
+externes ne sont jamais collectés.
+
+Le manifeste interne et les SHA-256 détectent une corruption accidentelle,
+mais la version 1.3.0 ne chiffre ni ne signe les archives. Une personne capable
+de modifier l'archive peut recalculer ses sommes. Vérifiez donc la provenance,
+conservez le mode `0600` et utilisez un support chiffré pour toute copie hors
+machine. Ne stockez jamais une archive dans Git.
+
+Une restauration crée une sauvegarde de sécurité avant l'écriture, refuse les
+cibles symboliques et remplace atomiquement les fichiers. La restauration du
+state exige l'arrêt du service et suspend les jobs actifs dans l'état
+`revalidation_required` afin qu'aucun réveil ne reprenne automatiquement.
 
 Le serveur relais vérifie aujourd'hui la chaîne mTLS et limite les cibles aux machines/réseaux
 affectés à son propre identifiant. Il ne contient pas encore de table applicative liant le sujet du

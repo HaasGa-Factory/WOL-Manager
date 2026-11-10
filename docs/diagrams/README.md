@@ -23,7 +23,7 @@ Les images ci-dessous affichent la première page de chaque cartographie sur Git
 
 - Branche locale auditée : `dev`.
 - Commit `dev` audité avant les corrections d'aide : `6795b7f`.
-- Version du programme préparée : `1.2.3`, définie dans `cmd/wol/main.go` et `install.sh`.
+- Version de travail préparée : `1.3.0`, définie dans `cmd/wol/main.go` et `install.sh`.
 - Dernière distribution auditée avant ce changement de version : manifeste `1.2.0`, canal `dev`, révision source `95cd327c6da18194a17f66ff9b2e7f33cf9eec08`.
 - Les corrections d'aide et de documentation postérieures à ce binaire restent dans l'arbre de travail jusqu'au prochain cycle manuel source puis artefacts.
 - Date de l'analyse : 19 octobre 2026.
@@ -63,7 +63,7 @@ La branche n'a pas été changée. Aucune commande Git d'écriture n'a été ex�
 | T09 — Orchestrateur | Détection du retour secteur stable et déclenchement du groupe. |
 | T10 — Automatisations et planificateur | Modèle `Automation`, `JobStore` et fonctions absentes. |
 | T11 — Configuration YAML | Parsing strict, validation, héritage, sauvegarde et permissions. |
-| T12 — Stockage et sécurité | Fichiers persistants, identités, modes, secrets et protections. |
+| T12 — Stockage et sécurité | Fichiers persistants, identités, modes, secrets, sauvegardes administratives séparées et protections. |
 | T13 — systemd | Installation de l'unit, identité, durcissement, démarrage et journaux. |
 | T14 — Compilation et distribution | Tests, builds AMD64/ARM64, manifeste, SHA-256 et signature. |
 | T15 — Installation Debian | Chaîne technique de `install.sh` sans compilation client. |

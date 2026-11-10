@@ -62,7 +62,8 @@ func testDir(t *testing.T) string {
 
 func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 	for _, expected := range []string{
-		`compgen -W "setup update list status wake config token network ups jobs automation menu`,
+		`compgen -W "setup update backup list status wake config token network ups jobs automation menu`,
+		`backup) COMPREPLY=( $(compgen -W "create list inspect verify restore prune`,
 		`config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h"`,
 		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h"`,
 		`automation) COMPREPLY=( $(compgen -W "status --help -h"`,
@@ -86,7 +87,7 @@ func TestOpenAPIDocumentIsValidYAMLAndExposesAutomations(t *testing.T) {
 		t.Fatalf("OpenAPI YAML invalide: %v", err)
 	}
 	text := string(content)
-	for _, expected := range []string{"version: 1.2.3", "/automations:"} {
+	for _, expected := range []string{"version: 1.3.0", "/automations:"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("OpenAPI incomplet, fragment absent: %s", expected)
 		}
@@ -99,7 +100,10 @@ func TestHelpDoesNotLoadConfiguration(t *testing.T) {
 		t.Fatalf("aide générale: %v", err)
 	}
 	commands := [][]string{
-		{"setup", "--help"}, {"update", "--help"}, {"completion", "--help"}, {"completion", "bash", "--help"},
+		{"setup", "--help"}, {"update", "--help"}, {"backup", "--help"},
+		{"backup", "create", "--help"}, {"backup", "list", "--help"}, {"backup", "inspect", "--help"},
+		{"backup", "verify", "--help"}, {"backup", "restore", "--help"}, {"backup", "prune", "--help"},
+		{"completion", "--help"}, {"completion", "bash", "--help"},
 		{"list", "--help"}, {"status", "--help"}, {"wake", "--help"},
 		{"config", "--help"}, {"config", "check", "--help"}, {"config", "edit", "--help"},
 		{"config", "network", "--help"}, {"config", "machine", "--help"},

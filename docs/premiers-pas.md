@@ -22,7 +22,9 @@ pas une preuve de réception ni de démarrage.
 5. Simulez sans paquet avec `wol wake IDENTIFIANT --dry-run`.
 6. Déclenchez un réveil réel avec `wol wake IDENTIFIANT` uniquement après
    avoir relu le plan, puis vérifiez l'état réel de la machine.
-7. Ajoutez ensuite, si nécessaire, des [groupes et dépendances](configuration.md),
+7. Créez une première sauvegarde avec `sudo wol backup create`, puis vérifiez-la
+   avec `sudo wol backup list` et `sudo wol backup verify FICHIER`.
+8. Ajoutez ensuite, si nécessaire, des [groupes et dépendances](configuration.md),
    une protection [UPS NUT](nut.md) ou l'[API REST](api.md).
 
 `IDENTIFIANT` est le nom technique enregistré par l'assistant, pas l'adresse
@@ -48,5 +50,5 @@ d'extinction peuvent ne pas accepter WoL même si Linux indique `Wake-on: g`.
 ## Pour aller plus loin
 
 - [Configuration](configuration.md) et [réseaux/VLAN](multi-vlan.md) ;
-- [UPS NUT](nut.md), [mises à jour](updates.md) et [sécurité](security.md) ;
+- [UPS NUT](nut.md), [sauvegardes](backups.md), [mises à jour](updates.md) et [sécurité](security.md) ;
 - [API REST](api.md) et [référence CLI](cli.md).

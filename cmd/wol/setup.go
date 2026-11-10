@@ -1406,19 +1406,44 @@ func promptUPSSafetyPolicy(reader *bufio.Reader, output io.Writer, cfg *Config, 
 		policy = *current
 	}
 	printFieldHelp(output, "Politique de sécurité UPS")
-	printValueList(output, "UPS DISPONIBLES", sortedKeys(cfg.UPS))
-	for {
-		policy.UPS = promptDefault(reader, output, "UPS de sécurité", policy.UPS)
-		if _, ok := cfg.UPS[policy.UPS]; ok {
-			break
-		}
-		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
-	}
+	policy.UPS = promptUPSSelection(reader, output, cfg, policy.UPS, "UPS de sécurité")
 	policy.RequireOnline = promptBool(reader, output, "Exiger que le secteur soit présent avant le réveil ?", policy.RequireOnline)
 	policy.MinBattery = promptIntRange(reader, output, "Charge minimale avant chaque Magic Packet (%) — 0 = ne pas contrôler", policy.MinBattery, 0, 100)
 	policy.MinRuntime = promptDurationSecondsRange(reader, output, "Autonomie minimale avant chaque Magic Packet — 0 = ne pas contrôler", policy.MinRuntime, 7*24*time.Hour)
 	printUPSSafetySummary(output, cfg, policy)
 	return &policy
+}
+
+func promptUPSSelection(reader *bufio.Reader, output io.Writer, cfg *Config, current, label string) string {
+	ids := sortedKeys(cfg.UPS)
+	rows := make([]helpRow, 0, len(ids))
+	for index, id := range ids {
+		ups := cfg.UPS[id]
+		description := ups.Address
+		if ups.Name != "" {
+			description += " — identifiant NUT " + ups.Name
+		}
+		rows = append(rows, helpRow{command: fmt.Sprintf("[%d] %s", index+1, id), description: description})
+	}
+	printChoiceList(output, "UPS DISPONIBLES", rows)
+
+	defaultValue := current
+	for index, id := range ids {
+		if id == current {
+			defaultValue = strconv.Itoa(index + 1)
+			break
+		}
+	}
+	for {
+		value := promptDefault(reader, output, label+" — numéro ou identifiant", defaultValue)
+		if index, err := strconv.Atoi(value); err == nil && index >= 1 && index <= len(ids) {
+			return ids[index-1]
+		}
+		if _, ok := cfg.UPS[value]; ok {
+			return value
+		}
+		fmt.Fprintf(output, "Choix UPS invalide: saisissez un numéro entre 1 et %d, ou un identifiant affiché. Recommencez.\n", len(ids))
+	}
 }
 
 func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, group Group) *PowerRestorePolicy {
@@ -1441,14 +1466,7 @@ func promptPowerRestore(reader *bufio.Reader, output io.Writer, cfg *Config, gro
 		policy = *group.PowerRestore
 		policy.Enabled = true
 	}
-	printValueList(output, "UPS DISPONIBLES", sortedKeys(cfg.UPS))
-	for {
-		policy.UPS = promptDefault(reader, output, "UPS", policy.UPS)
-		if _, ok := cfg.UPS[policy.UPS]; ok {
-			break
-		}
-		fmt.Fprintln(output, "UPS inconnu. Recommencez.")
-	}
+	policy.UPS = promptUPSSelection(reader, output, cfg, policy.UPS, "UPS")
 	printInteractiveMenu(output, "RÉARMEMENT ET CHARGE DE DÉMARRAGE", []helpRow{
 		{command: "[1] Toute coupure", description: "Réarmer sur OB, LB ou FSD; reprendre à 70 % (recommandé)"},
 		{command: "[2] 40 / 70 %", description: "Avancé : réarmer à 40 %, reprendre à 70 %"},
@@ -2373,6 +2391,8 @@ func fieldHelp(label string) string {
 		return "Aide: après une coupure OB, LB ou FSD réellement observée, WoL Manager attend le retour du secteur OL, sa stabilité et la charge de démarrage avant de réveiller ce groupe. Un serveur NUT inaccessible n'est pas considéré comme une coupure confirmée."
 	case strings.Contains(key, "politique de sécurité ups"):
 		return "Aide: cette protection appartient au groupe et vérifie l'état NUT avant chaque réveil de ses machines. Pour une machine seule, créez un groupe ne contenant qu'elle."
+	case strings.Contains(key, "ups") && strings.Contains(key, "numéro ou identifiant"):
+		return "Aide: saisissez le numéro placé devant l'UPS, ou son identifiant exact. Appuyez sur Entrée pour conserver le choix actuel lorsqu'un défaut est affiché."
 	case strings.Contains(key, "secteur ol") || strings.Contains(key, "secteur soit présent"):
 		return "Aide: exige l'état NUT OL (secteur présent) avant d'autoriser le Magic Packet. Un état inconnu, OB, LB ou FSD bloque le réveil."
 	case strings.Contains(key, "batterie minimale") || strings.Contains(key, "charge minimale avant chaque"):

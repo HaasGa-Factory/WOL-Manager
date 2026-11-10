@@ -825,6 +825,35 @@ func TestGuidedUPSSafetyPolicyIsInheritedFromGroup(t *testing.T) {
 	}
 }
 
+func TestUPSSelectionUsesNumberedChoicesAndKeepsIdentifierCompatibility(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UPS = map[string]UPSConfig{
+		"ups-apc":    {Address: "192.168.1.43:3493", Name: "apc"},
+		"ups-backup": {Address: "192.168.1.44:3493", Name: "backup"},
+	}
+
+	var numberedOutput strings.Builder
+	selected := promptUPSSelection(bufio.NewReader(strings.NewReader("2\n")), &numberedOutput, cfg, "", "UPS de sécurité")
+	if selected != "ups-backup" {
+		t.Fatalf("sélection numérique incorrecte: %q", selected)
+	}
+	for _, expected := range []string{"[1] ups-apc", "[2] ups-backup", "numéro ou identifiant"} {
+		if !strings.Contains(numberedOutput.String(), expected) {
+			t.Fatalf("sélecteur UPS incomplet (%s):\n%s", expected, numberedOutput.String())
+		}
+	}
+
+	var compatibleOutput strings.Builder
+	if selected := promptUPSSelection(bufio.NewReader(strings.NewReader("ups-apc\n")), &compatibleOutput, cfg, "", "UPS"); selected != "ups-apc" {
+		t.Fatalf("identifiant UPS existant non accepté: %q", selected)
+	}
+
+	var defaultOutput strings.Builder
+	if selected := promptUPSSelection(bufio.NewReader(strings.NewReader("\n")), &defaultOutput, cfg, "ups-backup", "UPS"); selected != "ups-backup" {
+		t.Fatalf("choix UPS actuel non conservé avec Entrée: %q", selected)
+	}
+}
+
 func TestDifferentGroupUPSPoliciesForSameMachineAreRejected(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.UPS["ups-main"] = UPSConfig{Address: "127.0.0.1:3493", Name: "ups"}
@@ -891,7 +920,7 @@ func TestNewPowerRestorePolicyDefaultsToAnyObservedOutage(t *testing.T) {
 	var output strings.Builder
 
 	policy := promptPowerRestore(
-		bufio.NewReader(strings.NewReader("o\nups-main\n\n\n\n\n\n\n")),
+		bufio.NewReader(strings.NewReader("o\n1\n\n\n\n\n\n\n")),
 		&output,
 		cfg,
 		group,
@@ -902,7 +931,7 @@ func TestNewPowerRestorePolicyDefaultsToAnyObservedOutage(t *testing.T) {
 	if *policy.LowBattery != 0 || *policy.HighBattery != 70 {
 		t.Fatalf("seuils guidés = %d/%d, attendu 0/70", *policy.LowBattery, *policy.HighBattery)
 	}
-	for _, expected := range []string{"REPRISE AUTOMATIQUE APRÈS COUPURE", "OB, LB ou FSD", "inaccessible", "[1] Toute coupure", "reprendre à 70 %", "recommandé", "Charge de démarrage", "Vérification NUT", "[1] Séquentiel", "[4] Continuer et retenter", "EN PRATIQUE"} {
+	for _, expected := range []string{"REPRISE AUTOMATIQUE APRÈS COUPURE", "OB, LB ou FSD", "inaccessible", "UPS DISPONIBLES", "[1] ups-main", "UPS — numéro ou identifiant", "[1] Toute coupure", "reprendre à 70 %", "recommandé", "Charge de démarrage", "Vérification NUT", "[1] Séquentiel", "[4] Continuer et retenter", "EN PRATIQUE"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("aide du défaut 0/70 absente (%s):\n%s", expected, output.String())
 		}

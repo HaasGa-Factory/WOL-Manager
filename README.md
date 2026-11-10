@@ -10,7 +10,7 @@ Réveillez, vérifiez et orchestrez vos machines sur plusieurs réseaux, avec un
 CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 
 [![Dernière release](https://img.shields.io/github/v/release/HaasGa-Factory/WOL-Manager?display_name=tag&sort=semver&style=for-the-badge&label=stable)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)
-[![Licence MIT](https://img.shields.io/github/license/HaasGa-Factory/WOL-Manager?style=for-the-badge)](LICENSE)
+[![Licence AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue?style=for-the-badge)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/HaasGa-Factory/WOL-Manager?style=for-the-badge)](https://github.com/HaasGa-Factory/WOL-Manager/issues)
 [![Activité dev](https://img.shields.io/github/last-commit/HaasGa-Factory/WOL-Manager/dev?style=for-the-badge&label=dev)](https://github.com/HaasGa-Factory/WOL-Manager/commits/dev)
 
@@ -38,7 +38,8 @@ CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 |---|---|---|
 | Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
 
-WoL Manager `v1.2.3` est un gestionnaire Wake-on-LAN Linux centralisé pour
+La branche `dev` prépare WoL Manager `v1.3.0`. La release GitHub marquée
+**Latest** reste la version stable officielle. WoL Manager est un gestionnaire Wake-on-LAN Linux centralisé pour
 plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
 et sans accès Internet à l'exécution.
 
@@ -46,6 +47,7 @@ et sans accès Internet à l'exécution.
 
 - [Installation stable](#installation-stable)
 - [Fonctions](#fonctions)
+- [Sauvegardes et restauration](#sauvegardes-et-restauration)
 - [Mises à jour et canaux](#mises-à-jour-et-canaux)
 - [Essai sans installation](#essai-sans-installation)
 - [Documentation](#documentation)
@@ -70,6 +72,7 @@ stable proposée par ce lien.
 - distinction explicite entre héritage des contrôles et absence de vérification ;
 - découverte passive et diagnostic actif avec liste blanche, budget, débit, délai et audit ;
 - API `/api/v1` avec jetons hachés, permissions et limitation de débit ;
+- sauvegarde et restauration contrôlées de la configuration, des jetons et de l'état persistant ;
 - client NUT facultatif ;
 - binaire unique, service systemd facultatif.
 
@@ -141,6 +144,38 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health
 La création et la révocation sont prises en compte par l'API dès la requête suivante, sans redémarrer
 le service. `token list` n'affiche jamais les secrets ni leurs hashes.
 
+## Sauvegardes et restauration
+
+La sauvegarde la plus sûre et la plus simple reste le niveau par défaut : la
+configuration validée uniquement.
+
+```sh
+sudo wol backup create
+sudo wol backup list
+sudo wol backup inspect /var/backups/wol-manager/wol-manager-backup-....wolbackup
+sudo wol backup verify /var/backups/wol-manager/wol-manager-backup-....wolbackup
+```
+
+Pour préparer une restauration, commencez toujours par une simulation :
+
+```sh
+sudo wol backup restore SAUVEGARDE.wolbackup --dry-run
+sudo wol backup restore SAUVEGARDE.wolbackup
+```
+
+`--with-tokens` ajoute le magasin de jetons API. `--full` ajoute aussi l'état
+des jobs et cycles. Une restauration ne remet que la configuration par défaut ;
+les autres sections exigent `--sections`. La restauration de l'état exige que
+`wol-manager.service` soit arrêté et place les jobs actifs en
+`revalidation_required`.
+
+Les archives sont stockées par défaut sous `/var/backups/wol-manager`, en mode
+`0600`, hors du répertoire détenu par le service. Elles ne sont ni chiffrées ni
+signées : leurs SHA-256 détectent une corruption, mais ne prouvent pas leur
+origine. Conservez-les sur un support protégé. Consultez le
+[guide sauvegarde et restauration](docs/backups.md) avant un transfert ou une
+restauration complète.
+
 ## Mises à jour et canaux
 
 ```sh
@@ -194,6 +229,7 @@ Pour administrer des fonctions avancées :
 
 - [Référence CLI](docs/cli.md) ;
 - [Mises à jour et rollback](docs/updates.md) ;
+- [Sauvegarde et restauration](docs/backups.md) ;
 - [API REST](docs/api.md) et [contrat OpenAPI](api/openapi.yaml) ;
 - [Réseaux, VLAN et relais](docs/multi-vlan.md) ;
 - [Broadcast WoL et migration de l'ancien unicast](docs/wol-broadcast-and-migration.md) ;
@@ -215,4 +251,11 @@ Pour contribuer : [architecture](docs/architecture.md) et
 - Le mode relais conserve ses identifiants anti-rejeu en mémoire pendant 24 heures ; après redémarrage, une revalidation reste nécessaire côté orchestrateur.
 - Le client NUT implémente les variables standard nécessaires à la politique, pas toute la console `upscli`.
 
-Licence MIT.
+## Licence
+
+WoL Manager est distribué dans son intégralité sous la GNU Affero General
+Public License version 3 uniquement (`AGPL-3.0-only`). Toute redistribution,
+originale ou modifiée, est soumise à cette licence. Lorsqu'une version modifiée
+permet une interaction à distance par un réseau, elle doit offrir gratuitement
+à ces utilisateurs l'accès à son code source correspondant, conformément à
+l'article 13 de l'AGPL v3.

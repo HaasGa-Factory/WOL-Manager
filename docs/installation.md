@@ -164,6 +164,24 @@ sudo wol config nut
 
 Le fichier de jetons est préparé en `0600` pour l'utilisateur système `wol-manager`. Lors d'une installation interactive neuve avec activation immédiate du service, l'installateur crée le premier jeton administrateur avant de démarrer systemd et l'affiche une seule fois dans le terminal.
 
+## Première sauvegarde
+
+Après validation de la configuration, créez une sauvegarde de référence :
+
+```sh
+sudo wol backup create
+sudo wol backup list
+```
+
+La configuration seule est le niveau recommandé par défaut. Les archives
+système sont placées sous `/var/backups/wol-manager`, séparées de l'état détenu
+par le service. Pour conserver aussi les hashes de jetons ou les jobs/cycles,
+utilisez respectivement `--with-tokens` ou `--full`.
+
+Avant toute restauration, utilisez `--dry-run`. Consultez le guide
+[Sauvegarde et restauration](backups.md) pour les restaurations sélectives, la
+sauvegarde de sécurité, l'arrêt du service et les limites de confidentialité.
+
 ### Ajouter une machine
 
 Exemple pour un serveur TrueNAS :

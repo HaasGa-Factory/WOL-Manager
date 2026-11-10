@@ -20,7 +20,7 @@ func printCommandHelp(output io.Writer, args []string) error {
 	key := args[0]
 	if len(args) > 1 && !strings.HasPrefix(args[1], "-") {
 		switch key {
-		case "config", "token", "network", "ups", "automation", "api", "relay", "completion":
+		case "config", "token", "network", "ups", "automation", "api", "relay", "completion", "backup":
 			key += " " + args[1]
 		}
 	}
@@ -84,6 +84,7 @@ func renderRootHelp(output io.Writer, options helpRenderOptions) {
 		{command: "wol relay serve|check", description: "Exécute ou vérifie un relais distant"},
 	}}, options)
 	renderHelpSection(output, helpSection{title: "MAINTENANCE", rows: []helpRow{
+		{command: "wol backup create|list|inspect|verify|restore|prune", description: "Sauvegarde et restaure la configuration de manière contrôlée"},
 		{command: "wol update [--check] [--channel main|dev]", description: "Vérifie ou installe une mise à jour"},
 		{command: "wol completion bash", description: "Génère l'autocomplétion Bash"},
 		{command: "wol version", description: "Affiche la version, le canal ou la révision source"},
@@ -362,6 +363,51 @@ func printChoiceList(output io.Writer, title string, rows []helpRow) {
 }
 
 var commandHelp = map[string]string{
+	"backup": `Usage: sudo wol [--config FILE] backup SOUS-COMMANDE [OPTIONS]
+
+Sous-commandes:
+  create    crée une archive protégée; la configuration seule est le défaut
+  list      liste les sauvegardes du répertoire local
+  inspect   affiche le contenu logique sans révéler les secrets
+  verify    contrôle le format, les sommes et la configuration embarquée
+  restore   prépare ou applique une restauration atomique avec sauvegarde de sécurité
+  prune     conserve les sauvegardes valides les plus récentes
+
+Les archives sont créées avec le mode 0600, par défaut sous /var/backups/wol-manager. Les binaires,
+caches et journaux ne sont jamais inclus. Les archives ne sont ni chiffrées ni signées.`,
+	"backup create": `Usage: sudo wol [--config FILE] backup create [--output CHEMIN] [--with-tokens|--full]
+
+Options:
+  --output CHEMIN   fichier .wolbackup ou répertoire de destination
+  --with-tokens     ajoute le magasin de jetons API
+  --full            ajoute les jetons et l'état persistant des jobs/cycles
+
+Sans option de niveau, seule la configuration validée est sauvegardée. Les fichiers absents sont
+signalés et ne sont jamais remplacés par des données vides.`,
+	"backup list": `Usage: sudo wol [--json] backup list [--dir RÉPERTOIRE]
+
+Liste les archives reconnues sans afficher le YAML, les jetons ni l'état persistant.`,
+	"backup inspect": `Usage: sudo wol [--json] backup inspect FICHIER
+
+Affiche la version du format, la date, la version de WoL Manager, les sections et les empreintes.
+Aucun secret et aucun contenu de configuration ne sont affichés.`,
+	"backup verify": `Usage: sudo wol [--json] backup verify FICHIER
+
+Contrôle les chemins internes, tailles, sommes SHA-256 et formats JSON/YAML. Une vérification réussie
+détecte une corruption accidentelle; une archive non chiffrée ne constitue pas une preuve d'origine.`,
+	"backup restore": `Usage: sudo wol [--config FILE] backup restore FICHIER [--sections config,tokens,state|all] [--dry-run] [--yes]
+
+Options:
+  --sections LISTE   restaure uniquement les sections demandées; config par défaut
+  --dry-run          vérifie et affiche les différences sans écrire
+  --yes              confirme une restauration non interactive
+
+Une sauvegarde de sécurité est créée avant toute écriture. La configuration est validée avant
+remplacement. L'état persistant exige un service arrêté et ses jobs actifs sont suspendus pour revalidation.`,
+	"backup prune": `Usage: sudo wol backup prune [--dir RÉPERTOIRE] [--keep N] [--dry-run] [--yes]
+
+Conserve les N sauvegardes valides les plus récentes (10 par défaut). La dernière sauvegarde valide
+n'est jamais supprimée. Les liens symboliques et fichiers non reconnus sont ignorés.`,
 	"setup": `Usage: sudo wol [--config FILE] setup
 
 Assistant complet pour les réseaux, machines, groupes, délais de vérification et UPS NUT.

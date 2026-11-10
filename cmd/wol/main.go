@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	version        = "1.2.3"
+	version        = "1.3.0"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -85,6 +85,9 @@ func run(args []string) error {
 	}
 	if cmd == "update" {
 		return updateCLI(args)
+	}
+	if cmd == "backup" {
+		return backupCLI(*configPath, args, *jsonOut)
 	}
 	if cmd == "completion" {
 		if len(args) != 1 || args[0] != "bash" {
@@ -235,7 +238,7 @@ _wol() {
         esac
     done
     if [[ -z "$cmd" ]]; then
-		COMPREPLY=( $(compgen -W "setup update list status wake config token network ups jobs automation menu api relay version completion --config --json --no-color" -- "$cur") )
+		COMPREPLY=( $(compgen -W "setup update backup list status wake config token network ups jobs automation menu api relay version completion --config --json --no-color" -- "$cur") )
         return
     fi
     case "$cmd" in
@@ -245,6 +248,7 @@ _wol() {
             else
 				COMPREPLY=( $(compgen -W "--check --channel --help -h" -- "$cur") )
             fi ;;
+		backup) COMPREPLY=( $(compgen -W "create list inspect verify restore prune --output --with-tokens --full --sections --dry-run --yes --dir --keep --help -h" -- "$cur") ) ;;
 		config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h" -- "$cur") $(compgen -W "discovery" -- "$cur") ) ;;
 		wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h" -- "$cur") ) ;;
 		network) COMPREPLY=( $(compgen -W "test discover --help -h" -- "$cur") ) ;;

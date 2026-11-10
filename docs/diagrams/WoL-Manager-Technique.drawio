@@ -909,11 +909,14 @@
         <mxCell id="t12-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="t12-refs" value="RÉFÉRENCES CODE — cmd/wol/config.go; jobs.go; audit.go; token_file_linux.go; config_file_linux.go; install.sh; packaging/systemd/wol-manager.service — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="t12-refs" value="RÉFÉRENCES CODE — cmd/wol/config.go; jobs.go; audit.go; backup.go; backup_file_linux.go; token_file_linux.go; config_file_linux.go; install.sh; packaging/systemd/wol-manager.service — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
         </mxCell>
         <mxCell id="t12-process" value="Processus wol-manager&amp;#xa;NoNewPrivileges + FS strict" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="60" y="330" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t12-admin" value="CLI administrative root&amp;#xa;création / restauration" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="500" width="260" height="80" as="geometry" />
         </mxCell>
         <mxCell id="t12-cfg" value="/etc/wol-manager/wol.yaml&amp;#xa;0640 root:wol-manager" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="400" y="150" width="290" height="90" as="geometry" />
@@ -927,13 +930,13 @@
         <mxCell id="t12-audit" value="/var/log/wol-manager/audit.jsonl&amp;#xa;0640" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="400" y="450" width="290" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t12-backups" value="/var/lib/wol-manager/backups/&amp;#xa;0750" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
+        <mxCell id="t12-backups" value="/var/backups/wol-manager/&amp;#xa;0700 root:root — archives 0600" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="750" y="450" width="290" height="90" as="geometry" />
         </mxCell>
         <mxCell id="t12-release" value="/etc/wol-manager/release.conf&amp;#xa;027 umask" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="1100" y="450" width="290" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t12-protections" value="Secrets jamais dans l&amp;#x27;audit; tokens hachés; pas de destination réseau libre; symlinks refusés; écritures temporaires/rename" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="t12-protections" value="Secrets jamais dans l&amp;#x27;audit; tokens hachés; pas de destination réseau libre; symlinks refusés; écritures temporaires/rename; sauvegardes hors de l&amp;#x27;arbre du service" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="500" y="650" width="850" height="90" as="geometry" />
         </mxCell>
         <mxCell id="t12-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-cfg">
@@ -948,7 +951,7 @@
         <mxCell id="t12-e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-audit">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="t12-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-backups">
+        <mxCell id="t12-e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-admin" target="t12-backups">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="t12-e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t12-process" target="t12-release">

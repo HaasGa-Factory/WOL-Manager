@@ -73,7 +73,7 @@ AUTH=(-H "Authorization: Bearer $WOL_TOKEN")
 
 - Permission : `read`.
 - Paramètres/corps : aucun.
-- Réponse `200` représentative : `{"status":"ok","version":"1.2.3"}`.
+- Réponse `200` représentative : `{"status":"ok","version":"1.3.0"}`.
 
 ```sh
 curl --fail-with-body "${AUTH[@]}" "$WOL_API/health"

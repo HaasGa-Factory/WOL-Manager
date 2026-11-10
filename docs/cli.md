@@ -9,6 +9,12 @@ Syntaxe générale : `wol [--config FILE] [--json] [--no-color] COMMANDE`.
 | `sudo wol update` | met à jour depuis les binaires signés de `main` |
 | `wol update --check --channel dev` | vérifie temporairement le canal `dev` |
 | `sudo wol update --channel dev` | installe temporairement le canal `dev` |
+| `sudo wol backup create` | sauvegarde la configuration validée (niveau recommandé par défaut) |
+| `sudo wol backup list` | liste les sauvegardes valides sans révéler leur contenu |
+| `sudo wol backup inspect FICHIER` | affiche les métadonnées et l'inventaire logique |
+| `sudo wol backup verify FICHIER` | contrôle le format, les limites et les SHA-256 |
+| `sudo wol backup restore FICHIER` | restaure la configuration après confirmation et sauvegarde de sécurité |
+| `sudo wol backup prune` | nettoie les anciennes sauvegardes sans supprimer la dernière valide |
 | `wol version` | affiche la version installée |
 | `wol list` | liste les serveurs |
 | `wol status ID` | exécute les vérifications configurées |
@@ -54,6 +60,7 @@ wol config group --help
 wol network discover --help
 wol automation status --help
 wol relay serve --help
+wol backup restore --help
 ```
 
 Dans `wol setup`, `wol config network|machine|group|nut|discovery` et `wol menu`, saisir `?` affiche
@@ -69,6 +76,10 @@ configuration, des jetons et du service restent des opérations administratives 
 | Commande | Options |
 |---|---|
 | `wol update` | `--check`, `--channel main|dev` |
+| `wol backup create` | `--output CHEMIN`, `--with-tokens`, `--full` |
+| `wol backup list` | `--dir RÉPERTOIRE` |
+| `wol backup restore` | `--sections config,tokens,state|all`, `--dry-run`, `--yes` |
+| `wol backup prune` | `--dir RÉPERTOIRE`, `--keep N`, `--dry-run`, `--yes` |
 | `wol wake` | `--dry-run`, `--verification-delay DURÉE`, `--group ID`, `--all` |
 | `wol token create` | `--id ID`, `--permissions read,wake,admin` |
 | `wol network discover` | `--active`, `--allow-active-scan`, `--dry-run` |
@@ -117,14 +128,27 @@ L'installateur place automatiquement l'autocomplétion Bash au bon emplacement. 
 
 `wol --help` affiche l'aide générale sans charger la configuration. Chaque commande et sous-commande documentée ci-dessus possède également une aide contextuelle.
 
+## Sauvegardes
+
+Le niveau par défaut de `wol backup create` contient uniquement la
+configuration. `--with-tokens` ajoute le magasin de hashes des jetons et
+`--full` ajoute aussi les jobs et cycles. Une restauration remet uniquement la
+configuration tant que `--sections` n'est pas explicitement fourni.
+
+La restauration du state est refusée pendant que `wol-manager.service` est
+actif. Les jobs `queued` ou `running` restaurés deviennent
+`revalidation_required`. Consultez le [guide dédié](backups.md) pour le
+workflow complet et les limites de sécurité.
+
 ## Index des aides vérifiées
 
-Les 35 aides ci-dessous sont définies dans `cmd/wol/help.go` et ont été
-exécutées avec un code de retour nul pendant cette revue :
+Les 42 aides ci-dessous sont définies dans `cmd/wol/help.go` et sont couvertes
+par les tests automatisés :
 
 | Famille | Aides disponibles |
 |---|---|
 | Général | `setup`, `update`, `completion`, `completion bash`, `list`, `status`, `wake`, `version` |
+| Sauvegarde | `backup`, `backup create`, `backup list`, `backup inspect`, `backup verify`, `backup restore`, `backup prune` |
 | Configuration | `config`, `config check`, `config edit`, `config network`, `config machine`, `config group`, `config nut`, `config discovery` |
 | Jetons | `token`, `token create`, `token list`, `token revoke` |
 | Réseau et UPS | `network`, `network test`, `network discover`, `ups`, `ups status`, `ups test` |

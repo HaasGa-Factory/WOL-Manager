@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.0 - en préparation
+
+### Ajouté
+
+- commande `wol backup` avec création, liste, inspection, vérification, restauration sélective et nettoyage ;
+- sauvegarde de la configuration seule par défaut, avec inclusion explicite des jetons ou de l'état persistant ;
+- restauration simulable avec `--dry-run`, sauvegarde de sécurité préalable et remplacement atomique ;
+- restauration des jobs actifs dans l'état prudent `revalidation_required` et refus du state tant que le service est actif ;
+- format `.wolbackup` borné et contrôlé par SHA-256, protégé en `0600`, sans binaires, caches ni journaux.
+
+### Sécurité
+
+- stockage système des sauvegardes sous `/var/backups/wol-manager`, hors du répertoire d'état détenu par le service ;
+- refus des liens symboliques, chemins traversants, entrées dupliquées, archives trop volumineuses et cibles système hors périmètre ;
+- conservation d'au moins une sauvegarde valide lors du nettoyage.
+
 ## 1.2.3 - 2026-11-05
 
 - compatibilité de mise à jour avec l'agencement `1.2.1` qui ne contient pas encore la ressource Logrotate dans le répertoire de l'installateur ;

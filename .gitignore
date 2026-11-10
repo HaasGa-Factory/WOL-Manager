@@ -14,5 +14,6 @@ dist/.build.*/
 wol-test-*/
 *.log
 *.tmp
+*.wolbackup
 coverage.out
 inventaire-aides-wol-manager.md
