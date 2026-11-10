@@ -10,7 +10,7 @@ Réveillez, vérifiez et orchestrez vos machines sur plusieurs réseaux, avec un
 CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 
 [![Dernière release](https://img.shields.io/github/v/release/HaasGa-Factory/WOL-Manager?display_name=tag&sort=semver&style=for-the-badge&label=stable)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)
-[![Licence MIT](https://img.shields.io/github/license/HaasGa-Factory/WOL-Manager?style=for-the-badge)](LICENSE)
+[![Licence AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue?style=for-the-badge)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/HaasGa-Factory/WOL-Manager?style=for-the-badge)](https://github.com/HaasGa-Factory/WOL-Manager/issues)
 [![Activité dev](https://img.shields.io/github/last-commit/HaasGa-Factory/WOL-Manager/dev?style=for-the-badge&label=dev)](https://github.com/HaasGa-Factory/WOL-Manager/commits/dev)
 
@@ -216,4 +216,11 @@ Pour contribuer : [architecture](docs/architecture.md) et
 - Le mode relais conserve ses identifiants anti-rejeu en mémoire pendant 24 heures ; après redémarrage, une revalidation reste nécessaire côté orchestrateur.
 - Le client NUT implémente les variables standard nécessaires à la politique, pas toute la console `upscli`.
 
-Licence MIT.
+## Licence
+
+WoL Manager est distribué dans son intégralité sous la GNU Affero General
+Public License version 3 uniquement (`AGPL-3.0-only`). Toute redistribution,
+originale ou modifiée, est soumise à cette licence. Lorsqu'une version modifiée
+permet une interaction à distance par un réseau, elle doit offrir gratuitement
+à ces utilisateurs l'accès à son code source correspondant, conformément à
+l'article 13 de l'AGPL v3.
