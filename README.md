@@ -21,6 +21,7 @@ CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 [![Télécharger la version stable](https://img.shields.io/badge/Télécharger-la%20version%20stable-2ea44f?style=for-the-badge&logo=github)](https://github.com/HaasGa-Factory/WOL-Manager/releases/latest)
 [![Premiers pas](https://img.shields.io/badge/Guide-Premiers%20pas-2563eb?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/premiers-pas.md)
 [![Documentation](https://img.shields.io/badge/Documentation-Complète-6b7280?style=for-the-badge&logo=markdown&logoColor=white)](#documentation)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/T8J42AEDRE)
 
 <br>
 
