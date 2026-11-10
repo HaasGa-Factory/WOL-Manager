@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-APP_VERSION="1.2.3"
+APP_VERSION="1.3.0"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -429,12 +429,15 @@ show_comparison() {
   current_channel=$(installed_channel)
   info "Version installée : $current"
   info "Révision installée: $current_revision"
+  info "Canal installé    : $current_channel"
   info "Version disponible: $CANDIDATE_VERSION"
   info "Révision source   : $CANDIDATE_REVISION"
   info "Canal             : $CHANNEL"
   info "Architecture      : linux/$ARCH"
   [ "$CHANNEL" != dev ] || warn "CANAL DEV/BETA: cette version peut être instable; le canal par défaut reste main"
-  if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
+  if [ "$current" = "$CANDIDATE_VERSION" ] &&
+     [ "$current_revision" = "$CANDIDATE_REVISION" ] &&
+     [ "$current_channel" = "$CHANNEL" ]; then
     UPDATE_NEEDED=0
     success "WoL Manager est à jour"
   elif [ "$current" != absente ] && [ "$current" != inconnue ] && version_lt "$CANDIDATE_VERSION" "$current"; then
@@ -451,7 +454,9 @@ show_comparison() {
     fi
   else
     UPDATE_NEEDED=1
-    if [ "$current" = "$CANDIDATE_VERSION" ]; then
+    if [ "$current" = "$CANDIDATE_VERSION" ] && [ "$current_revision" = "$CANDIDATE_REVISION" ]; then
+      info "Mise à jour disponible: passage du canal $current_channel vers $CHANNEL"
+    elif [ "$current" = "$CANDIDATE_VERSION" ]; then
       info "Mise à jour disponible: même version, révision source différente (elle n'est pas présentée comme une version supérieure)"
     else
       info "Mise à jour disponible"
