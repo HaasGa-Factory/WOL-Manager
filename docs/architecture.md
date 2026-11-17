@@ -8,9 +8,16 @@ WoL Manager utilise donc Go. La seule dépendance applicative directe est `gopkg
 
 ## Flux
 
-La CLI, le menu, l'API et les automatisations appellent le même moteur. Celui-ci résout les dépendances, revalide la politique UPS, sélectionne un transport autorisé, envoie le paquet puis exécute les vérifications configurées.
+La CLI, le menu, le daemon et l'API utilisent le même moteur. Celui-ci résout
+les dépendances, revalide la politique UPS, sélectionne un transport autorisé,
+envoie le paquet puis exécute les vérifications configurées.
 
-Les tâches et cycles électriques observés sont enregistrés dans un fichier JSON remplacé atomiquement. Une tâche qui était active au redémarrage devient `revalidation_required`; un état enregistré ne déclenche jamais seul un paquet WoL.
+`wol daemon` est l'unique propriétaire actif des tâches et des cycles. Il les
+enregistre dans un fichier JSON remplacé atomiquement et expose une interface
+locale Unix protégée à l'API. L'API ne réécrit jamais directement cet état et
+ne lance aucun second moniteur NUT. Une tâche qui était active au redémarrage
+devient `revalidation_required`; un état enregistré ne déclenche jamais seul
+un paquet WoL.
 
 ## Paquets
 
@@ -31,9 +38,10 @@ Une nouvelle coupure bloque l'UPS concerné et annule les tâches automatiques a
 Le **fichier YAML** décrit les machines, réseaux, groupes, dépendances,
 transports et politiques UPS. La **CLI** et le **menu** permettent de gérer et
 d'utiliser cette configuration. Le **moteur WoL** prépare les plans, applique
-les autorisations et contrôle les résultats. L'**API REST** déclenche des
-tâches asynchrones authentifiées. Le **processus permanent** assure également
-la surveillance NUT et la reprise après coupure.
+les autorisations et contrôle les résultats. Le **daemon** possède les jobs,
+l'état persistant et la surveillance NUT. L'**API REST** authentifie les
+requêtes et délègue les opérations asynchrones au daemon par le socket local ;
+elle peut être arrêtée sans interrompre les automatismes.
 
 Un relais distant est une instance du même programme exposée avec mTLS. Il ne
 reçoit pas d'adresse libre à réveiller : il résout un identifiant déjà déclaré.

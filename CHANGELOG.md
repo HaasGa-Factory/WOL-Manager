@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.0 - en préparation
+
+### Ajouté
+
+- commande permanente `wol daemon` dédiée aux jobs, à la surveillance NUT et à la reprise après coupure, sans serveur HTTP ;
+- unités indépendantes `wol-manager.service` pour le daemon et `wol-manager-api.service` pour l'API REST ;
+- quatre modes d'installation : CLI seule, daemon, API, ou daemon et API ;
+- diagnostic de l'activité réelle du daemon et de chaque communication NUT dans `wol automation status` et `GET /api/v1/automations` ;
+- reconfiguration des composants systemd sans réinstallation avec `install.sh --configure-services --service ...`.
+
+### Modifié
+
+- l'API délègue les jobs et automatisations au daemon local au lieu de posséder un second moteur ;
+- une API démarrée sans daemon conserve les lectures sans état, mais refuse explicitement les opérations asynchrones avec `503 daemon_unavailable` ;
+- l'installateur migre l'ancienne unité combinée vers les deux unités séparées en préservant configuration, jetons, jobs et cycles ;
+- un mode de compatibilité temporaire maintient la surveillance NUT lorsqu'un ancien installateur a déjà remplacé le binaire sans encore migrer l'unité systemd.
+
 ## 1.3.0 - en préparation
 
 ### Ajouté

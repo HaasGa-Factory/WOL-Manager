@@ -22,6 +22,16 @@ type PowerCycle struct {
 	CompletedGroups map[string]bool `json:"completed_groups,omitempty"`
 }
 
+type NUTMonitorStatus struct {
+	UPS          string    `json:"ups"`
+	Operational  bool      `json:"operational"`
+	State        string    `json:"state"`
+	Error        string    `json:"error,omitempty"`
+	LastPoll     time.Time `json:"last_poll"`
+	Battery      float64   `json:"battery_percent,omitempty"`
+	BatteryKnown bool      `json:"battery_known"`
+}
+
 type restorePlan struct {
 	ID            string        `json:"id"`
 	Group         string        `json:"group"`
@@ -91,12 +101,13 @@ type AutomationManager struct {
 	now      func() time.Time
 	mu       sync.Mutex
 	nextPoll map[string]time.Time
+	monitors map[string]NUTMonitorStatus
 }
 
 func newAutomationManager(c *Config, jobs *JobStore, engine *Engine) *AutomationManager {
 	gate := newPowerGate()
 	engine.gate = gate
-	manager := &AutomationManager{cfg: c, jobs: jobs, engine: engine, gate: gate, status: nutStatus, now: time.Now, nextPoll: map[string]time.Time{}}
+	manager := &AutomationManager{cfg: c, jobs: jobs, engine: engine, gate: gate, status: nutStatus, now: time.Now, nextPoll: map[string]time.Time{}, monitors: map[string]NUTMonitorStatus{}}
 	for _, cycle := range jobs.listCycles() {
 		if cycle.State != "completed" && cycle.State != "failed" {
 			cycle.State = "waiting"
@@ -176,8 +187,35 @@ func (m *AutomationManager) poll(ctx context.Context) {
 			continue
 		}
 		m.nextPoll[ups] = now.Add(interval)
-		m.handleStatus(ups, m.status(ctx, ups, m.cfg.UPS[ups]), now)
+		status := m.status(ctx, ups, m.cfg.UPS[ups])
+		m.recordMonitorStatus(ups, status, now)
+		m.handleStatus(ups, status, now)
 	}
+}
+
+func (m *AutomationManager) recordMonitorStatus(ups string, status UPSStatus, now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.monitors[ups] = NUTMonitorStatus{
+		UPS:          ups,
+		Operational:  status.Error == "" && status.State != "" && status.State != "unknown",
+		State:        status.State,
+		Error:        status.Error,
+		LastPoll:     now,
+		Battery:      status.Battery,
+		BatteryKnown: status.BatteryKnown,
+	}
+}
+
+func (m *AutomationManager) monitorStatuses() []NUTMonitorStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]NUTMonitorStatus, 0, len(m.monitors))
+	for _, status := range m.monitors {
+		result = append(result, status)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].UPS < result[j].UPS })
+	return result
 }
 
 func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.Time) {

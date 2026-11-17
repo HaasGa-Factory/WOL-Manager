@@ -66,10 +66,27 @@ Pour diagnostiquer la reprise NUT sans modifier l'UPS :
 
 ```sh
 wol ups test
-wol automation status
+sudo wol automation status
 ```
 
 Le premier affiche les états et mesures réellement lisibles. Le second indique le cycle enregistré, les groupes armés/terminés, la stabilité secteur, les tâches et la raison d'une attente. Une batterie inconnue, un état `OB`, `LB`, `FSD` ou `unknown` doit rester visible comme blocage ; ce n'est pas une valeur zéro implicite.
+
+Le bloc `daemon` doit annoncer `active: true` pour prouver que la surveillance
+est exécutée. `monitoring: true` indique qu'au moins une politique est suivie.
+Chaque entrée `monitors` expose la dernière lecture NUT et son éventuelle
+erreur. Une liste de politiques non vide avec `daemon.active: false` signifie
+que l'automatisation est configurée mais non surveillée.
+
+```sh
+systemctl status wol-manager.service
+journalctl -u wol-manager.service -n 100 --no-pager
+systemctl status wol-manager-api.service
+journalctl -u wol-manager-api.service -n 100 --no-pager
+```
+
+L'API arrêtée n'interrompt pas le daemon. Inversement, une API active sans
+daemon répond aux lectures simples, mais refuse les créations et annulations
+de jobs avec `503 daemon_unavailable`.
 
 ## Diagnostic guidé : une machine ne se réveille pas
 

@@ -80,7 +80,8 @@ func renderRootHelp(output io.Writer, options helpRenderOptions) {
 		{command: "wol ups status|test", description: "Consulte ou diagnostique les UPS NUT en lecture seule"},
 		{command: "wol jobs", description: "Liste les tâches persistées"},
 		{command: "wol automation status", description: "Affiche l'état des reprises NUT"},
-		{command: "wol api serve", description: "Démarre l'API et les automatismes"},
+		{command: "wol daemon", description: "Exécute les automatismes NUT sans API"},
+		{command: "wol api serve", description: "Démarre uniquement l'API REST"},
 		{command: "wol relay serve|check", description: "Exécute ou vérifie un relais distant"},
 	}}, options)
 	renderHelpSection(output, helpSection{title: "MAINTENANCE", rows: []helpRow{
@@ -571,8 +572,13 @@ Consulte en lecture seule les cycles NUT, politiques de reprise et tâches persi
 	"automation status": `Usage: wol automation status
 
 Affiche en JSON les cycles de coupure observés, groupes terminés, progression, raisons d'attente,
-politiques et jobs. La surveillance et la reprise automatiques fonctionnent dans le processus
-permanent "wol api serve", normalement lancé par systemd.`,
+politiques et jobs. Le champ daemon distingue une politique configurée d'un moniteur réellement actif,
+normalement lancé par wol-manager.service.`,
+	"daemon": `Usage: wol [--config FILE] daemon
+
+Démarre le propriétaire unique des jobs persistants et le moniteur de reprise NUT, sans démarrer
+ni exposer l’API REST. Le processus s'arrête proprement sur SIGTERM ou SIGINT. Il est normalement
+lancé par wol-manager.service.`,
 	"menu": `Usage: sudo wol [--config FILE] menu
 
 Menu interactif de consultation, validation, configuration, simulation et réveil confirmé.
@@ -580,14 +586,15 @@ La sortie humaine utilise des libellés français et des durées lisibles; --jso
 structurés. La gestion détaillée ouvre le même assistant que "wol setup". Saisissez ? pour l'aide contextuelle.`,
 	"api": `Usage: wol api serve
 
-Démarre l'API authentifiée et le moteur permanent de surveillance/reprise NUT.
+Démarre l'API authentifiée. Le daemon indépendant doit être actif pour créer et gérer les jobs.
 URL locale par défaut: http://127.0.0.1:8080/api/v1. Santé: /api/v1/health.
 Exemple: TOKEN='secret-affiché-une-fois'; curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/health`,
 	"api serve": `Usage: wol api serve
 
-Démarre l'API REST, le stockage des jobs et le moniteur de reprise électrique. Une écoute non
+Démarre uniquement l'API REST et transmet les opérations de jobs au daemon local. Une écoute non
 loopback exige TLS. Toutes les routes, y compris /api/v1/health, exigent « Authorization: Bearer <jeton> ».
-La spécification est api/openapi.yaml. Arrêtez au premier plan avec Ctrl+C ou le service avec systemctl.`,
+La spécification est api/openapi.yaml. Arrêtez au premier plan avec Ctrl+C ou avec
+"systemctl stop wol-manager-api".`,
 	"relay": `Usage: wol relay serve --id ID --cert FILE --key FILE --client-ca FILE [--listen ADRESSE]
        wol relay check ID
 

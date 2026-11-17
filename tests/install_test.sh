@@ -58,6 +58,7 @@ EOF
 cat >"$MOCK_BIN/systemctl" <<'EOF'
 #!/bin/sh
 state=${SYSTEMD_STATE:?}
+printf '%s\n' "$*" >>"$state/calls"
 case "${1:-}" in
   is-active) test -f "$state/active" ;;
   is-enabled) test -f "$state/enabled" ;;
@@ -67,7 +68,11 @@ case "${1:-}" in
     : >"$state/enabled"
     case " $* " in
       *' --now '*)
-        grep -Fq '"id":"admin"' "${WOL_ROOT:?}/etc/wol-manager/secrets/tokens.json" || exit 42
+        case " $* " in
+          *' wol-manager-api.service '*)
+            grep -Fq '"id":"admin"' "${WOL_ROOT:?}/etc/wol-manager/secrets/tokens.json" || exit 42
+            ;;
+        esac
         : >"$state/active"
         ;;
     esac
@@ -216,6 +221,7 @@ prepare_payload() {
   cp "$REPO/install.sh" "$payload/install.sh"
   cp "$REPO/configs/wol.example.yaml" "$payload/configs/wol.example.yaml"
   cp "$REPO/packaging/systemd/wol-manager.service" "$payload/packaging/systemd/wol-manager.service"
+  cp "$REPO/packaging/systemd/wol-manager-api.service" "$payload/packaging/systemd/wol-manager-api.service"
   cp "$REPO/packaging/logrotate/wol-manager" "$payload/packaging/logrotate/wol-manager"
   cp "$PUBLIC_KEY" "$payload/packaging/release-public.pem"
   make_distribution "$payload/dist" "$version" "$revision" "$channel"
@@ -246,10 +252,14 @@ PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.3.0"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.0"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
+assert_contains "$WORK/install-help.log" "--service daemon"
+assert_contains "$WORK/install-help.log" "--service api"
+assert_contains "$WORK/install-help.log" "--service both"
+assert_contains "$WORK/install-help.log" "--configure-services"
 assert_contains "$WORK/install-help.log" "main  version stable"
 assert_contains "$WORK/install-help.log" "dev   version de développement/BETA"
 assert_contains "$WORK/install-help.log" "paquet local signé"
@@ -299,7 +309,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.3.0"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.4.0"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"
@@ -746,6 +756,49 @@ EXISTING_LOG=$(find "$ROOT_ENABLE_EXISTING/var/log/wol-manager-installer" -type 
 assert_file "$EXISTING_LOG"
 assert_not_contains "$EXISTING_LOG" 'test-only'
 
+echo "[complément] choix 3: daemon et API séparés"
+ROOT_BOTH="$WORK/root-both"
+prepare_root "$ROOT_BOTH" 13
+WOL_TEST_SYSTEMD=1 run_installer "$PAYLOAD" "$ROOT_BOTH" amd64 --non-interactive --yes --service both --setup
+assert_file "$ROOT_BOTH/etc/systemd/system/wol-manager.service"
+assert_file "$ROOT_BOTH/etc/systemd/system/wol-manager-api.service"
+assert_contains "$ROOT_BOTH/etc/systemd/system/wol-manager.service" " daemon"
+assert_contains "$ROOT_BOTH/etc/systemd/system/wol-manager-api.service" " api serve"
+assert_contains "$ROOT_BOTH/systemd-state/calls" "enable --now wol-manager.service wol-manager-api.service"
+tr -d '\r' <"$REPO/packaging/systemd/wol-manager.service" >"$WORK/expected-daemon.service"
+tr -d '\r' <"$REPO/packaging/systemd/wol-manager-api.service" >"$WORK/expected-api.service"
+cmp -s "$WORK/expected-daemon.service" "$ROOT_BOTH/etc/systemd/system/wol-manager.service" || fail "l'unité daemon embarquée diverge de packaging/systemd"
+cmp -s "$WORK/expected-api.service" "$ROOT_BOTH/etc/systemd/system/wol-manager-api.service" || fail "l'unité API embarquée diverge de packaging/systemd"
+
+echo "[complément] daemon seul sans jeton API"
+ROOT_DAEMON="$WORK/root-daemon"
+prepare_root "$ROOT_DAEMON" 13
+WOL_TEST_SYSTEMD=1 run_installer "$PAYLOAD" "$ROOT_DAEMON" amd64 --non-interactive --yes --service daemon --setup
+assert_file "$ROOT_DAEMON/etc/systemd/system/wol-manager.service"
+[[ ! -e "$ROOT_DAEMON/etc/systemd/system/wol-manager-api.service" ]] || fail "l'unité API a été installée en mode daemon"
+assert_not_contains "$ROOT_DAEMON/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
+assert_contains "$ROOT_DAEMON/systemd-state/calls" "enable --now wol-manager.service"
+
+echo "[complément] API seule avec jeton, sans daemon"
+ROOT_API="$WORK/root-api"
+prepare_root "$ROOT_API" 13
+WOL_TEST_SYSTEMD=1 run_installer "$PAYLOAD" "$ROOT_API" amd64 --non-interactive --yes --service api --setup
+assert_file "$ROOT_API/etc/systemd/system/wol-manager-api.service"
+[[ ! -e "$ROOT_API/etc/systemd/system/wol-manager.service" ]] || fail "l'unité daemon a été installée en mode API"
+assert_contains "$ROOT_API/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
+assert_contains "$ROOT_API/systemd-state/calls" "enable --now wol-manager-api.service"
+
+echo "[complément] migration sans réinstallation vers le choix 3"
+rm -f "$ROOT_DAEMON/usr/local/lib/wol-manager/packaging/systemd/wol-manager.service" \
+  "$ROOT_DAEMON/usr/local/lib/wol-manager/packaging/systemd/wol-manager-api.service"
+SYSTEMD_STATE="$ROOT_DAEMON/systemd-state" WOL_ROOT="$ROOT_DAEMON" WOL_OS_RELEASE="$ROOT_DAEMON/os-release" \
+  WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_SYSTEMD=1 WOL_TEST_UNAME=Linux PATH="$MOCK_BIN:$PATH" \
+  "$ROOT_DAEMON/usr/local/lib/wol-manager/install.sh" --configure-services --service both --yes --non-interactive
+assert_file "$ROOT_DAEMON/etc/systemd/system/wol-manager.service"
+assert_file "$ROOT_DAEMON/etc/systemd/system/wol-manager-api.service"
+assert_contains "$ROOT_DAEMON/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
+assert_contains "$ROOT_DAEMON/systemd-state/calls" "enable --now wol-manager.service wol-manager-api.service"
+
 echo "[complément] ancienne collision de complétion détectée sans modification"
 ROOT_LEGACY="$WORK/root-legacy"
 prepare_root "$ROOT_LEGACY" 12
@@ -795,12 +848,15 @@ ROOT_PROMPT="$WORK/root-prompt"
 prepare_root "$ROOT_PROMPT" 13
 PROMPT_COMMAND="env APT_LOG='$WORK/apt.log' GO_LOG='$WORK/go.log' SYSTEMD_STATE='$ROOT_PROMPT/systemd-state' WOL_ROOT='$ROOT_PROMPT' WOL_OS_RELEASE='$ROOT_PROMPT/os-release' WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux PATH='$MOCK_BIN:$PATH' '$PAYLOAD/install.sh'"
 printf 'invalide\n?\n3\nautre\n?\nn\n' | script -qec "$PROMPT_COMMAND" /dev/null >"$WORK/prompt-help.log"
-assert_contains "$WORK/prompt-help.log" "Aide: 1 installe et démarre le service"
+assert_contains "$WORK/prompt-help.log" "Aide: 1 active uniquement le daemon NUT"
 assert_contains "$WORK/prompt-help.log" "Aide: wol setup crée ou modifie la configuration guidée"
 assert_contains "$WORK/prompt-help.log" "Choix invalide: saisissez 1, 2, 3"
 assert_contains "$WORK/prompt-help.log" "Réponse invalide: saisissez y/o, n"
-[[ $(grep -Fc "Service systemd:" "$WORK/prompt-help.log") -ge 2 ]] || fail "la question systemd n'a pas été reposée après ?"
+[[ $(grep -Fc "Services systemd:" "$WORK/prompt-help.log") -ge 2 ]] || fail "la question systemd n'a pas été reposée après ?"
 [[ $(grep -Fc "Lancer wol setup maintenant ?" "$WORK/prompt-help.log") -ge 2 ]] || fail "la question setup n'a pas été reposée après ?"
+assert_file "$ROOT_PROMPT/etc/systemd/system/wol-manager.service"
+assert_file "$ROOT_PROMPT/etc/systemd/system/wol-manager-api.service"
+[[ ! -e "$ROOT_PROMPT/systemd-state/active" ]] || fail "le choix 3 a démarré les services sans configuration"
 
 COLOR_TMP="$WORK/color-tmp"
 mkdir -p "$COLOR_TMP"

@@ -147,9 +147,11 @@ groups:
 
 Le seuil bas réarme un groupe pendant le cycle observé ; le seuil haut autorise ensuite son démarrage. La batterie doit être connue et le secteur `OL` stable. Les politiques d'échec sont `stop`, `continue`, `retry` et `continue_retry`. Les dépendances obligatoires restent prioritaires dans tous les modes.
 
-La surveillance est exécutée par le processus permanent `wol api serve`, normalement lancé par
-systemd. `wol automation status` consulte les cycles et raisons d'attente persistés mais ne démarre
-pas la surveillance.
+La surveillance est exécutée par le processus permanent `wol daemon`,
+normalement lancé par `wol-manager.service`. Elle continue lorsque l'API REST
+est arrêtée. `wol automation status` distingue la politique configurée, le
+daemon actif et la communication NUT réellement opérationnelle ; il ne
+démarre pas la surveillance.
 
 Les secrets ne figurent pas dans le YAML partagé : les jetons sont dans `api.tokens_file`, les identifiants NUT et clés TLS sont référencés par chemin. Utiliser des fichiers `0600`, détenus par l'utilisateur du service.
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: WoL Manager API
-  version: 1.3.0
+  version: 1.4.0
   description: Les émissions WoL sont toujours résolues depuis la configuration du serveur.
 servers:
   - url: https://127.0.0.1:8080/api/v1
@@ -39,21 +39,21 @@ paths:
         '202': {$ref: '#/components/responses/JobAccepted'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
-        '503': {$ref: '#/components/responses/AuditUnavailable'}
+        '503': {$ref: '#/components/responses/ActionUnavailable'}
   /groups/{id}/wake:
     parameters: [{$ref: '#/components/parameters/Id'}]
     post:
       summary: Crée une tâche de réveil de groupe
       responses:
         '202': {$ref: '#/components/responses/JobAccepted'}
-        '503': {$ref: '#/components/responses/AuditUnavailable'}
+        '503': {$ref: '#/components/responses/ActionUnavailable'}
         '404': {$ref: '#/components/responses/NotFound'}
   /wake-all:
     post:
       summary: Réveille tous les serveurs actifs
       responses:
         '202': {$ref: '#/components/responses/JobAccepted'}
-        '503': {$ref: '#/components/responses/AuditUnavailable'}
+        '503': {$ref: '#/components/responses/ActionUnavailable'}
   /ups:
     get:
       summary: États NUT
@@ -63,7 +63,7 @@ paths:
     get:
       summary: État, progression et raisons d'attente des reprises NUT
       responses:
-        '200': {description: Cycles, politiques et tâches, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '200': {description: Daemon, moniteurs NUT, cycles, politiques et tâches, content: {application/json: {schema: {$ref: '#/components/schemas/AutomationRuntimeStatus'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /jobs/{id}:
     parameters: [{$ref: '#/components/parameters/Id'}]
@@ -72,6 +72,7 @@ paths:
       responses:
         '200': {description: Tâche, content: {application/json: {schema: {$ref: '#/components/schemas/Job'}}}}
         '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DaemonUnavailable'}
   /jobs/{id}/cancel:
     parameters: [{$ref: '#/components/parameters/Id'}]
     post:
@@ -79,6 +80,7 @@ paths:
       responses:
         '202': {description: Annulation demandée}
         '409': {description: Tâche non annulable}
+        '503': {$ref: '#/components/responses/DaemonUnavailable'}
   /networks:
     get:
       summary: Réseaux configurés
@@ -106,6 +108,7 @@ paths:
       responses:
         '202': {$ref: '#/components/responses/JobAccepted'}
         '403': {description: Découverte active non autorisée}
+        '503': {$ref: '#/components/responses/ActionUnavailable'}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: opaque-256-bit}
@@ -155,6 +158,35 @@ components:
         message: {type: string}
         result: {}
         actor: {type: string, description: Identifiant du principal authentifié, jamais le secret du jeton}
+    DaemonStatus:
+      type: object
+      required: [active, monitoring, policies]
+      properties:
+        active: {type: boolean, description: Le daemon local répond réellement}
+        monitoring: {type: boolean, description: Au moins une politique de reprise est surveillée}
+        policies: {type: integer, minimum: 0}
+        started_at: {type: string, format: date-time}
+    NUTMonitorStatus:
+      type: object
+      required: [ups, operational]
+      properties:
+        ups: {type: string}
+        operational: {type: boolean}
+        state: {type: string}
+        error: {type: string}
+        last_poll: {type: string, format: date-time}
+        battery_percent: {type: number}
+        battery_known: {type: boolean}
+    AutomationRuntimeStatus:
+      type: object
+      required: [daemon, monitors, cycles, policies, jobs]
+      properties:
+        daemon: {$ref: '#/components/schemas/DaemonStatus'}
+        monitors: {type: array, items: {$ref: '#/components/schemas/NUTMonitorStatus'}}
+        cycles: {type: array, items: {$ref: '#/components/schemas/Object'}}
+        policies: {type: array, items: {$ref: '#/components/schemas/Object'}}
+        jobs: {type: array, items: {$ref: '#/components/schemas/Job'}}
+        message: {type: string}
     Error:
       type: object
       properties:
@@ -166,4 +198,5 @@ components:
     Unauthorized: {description: Jeton absent ou invalide, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     Forbidden: {description: Permission insuffisante, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
     NotFound: {description: Ressource inconnue, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    AuditUnavailable: {description: Action refusée car le journal d'audit autoritatif est indisponible, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    DaemonUnavailable: {description: Action refusée car le daemon local est indisponible, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    ActionUnavailable: {description: Action refusée car le daemon local ou le journal d'audit autoritatif est indisponible, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}

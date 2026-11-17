@@ -47,7 +47,7 @@
         <mxCell id="t01-files" value="state.json / audit.jsonl / tokens.json" style="whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=15;" vertex="1" parent="1">
           <mxGeometry x="1260" y="570" width="260" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t01-systemd" value="systemd&amp;#xa;api serve" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+<mxCell id="t01-systemd" value="systemd&amp;#xa;daemon + API séparés" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="340" y="680" width="210" height="70" as="geometry" />
         </mxCell>
         <mxCell id="t01-e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t01-users" target="t01-entry">
@@ -216,7 +216,7 @@
         <mxCell id="t03-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="t03-refs" value="RÉFÉRENCES CODE — cmd/wol/main.go: main, run; api.go: serveAPI, resumeJobs; automation.go; packaging/systemd/wol-manager.service — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+<mxCell id="t03-refs" value="RÉFÉRENCES CODE — cmd/wol/main.go; daemon.go; api.go; automation.go; packaging/systemd/wol-manager*.service — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
         </mxCell>
         <mxCell id="t03-main" value="main() → run(os.Args[1:])" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
@@ -237,7 +237,7 @@
         <mxCell id="t03-one" value="Commande ponctuelle&amp;#xa;retour puis code 0/1/2" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1300" y="150" width="210" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t03-service" value="api serve: tokens, reprise, monitor, HTTP" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+<mxCell id="t03-service" value="daemon: jobs + NUT&amp;#xa;API: HTTP optionnel via socket local" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1300" y="410" width="230" height="90" as="geometry" />
         </mxCell>
         <mxCell id="t03-stop" value="Arrêt par fin du processus/systemd" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
@@ -264,7 +264,7 @@
         <mxCell id="t03-e6" value="Ponctuelle" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-init" target="t03-one">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="t03-e7" value="api serve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-init" target="t03-service">
+<mxCell id="t03-e7" value="daemon / api serve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="t03-init" target="t03-service">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="t03-e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;fontSize=12;labelBackgroundColor=#ffffff;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="t03-service" target="t03-stop">
@@ -986,7 +986,7 @@
         <mxCell id="t13-legend" value="LÉGENDE — bleu: interne | vert: succès/fin | orange: décision | rouge: erreur | gris pointillé: externe | violet: sécurité | cylindre: stockage | flèche pointillée: communication/événement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#d1d5db;fontSize=11;align=left;spacing=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="900" width="1450" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="t13-refs" value="RÉFÉRENCES CODE — packaging/systemd/wol-manager.service; install.sh: choose_service_mode/install_candidate/run_setup_if_requested — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+<mxCell id="t13-refs" value="RÉFÉRENCES CODE — packaging/systemd/wol-manager.service et wol-manager-api.service; install.sh — Implémenté" style="whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;dashed=1;align=left;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="795" width="1450" height="85" as="geometry" />
         </mxCell>
         <mxCell id="t13-n1" value="install.sh choisit enable/install/cli" style="whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;ellipse;aspect=fixed;" vertex="1" parent="1">
@@ -995,7 +995,7 @@
         <mxCell id="t13-n2" value="Mode CLI seul ?" style="whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rhombus;perimeter=rhombusPerimeter;" vertex="1" parent="1">
           <mxGeometry x="265" y="130" width="180" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t13-n3" value="Installer unit dans /etc/systemd/system" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+<mxCell id="t13-n3" value="Installer les unités sélectionnées dans /etc/systemd/system" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="480" y="130" width="180" height="70" as="geometry" />
         </mxCell>
         <mxCell id="t13-n4" value="daemon-reload" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
@@ -1007,7 +1007,7 @@
         <mxCell id="t13-n6" value="systemctl enable --now" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="1125" y="130" width="180" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t13-exec" value="ExecStart: wol --config /etc/... api serve" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+<mxCell id="t13-exec" value="Daemon: wol ... daemon&amp;#xa;API: wol ... api serve" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1040" y="330" width="300" height="80" as="geometry" />
         </mxCell>
         <mxCell id="t13-identity" value="User/Group wol-manager; UMask 0027" style="whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;strokeWidth=2;" vertex="1" parent="1">
@@ -1185,7 +1185,7 @@
         <mxCell id="t15-replace" value="BIN/HELPER/completion: .new.$$ puis mv -f" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1050" y="500" width="320" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t15-systemd" value="Installer unit selon mode; setup/token; enable éventuel" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+<mxCell id="t15-systemd" value="Installer daemon/API selon mode; setup; jeton API; activation éventuelle" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="1050" y="650" width="330" height="80" as="geometry" />
         </mxCell>
         <mxCell id="t15-rollback" value="Trap EXIT: rollback si échec après sauvegarde" style="whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">

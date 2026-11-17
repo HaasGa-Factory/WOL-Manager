@@ -14,16 +14,18 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
 var (
-	version        = "1.3.0"
+	version        = "1.4.0"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -122,12 +124,18 @@ func run(args []string) error {
 	if cmd == "token" {
 		return tokenCLI(c, args)
 	}
+	audit := &Auditor{path: c.Storage.AuditFile, mirror: cmd == "api"}
+	engine := &Engine{cfg: c, audit: audit, sendPacket: sendMagic}
+	if cmd == "api" {
+		if len(args) != 1 || args[0] != "serve" {
+			return errUsage
+		}
+		return serveAPI(c, engine)
+	}
 	jobs, err := openJobs(c.Storage.StateFile)
 	if err != nil {
 		return err
 	}
-	audit := &Auditor{path: c.Storage.AuditFile, mirror: cmd == "api"}
-	engine := &Engine{cfg: c, audit: audit, sendPacket: sendMagic}
 	switch cmd {
 	case "list":
 		ids := make([]string, 0, len(c.Servers))
@@ -186,12 +194,19 @@ func run(args []string) error {
 		if len(args) != 1 || args[0] != "status" {
 			return errUsage
 		}
-		return output(true, map[string]any{"cycles": jobs.listCycles(), "policies": c.restorePlans(), "jobs": jobs.list()}, "")
-	case "api":
-		if len(args) != 1 || args[0] != "serve" {
+		client := daemonClient{socket: daemonSocketPath()}
+		status, statusErr := client.automationStatus()
+		if statusErr != nil {
+			status = offlineAutomationStatus(c, statusErr)
+		}
+		return output(true, status, "")
+	case "daemon":
+		if len(args) != 0 {
 			return errUsage
 		}
-		return serveAPI(c, jobs, engine)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return serveDaemon(ctx, c, jobs, engine, daemonSocketPath())
 	case "relay":
 		return relayCLI(c, engine, args)
 	case "menu":
@@ -238,7 +253,7 @@ _wol() {
         esac
     done
     if [[ -z "$cmd" ]]; then
-		COMPREPLY=( $(compgen -W "setup update backup list status wake config token network ups jobs automation menu api relay version completion --config --json --no-color" -- "$cur") )
+		COMPREPLY=( $(compgen -W "setup update backup list status wake config token network ups jobs automation daemon menu api relay version completion --config --json --no-color" -- "$cur") )
         return
     fi
     case "$cmd" in
@@ -254,6 +269,7 @@ _wol() {
 		network) COMPREPLY=( $(compgen -W "test discover --help -h" -- "$cur") ) ;;
 		ups) COMPREPLY=( $(compgen -W "status test --help -h" -- "$cur") ) ;;
 		automation) COMPREPLY=( $(compgen -W "status --help -h" -- "$cur") ) ;;
+		daemon) COMPREPLY=( $(compgen -W "--help -h" -- "$cur") ) ;;
 		token) COMPREPLY=( $(compgen -W "create --help -h" -- "$cur") $(compgen -W "list revoke" -- "$cur") ) ;;
 		api) COMPREPLY=( $(compgen -W "serve --help -h" -- "$cur") ) ;;
 		relay) COMPREPLY=( $(compgen -W "serve check --help -h" -- "$cur") ) ;;

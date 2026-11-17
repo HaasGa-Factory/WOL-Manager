@@ -1,6 +1,6 @@
 # Sauvegarde et restauration
 
-WoL Manager 1.3.0 fournit un format portable `.wolbackup` pour sauvegarder et
+WoL Manager 1.4.0 fournit un format portable `.wolbackup` pour sauvegarder et
 restaurer les données administratives sans inclure le programme, les journaux
 ou les caches.
 

@@ -62,7 +62,7 @@ func testDir(t *testing.T) string {
 
 func TestBashCompletionContainsCommandsAndSubcommands(t *testing.T) {
 	for _, expected := range []string{
-		`compgen -W "setup update backup list status wake config token network ups jobs automation menu`,
+		`compgen -W "setup update backup list status wake config token network ups jobs automation daemon menu`,
 		`backup) COMPREPLY=( $(compgen -W "create list inspect verify restore prune`,
 		`config) COMPREPLY=( $(compgen -W "check edit network machine group nut --help -h"`,
 		`wake) COMPREPLY=( $(compgen -W "--dry-run --verification-delay --group --all --help -h"`,
@@ -87,7 +87,7 @@ func TestOpenAPIDocumentIsValidYAMLAndExposesAutomations(t *testing.T) {
 		t.Fatalf("OpenAPI YAML invalide: %v", err)
 	}
 	text := string(content)
-	for _, expected := range []string{"version: 1.3.0", "/automations:"} {
+	for _, expected := range []string{"version: 1.4.0", "/automations:", "DaemonStatus:", "NUTMonitorStatus:"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("OpenAPI incomplet, fragment absent: %s", expected)
 		}
@@ -558,7 +558,7 @@ func TestContextualHelpCoversV12Functions(t *testing.T) {
 	}{
 		{[]string{"config", "group", "--help"}, "seuils bas/haut"},
 		{[]string{"config", "nut", "--help"}, "strictement en lecture"},
-		{[]string{"automation", "status", "--help"}, "wol api serve"},
+		{[]string{"automation", "status", "--help"}, "wol-manager.service"},
 		{[]string{"wake", "--help"}, "dépendances"},
 		{[]string{"jobs", "--help"}, "revalidation_required"},
 	} {

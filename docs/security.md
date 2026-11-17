@@ -22,7 +22,11 @@
 - Archives `.wolbackup` bornées en nombre d'entrées et en taille, limitées à des chemins internes
   connus, avec refus des liens symboliques, traversées de chemin, doublons et cibles système hors périmètre.
 
-Le compte systemd utilise des restrictions de fichiers, processus et privilèges. L'accès à des interfaces particulières peut nécessiter une adaptation locale soigneusement documentée.
+Les deux unités systemd utilisent le compte `wol-manager` et des restrictions
+de fichiers, processus et privilèges. Seul le daemon peut écrire l'état ; le
+socket local de délégation est créé en `0600` dans `/run/wol-manager`. L'API
+n'a pas accès en écriture à `/var/lib/wol-manager`. L'accès à des interfaces
+particulières peut nécessiter une adaptation locale soigneusement documentée.
 
 ## Sécurité des sauvegardes
 

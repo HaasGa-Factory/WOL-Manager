@@ -38,8 +38,9 @@ Syntaxe générale : `wol [--config FILE] [--json] [--no-color] COMMANDE`.
 | `wol ups test` | diagnostic en lecture seule de tous les UPS configurés |
 | `wol jobs` | état persistant des tâches |
 | `wol automation status` | cycles NUT, politiques, progressions et raisons d'attente |
+| `wol daemon` | daemon permanent des jobs, de la surveillance NUT et des reprises, sans HTTP |
 | `sudo wol menu` | consultation, configuration, simulation et réveil réel après confirmation utilisateur |
-| `wol api serve` | API et moteur de surveillance/reprise NUT |
+| `wol api serve` | API REST optionnelle, déléguant les jobs au daemon local |
 | `wol relay serve` | relais HTTPS mTLS |
 | `wol relay check ID` | disponibilité d'un relais |
 | `wol completion bash` | génère le script d'autocomplétion Bash |
@@ -110,9 +111,14 @@ affiche la machine concernée et le délai maximal afin de ne jamais rester sile
 raisons d'attente sans perte d'information. Les états de tâche sont `queued`, `running`,
 `revalidation_required`, `completed`, `failed` et `cancelled`.
 
-Le moteur permanent de surveillance et de reprise NUT s'exécute avec `wol api serve`, normalement
-lancé par le service systemd. `wol automation status` consulte son état persisté mais ne démarre pas
-le moniteur à lui seul.
+Le moteur permanent de jobs, de surveillance et de reprise NUT s'exécute avec
+`wol daemon`, normalement lancé par `wol-manager.service`. L'API optionnelle
+est lancée séparément par `wol-manager-api.service`. `wol automation status`
+interroge le daemon et distingue une politique configurée d'un moniteur
+réellement actif ; la commande ne démarre pas le moniteur à elle seule. Le
+socket de contrôle étant réservé à root et au compte de service, utilisez
+`sudo wol automation status` pour le diagnostic temps réel local. Sans cet
+accès, la commande conserve la lecture prudente de l'état et l'indique.
 
 Codes de sortie : `0` succès, `1` erreur d'exécution/configuration/politique, `2` syntaxe invalide. Les diagnostics actifs affichent toujours un avertissement sur stderr.
 
@@ -152,7 +158,7 @@ par les tests automatisés :
 | Configuration | `config`, `config check`, `config edit`, `config network`, `config machine`, `config group`, `config nut`, `config discovery` |
 | Jetons | `token`, `token create`, `token list`, `token revoke` |
 | Réseau et UPS | `network`, `network test`, `network discover`, `ups`, `ups status`, `ups test` |
-| Tâches et service | `jobs`, `automation`, `automation status`, `menu`, `api`, `api serve` |
+| Tâches et services | `jobs`, `automation`, `automation status`, `daemon`, `menu`, `api`, `api serve` |
 | Relais | `relay`, `relay serve`, `relay check` |
 
 Ajoutez `--help` à la commande correspondante. Les alias d'aide

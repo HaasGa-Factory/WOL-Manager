@@ -14,10 +14,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -60,6 +62,7 @@ type APIServer struct {
 	nextRateCleanup time.Time
 	now             func() time.Time
 	automations     *AutomationManager
+	daemon          *daemonClient
 }
 
 func loadTokens(path string) ([]TokenRecord, error) {
@@ -263,12 +266,23 @@ func (s *APIServer) server(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
 			return
 		}
-		j, e := s.jobs.createForActor("wake", id, actor, func(ctx context.Context) (any, error) {
-			engine := *s.engine
-			engine.dry = body.DryRun
-			return engine.wakeTree(ctx, id, map[string]bool{})
-		})
+		var j *Job
+		var e error
+		if s.daemon != nil {
+			created, createErr := s.daemon.createWake(id, actor, body.DryRun)
+			j, e = &created, createErr
+		} else {
+			j, e = s.jobs.createForActor("wake", id, actor, func(ctx context.Context) (any, error) {
+				engine := *s.engine
+				engine.dry = body.DryRun
+				return engine.wakeTree(ctx, id, map[string]bool{})
+			})
+		}
 		if e != nil {
+			if daemonUnavailable(e) {
+				writeError(w, http.StatusServiceUnavailable, "daemon_unavailable", "daemon WoL Manager indisponible")
+				return
+			}
 			writeError(w, 409, "job_conflict", e.Error())
 			return
 		}
@@ -299,8 +313,18 @@ func (s *APIServer) startGroup(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
 		return
 	}
-	j, e := s.jobs.createForActor("wake_group", id, actor, func(ctx context.Context) (any, error) { return s.engine.wakeGroup(ctx, id) })
+	var j *Job
+	var e error
+	if s.daemon != nil {
+		created, createErr := s.daemon.createGroupWake(id, actor)
+		j, e = &created, createErr
+	} else {
+		j, e = s.jobs.createForActor("wake_group", id, actor, func(ctx context.Context) (any, error) { return s.engine.wakeGroup(ctx, id) })
+	}
 	if e != nil {
+		if writeDaemonHTTPError(w, e) {
+			return
+		}
 		writeError(w, 409, "job_conflict", e.Error())
 		return
 	}
@@ -320,8 +344,18 @@ func (s *APIServer) wakeAll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
 		return
 	}
-	j, e := s.jobs.createForActor("wake_all", "all", actor, func(ctx context.Context) (any, error) { return s.engine.wakeAll(ctx) })
+	var j *Job
+	var e error
+	if s.daemon != nil {
+		created, createErr := s.daemon.createWakeAll(actor)
+		j, e = &created, createErr
+	} else {
+		j, e = s.jobs.createForActor("wake_all", "all", actor, func(ctx context.Context) (any, error) { return s.engine.wakeAll(ctx) })
+	}
 	if e != nil {
+		if writeDaemonHTTPError(w, e) {
+			return
+		}
 		writeError(w, 409, "job_conflict", e.Error())
 		return
 	}
@@ -351,11 +385,20 @@ func (s *APIServer) automationState(w http.ResponseWriter, r *http.Request) {
 	if !need(w, r, "read") {
 		return
 	}
-	if s.automations == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"cycles": []PowerCycle{}, "policies": []restorePlan{}})
+	if s.daemon != nil {
+		status, err := s.daemon.automationStatus()
+		if err == nil {
+			writeJSON(w, http.StatusOK, status)
+			return
+		}
+		writeJSON(w, http.StatusOK, offlineAutomationStatus(s.cfg, err))
 		return
 	}
-	writeJSON(w, http.StatusOK, s.automations.automationStatus())
+	if s.automations != nil {
+		writeJSON(w, http.StatusOK, s.automations.automationStatus())
+		return
+	}
+	writeJSON(w, http.StatusOK, offlineAutomationStatus(s.cfg, errors.New("daemon non configuré")))
 }
 func (s *APIServer) job(w http.ResponseWriter, r *http.Request) {
 	p := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
@@ -367,7 +410,22 @@ func (s *APIServer) job(w http.ResponseWriter, r *http.Request) {
 		if !need(w, r, "read") {
 			return
 		}
-		j, ok := s.jobs.get(p[0])
+		var j Job
+		var ok bool
+		if s.daemon != nil {
+			var err error
+			j, err = s.daemon.job(p[0])
+			if err != nil {
+				if writeDaemonHTTPError(w, err) {
+					return
+				}
+				writeError(w, 404, "not_found", "tâche inconnue")
+				return
+			}
+			ok = true
+		} else {
+			j, ok = s.jobs.get(p[0])
+		}
 		if !ok {
 			writeError(w, 404, "not_found", "tâche inconnue")
 			return
@@ -379,7 +437,16 @@ func (s *APIServer) job(w http.ResponseWriter, r *http.Request) {
 		if !need(w, r, "admin") {
 			return
 		}
-		if e := s.jobs.cancelJob(p[0]); e != nil {
+		var e error
+		if s.daemon != nil {
+			e = s.daemon.cancelJob(p[0])
+		} else {
+			e = s.jobs.cancelJob(p[0])
+		}
+		if e != nil {
+			if writeDaemonHTTPError(w, e) {
+				return
+			}
 			writeError(w, 409, "not_cancellable", e.Error())
 			return
 		}
@@ -442,21 +509,76 @@ func (s *APIServer) discovery(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "audit_unavailable", "journal d'audit indisponible; action refusée")
 		return
 	}
-	j, e := s.jobs.createForActor("network_discovery", fmt.Sprint(b.Active), actor, func(ctx context.Context) (any, error) {
-		if !b.Active {
-			return passiveDiscovery(ctx), nil
-		}
-		timeout := s.cfg.Discovery.Safeguards.Timeout.Value(30 * time.Second)
-		cc, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		return activeDiscovery(cc, s.cfg, b.DryRun), nil
-	})
+	var j *Job
+	var e error
+	if s.daemon != nil {
+		created, createErr := s.daemon.createDiscovery(actor, b.Active, b.DryRun)
+		j, e = &created, createErr
+	} else {
+		j, e = s.jobs.createForActor("network_discovery", fmt.Sprint(b.Active), actor, func(ctx context.Context) (any, error) {
+			if !b.Active {
+				return passiveDiscovery(ctx), nil
+			}
+			timeout := s.cfg.Discovery.Safeguards.Timeout.Value(30 * time.Second)
+			cc, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+			return activeDiscovery(cc, s.cfg, b.DryRun), nil
+		})
+	}
 	if e != nil {
+		if writeDaemonHTTPError(w, e) {
+			return
+		}
 		writeError(w, 409, "job_conflict", e.Error())
 		return
 	}
 	_ = s.engine.audit.write("api.network.discovery", actor, "configured_networks", "accepted", map[string]any{"job": j.ID, "active": b.Active, "dry_run": b.DryRun})
 	writeJSON(w, 202, j)
+}
+
+func writeDaemonHTTPError(w http.ResponseWriter, err error) bool {
+	if daemonUnavailable(err) {
+		writeError(w, http.StatusServiceUnavailable, "daemon_unavailable", "daemon WoL Manager indisponible")
+		return true
+	}
+	var callErr *daemonCallError
+	if !errors.As(err, &callErr) {
+		return false
+	}
+	switch callErr.Code {
+	case "not_found":
+		writeError(w, http.StatusNotFound, "not_found", callErr.Message)
+	case "not_cancellable":
+		writeError(w, http.StatusConflict, "not_cancellable", callErr.Message)
+	default:
+		return false
+	}
+	return true
+}
+
+func offlineAutomationStatus(cfg *Config, daemonErr error) AutomationRuntimeStatus {
+	message := "aucune politique de reprise configurée; daemon inactif"
+	if len(cfg.restorePlans()) > 0 {
+		message = "automatisation configurée mais aucun daemon actif ne la surveille"
+	}
+	if os.IsPermission(daemonErr) {
+		message = "état temps réel du daemon inaccessible avec cet utilisateur; relancez avec sudo wol automation status"
+	}
+	status := AutomationRuntimeStatus{
+		Daemon:   DaemonStatus{Active: false, Monitoring: false, Policies: len(cfg.restorePlans())},
+		Monitors: []NUTMonitorStatus{},
+		Cycles:   []PowerCycle{},
+		Policies: cfg.restorePlans(),
+		Jobs:     []Job{},
+		Message:  message,
+	}
+	if jobs, err := openJobs(cfg.Storage.StateFile); err == nil {
+		status.Cycles = jobs.listCycles()
+		status.Jobs = jobs.list()
+	} else if daemonErr != nil {
+		status.Message += "; état persistant illisible: " + err.Error()
+	}
+	return status
 }
 func principalOf(r *http.Request) string {
 	p, _ := r.Context().Value(principalKey).(principal)
@@ -522,24 +644,113 @@ func unique(xs []string) []string {
 	return out
 }
 
-func serveAPI(c *Config, j *JobStore, e *Engine) error {
+func serveAPI(c *Config, e *Engine) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return serveAPIProcess(ctx, c, e)
+}
+
+func serveAPIProcess(ctx context.Context, c *Config, e *Engine) error {
+	client := &daemonClient{socket: daemonSocketPath()}
+	if _, err := client.status(); err == nil || !legacyCombinedServiceUnit() {
+		return serveAPIContext(ctx, c, e, client)
+	}
+
+	// Une mise à jour lancée par un ancien installateur peut remplacer le
+	// binaire avant de remplacer l'ancienne unité combinée « api serve ».
+	// Conserver temporairement un propriétaire unique des états dans ce même
+	// processus évite d'arrêter silencieusement la surveillance NUT. La
+	// réinstallation des unités séparées supprime automatiquement ce chemin.
+	fmt.Fprintln(os.Stderr, "AVERTISSEMENT: ancienne unité systemd combinée détectée; migration vers wol-manager.service et wol-manager-api.service requise")
+	jobs, err := openJobs(c.Storage.StateFile)
+	if err != nil {
+		return err
+	}
+	legacyContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	daemonErrors := make(chan error, 1)
+	go func() {
+		daemonErrors <- serveDaemon(legacyContext, c, jobs, e, client.socket)
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := client.status(); err == nil {
+			break
+		}
+		select {
+		case err := <-daemonErrors:
+			if err == nil {
+				if legacyContext.Err() != nil {
+					return nil
+				}
+				err = errors.New("daemon historique arrêté avant le démarrage de l'API")
+			}
+			return err
+		default:
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-daemonErrors
+			return errors.New("délai dépassé au démarrage du daemon historique")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	apiErr := serveAPIContext(legacyContext, c, e, client)
+	cancel()
+	daemonErr := <-daemonErrors
+	if apiErr != nil {
+		return apiErr
+	}
+	return daemonErr
+}
+
+func legacyCombinedServiceUnit() bool {
+	unit := os.Getenv("WOL_SYSTEMD_UNIT")
+	if unit == "" {
+		unit = "/etc/systemd/system/wol-manager.service"
+	}
+	content, err := os.ReadFile(unit)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(content), " api serve")
+}
+
+func serveAPIContext(ctx context.Context, c *Config, e *Engine, daemon *daemonClient) error {
 	tokens, err := loadTokens(c.API.TokensFile)
 	if err != nil {
 		return fmt.Errorf("jetons API: %w", err)
 	}
-	if err := j.markInterrupted(); err != nil {
-		return fmt.Errorf("revalidation des tâches interrompues: %w", err)
-	}
-	manager := newAutomationManager(c, j, e)
-	s := &APIServer{cfg: c, jobs: j, engine: e, tokens: tokens, tokenPath: c.API.TokensFile, rates: map[string]rateEntry{}, automations: manager}
-	resumeJobs(j, e, manager)
-	go manager.monitor(context.Background())
+	s := &APIServer{cfg: c, engine: e, tokens: tokens, tokenPath: c.API.TokensFile, rates: map[string]rateEntry{}, daemon: daemon}
 	srv := http.Server{Addr: c.API.Listen, Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
 	printAPIBanner(os.Stdout, c)
-	if isLoopbackListen(c.API.Listen) && c.API.TLSCert == "" {
-		return srv.ListenAndServe()
+	serverErrors := make(chan error, 1)
+	go func() {
+		if isLoopbackListen(c.API.Listen) && c.API.TLSCert == "" {
+			serverErrors <- srv.ListenAndServe()
+			return
+		}
+		serverErrors <- srv.ListenAndServeTLS(c.API.TLSCert, c.API.TLSKey)
+	}()
+	select {
+	case <-ctx.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownContext); err != nil {
+			return err
+		}
+		err := <-serverErrors
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case err := <-serverErrors:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
 	}
-	return srv.ListenAndServeTLS(c.API.TLSCert, c.API.TLSKey)
 }
 
 func printAPIBanner(output io.Writer, c *Config) {
@@ -547,7 +758,7 @@ func printAPIBanner(output io.Writer, c *Config) {
 	if c.API.TLSCert != "" {
 		scheme = "https"
 	}
-	fmt.Fprintf(output, "WoL Manager API\n- écoute: %s://%s\n- base: /api/v1\n- santé: /api/v1/health\n- authentification: Authorization: Bearer <jeton>\n- spécification OpenAPI: api/openapi.yaml\n- arrêt interactif: Ctrl+C (ou sudo systemctl stop wol-manager)\n", scheme, c.API.Listen)
+	fmt.Fprintf(output, "WoL Manager API\n- écoute: %s://%s\n- base: /api/v1\n- santé: /api/v1/health\n- authentification: Authorization: Bearer <jeton>\n- jobs et automatisations: daemon local wol-manager\n- spécification OpenAPI: api/openapi.yaml\n- arrêt interactif: Ctrl+C (ou sudo systemctl stop wol-manager-api)\n", scheme, c.API.Listen)
 	if !isLoopbackListen(c.API.Listen) {
 		fmt.Fprintln(output, "AVERTISSEMENT: l'écoute dépasse loopback; TLS est obligatoire et l'accès réseau doit être filtré.")
 	}

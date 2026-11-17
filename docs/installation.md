@@ -19,9 +19,11 @@ sudo ./install.sh --check
 ./install.sh --version
 ```
 
-Options disponibles : `--channel main|dev`, `--service enable|install|cli`,
-`--setup`, `--yes`, `--non-interactive`, `--allow-downgrade`, `--verbose`,
-`--check`, `--version`, `--uninstall`, `-h` et `--help`. `--channel dev`
+Options disponibles : `--channel main|dev`,
+`--service daemon|api|both|install|cli`, `--configure-services`, `--setup`,
+`--yes`, `--non-interactive`, `--allow-downgrade`, `--verbose`, `--check`,
+`--version`, `--uninstall`, `-h` et `--help`. L'ancien mode
+`--service enable` reste un alias de `both`. `--channel dev`
 s'applique uniquement à l'exécution courante. `--allow-downgrade` exige une
 autorisation explicite ; aucun retour à une ancienne version n'est implicite.
 
@@ -47,34 +49,42 @@ L'installateur utilise d'abord la distribution locale signée dans `dist/`. Sino
 
 Il ne télécharge jamais les sources, n'installe jamais Go et ne tente aucune compilation. Un binaire absent, incompatible ou non vérifiable provoque un arrêt propre avant remplacement.
 
-La configuration et les données existantes sont conservées. L'installateur propose ensuite : service activé, service installé mais désactivé, ou CLI seule. Si aucune configuration n'existe, l'activation demandée est différée jusqu'à la fin de `wol setup`.
+La configuration, les jetons, les jobs et les cycles existants sont conservés.
+L'installateur propose séparément le daemon NUT et l'API. Si aucune
+configuration n'existe, l'activation demandée est différée jusqu'à la fin de
+`wol setup`.
 
 ### Choix du mode systemd
 
 L'installateur affiche :
 
 ```text
-Service systemd: 1 activer, 2 installer sans activer, 3 CLI seule [2]:
+Services systemd: 1 daemon NUT, 2 API, 3 daemon + API,
+4 CLI seule, 5 installer sans activer [5]:
 ```
 
 | Choix | Effet | Quand l'utiliser |
 | --- | --- | --- |
-| `1` — activer | Demande l'installation et l'activation du service. Si aucune configuration n'existe, l'installateur propose ensuite de lancer `wol setup`. Une fois la configuration disponible, il crée le premier jeton administrateur si nécessaire, démarre WoL Manager et active son démarrage automatique. Si la configuration est reportée, le service reste désactivé. | Pour une installation déjà prête à fonctionner en permanence comme API et service d'automatisation. |
-| `2` — installer sans activer | Installe le fichier de service, mais ne démarre pas WoL Manager et ne l'active pas au démarrage. | **Choix recommandé en cas de doute** : il permet de configurer et tester WoL Manager avant de lancer le service. C'est aussi le choix utilisé en appuyant simplement sur `Entrée`. |
-| `3` — CLI seule | N'installe pas le service systemd. Les commandes `wol` restent utilisables manuellement dans le terminal. | Pour un usage exclusivement manuel, sans API ni automatisation démarrée automatiquement en arrière-plan. |
+| `1` — daemon NUT | Installe et active `wol-manager.service`. Il exécute les jobs, surveille NUT et applique les reprises, sans ouvrir de port HTTP. | Pour l'automatisation sans API. |
+| `2` — API | Installe et active uniquement `wol-manager-api.service`. Les consultations restent possibles, mais les jobs sont refusés avec `503 daemon_unavailable` tant que le daemon est absent. | Pour une API de consultation ou une activation du daemon différée. |
+| `3` — daemon + API | Installe et active les deux unités indépendantes. Le premier jeton administrateur est créé si nécessaire. | **Choix complet confirmé** : automatisation permanente et API REST. |
+| `4` — CLI seule | N'installe aucune unité systemd. | Pour un usage manuel sans processus permanent. |
+| `5` — installer sans activer | Installe les deux unités sans les démarrer ni les activer au boot. C'est le défaut avec Entrée. | Pour configurer et tester avant activation. |
 
-Après le choix `2`, configurez et vérifiez d'abord WoL Manager, puis activez le service lorsque vous êtes prêt :
+Après le choix `5`, configurez et vérifiez d'abord WoL Manager, puis activez
+les composants lorsque vous êtes prêt :
 
 ```sh
 sudo wol setup
 wol config check
 sudo wol --config /etc/wol-manager/wol.yaml token create --id admin
-sudo systemctl enable --now wol-manager.service
+sudo systemctl enable --now wol-manager.service wol-manager-api.service
 systemctl status wol-manager.service
+systemctl status wol-manager-api.service
 ```
 
 Conservez immédiatement le jeton affiché par `token create` : il n'est montré qu'une seule fois.
-Le service actif relit atomiquement le magasin à chaque authentification : une création est acceptée
+Le service API actif relit atomiquement le magasin à chaque authentification : une création est acceptée
 et une révocation est refusée dès la requête API suivante, sans redémarrage.
 
 ### Permissions de l'utilisateur
@@ -104,11 +114,51 @@ wol network test truenas
 Un utilisateur qui n'appartient pas à `wol-manager` ne peut pas lire la configuration. Les commandes
 qui écrivent sous `/etc`, gèrent les jetons ou systemd restent administratives et utilisent `sudo`.
 
-`enable --now` effectue deux actions : il démarre le service immédiatement et programme son démarrage automatique aux prochains redémarrages. Pour inspecter les messages du service en cas de problème :
+`enable --now` démarre les unités immédiatement et programme leur démarrage
+automatique aux prochains redémarrages. Pour inspecter séparément le daemon et
+l'API :
 
 ```sh
 journalctl -u wol-manager.service -n 100 --no-pager
+journalctl -u wol-manager-api.service -n 100 --no-pager
 ```
+
+Le daemon peut être arrêté ou redémarré sans arrêter l'API, et l'API peut être
+désactivée sans interrompre la surveillance NUT. Une modification du YAML
+nécessite de redémarrer les composants qui le lisent.
+
+### Modifier les composants après l'installation
+
+Il n'est pas nécessaire de réinstaller le programme :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service daemon
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service api
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service install
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service cli
+```
+
+`install` conserve les deux fichiers d'unité sans les activer ; `cli` arrête,
+désactive et retire les deux unités sans supprimer la configuration, les
+secrets ni l'état.
+
+### Migration depuis l'ancien service combiné
+
+Les versions antérieures lançaient l'API et la surveillance NUT dans
+`wol-manager.service`. Lors de la transition, le nouveau binaire détecte
+temporairement cette ancienne unité et conserve la surveillance avec un
+avertissement afin d'éviter une interruption silencieuse. Finalisez ensuite la
+migration avec :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
+systemctl status wol-manager.service wol-manager-api.service
+```
+
+Cette commande sauvegarde les unités précédentes, préserve le YAML, les
+jetons, les jobs et les cycles, puis installe les deux services séparés. Elle
+ne modifie et ne redémarre jamais `nut-server` ou `nut-monitor`.
 
 ## Dépendances
 
@@ -162,7 +212,11 @@ sudo wol config group
 sudo wol config nut
 ```
 
-Le fichier de jetons est préparé en `0600` pour l'utilisateur système `wol-manager`. Lors d'une installation interactive neuve avec activation immédiate du service, l'installateur crée le premier jeton administrateur avant de démarrer systemd et l'affiche une seule fois dans le terminal.
+Le fichier de jetons est préparé en `0600` pour l'utilisateur système
+`wol-manager`. Lors d'une installation interactive neuve avec activation
+immédiate de l'API, l'installateur crée le premier jeton administrateur avant
+de démarrer systemd et l'affiche une seule fois dans le terminal. Le daemon
+seul n'exige aucun jeton.
 
 ## Première sauvegarde
 

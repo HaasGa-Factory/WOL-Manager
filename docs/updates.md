@@ -128,17 +128,39 @@ L'installateur choisit l'architecture et télécharge le manifeste, sa signature
 
 Hors migration guidée explicitement confirmée, la configuration, les jetons, secrets, données,
 politiques UPS, réseaux et relais ne sont pas modifiés. La migration `unicast` ne touche que les
-anciens champs de transport et conserve une sauvegarde datée. L'état activé/désactivé du service est
-conservé. Une tâche interrompue reste soumise à la revalidation du moteur existant.
+anciens champs de transport et conserve une sauvegarde datée. L'état
+activé/désactivé des services est conservé. Une tâche interrompue reste
+soumise à la revalidation du moteur existant.
+
+### Migration des services en 1.4.0
+
+La version 1.4.0 sépare le daemon d'automatisation de l'API REST. Un ancien
+`wol-manager.service` contenant `api serve` est reconnu comme unité combinée.
+Pendant le premier remplacement effectué par un ancien installateur, le
+nouveau binaire conserve temporairement le moniteur dans le même processus et
+affiche un avertissement : l'automatisation ne disparaît donc pas
+silencieusement. Finalisez ensuite la séparation avec l'installateur signé qui
+vient d'être remplacé :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
+systemctl status wol-manager.service wol-manager-api.service
+sudo wol automation status
+```
+
+Cette opération sauvegarde et remplace les unités uniquement. Elle préserve la
+configuration, les jetons, les jobs et les cycles, ne contacte pas NUT et ne
+redémarre aucun service NUT. `wol-manager.service` devient l'unique propriétaire
+de l'état ; `wol-manager-api.service` lui délègue les jobs par socket local.
 
 ## Installation atomique et rollback
 
 Avant remplacement, l'installateur valide le nouveau binaire et la
-configuration, puis sauvegarde le binaire, le service, l'installateur et les
+configuration, puis sauvegarde le binaire, les deux unités systemd, l'installateur et les
 métadonnées sous `/var/lib/wol-manager-installer/backups/`. Le remplacement du
 binaire utilise un fichier temporaire sur le même système de fichiers.
 
-Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces composants sont restaurés et l'ancien service est relancé lorsque possible. Aucune migration irréversible de données n'est exécutée dans cette version ; la migration confirmée de la configuration conserve sa sauvegarde datée et les données persistantes restent intactes. Le journal indique clairement si le rollback a été déclenché.
+Si le lancement, la validation YAML ou le redémarrage systemd échoue, ces composants sont restaurés et les anciens services sont relancés lorsque possible. Aucune migration irréversible de données n'est exécutée dans cette version ; la migration confirmée de la configuration conserve sa sauvegarde datée et les données persistantes restent intactes. Le journal indique clairement si le rollback a été déclenché.
 
 ## Intégrité et provenance
 
@@ -160,4 +182,5 @@ Pour vérifier temporairement le canal de développement, remplacez la deuxième
 commande par `wol update --check --channel dev`. Lisez les messages de
 compatibilité et ne forcez pas `--non-interactive` pour contourner une
 migration refusée. Après la mise à jour, contrôlez de nouveau `wol version`,
-`wol config check` et `wol network test`.
+`wol config check`, `wol network test`, `wol automation status` et l'état des
+deux unités systemd si elles sont installées.

@@ -70,12 +70,15 @@ Les cycles et groupes terminés sont persistés avec les tâches. Après un red�
 Chaque groupe choisit un mode `sequential` ou `parallel`, un ordre, une politique d'échec et des tentatives bornées. Les dépendances restent obligatoires et un coordinateur évite les réveils simultanés en double. Consultez l'état sans modification avec :
 
 ```sh
-wol automation status
+sudo wol automation status
 ```
 
-La surveillance n'est active que dans le processus permanent `wol api serve`, normalement géré par
-systemd. La commande `wol automation status` ne lance pas la surveillance : elle affiche les cycles,
-politiques, jobs, progressions et raisons d'attente déjà persistés.
+La surveillance n'est active que dans le processus permanent `wol daemon`,
+normalement géré par `wol-manager.service`. Elle ne dépend ni du serveur API
+ni d'une connexion Internet. La commande `wol automation status` ne lance pas
+la surveillance : elle indique si le daemon répond, l'état opérationnel de
+chaque lecture NUT, les cycles, politiques, jobs, progressions et raisons
+d'attente.
 
 Dans le mode `sequential`, chaque machine doit être validée avant de libérer ses dépendants. Dans le
 mode `parallel`, seules les machines indépendantes peuvent progresser en parallèle. Une dépendance
@@ -94,18 +97,19 @@ politique exige une charge ou une autonomie, la mesure correspondante doit
 groupe avec `sudo wol config group` ; une machine seule peut être placée dans
 un groupe dédié.
 
-Une reprise automatique exige le processus permanent `wol api serve`, un
+Une reprise automatique exige le processus permanent `wol daemon`, un
 épisode `OB`, `LB` ou `FSD` effectivement observé, puis le retour `OL`, la
 batterie au seuil haut et la stabilité secteur complète. Un service qui
 démarre alors que l'UPS est déjà `OL` ne réveille rien.
 
 ```sh
 wol ups test
-wol automation status
+sudo wol automation status
 wol jobs
 ```
 
-En cas d'attente, contrôlez dans cet ordre : service actif, UPS joignable,
+En cas d'attente, contrôlez dans cet ordre : `wol-manager.service` actif,
+moniteur NUT opérationnel, UPS joignable,
 coupure enregistrée, seuils, stabilité, dépendances et contrôles des machines.
 Ne provoquez pas de coupure réelle sur une infrastructure de production pour
 tester cette fonction.

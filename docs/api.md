@@ -6,7 +6,7 @@ Go restent la référence d'exécution. Toutes les routes, **y compris
 
 ## Démarrage et authentification
 
-Le service écoute par défaut en HTTP sur `127.0.0.1:8080`. HTTP sans TLS est
+Le service optionnel `wol-manager-api.service` écoute par défaut en HTTP sur `127.0.0.1:8080`. HTTP sans TLS est
 autorisé uniquement sur loopback ; une écoute non locale exige un certificat
 et une clé TLS valides.
 
@@ -21,6 +21,12 @@ chaque authentification : une création ou révocation s'applique dès la requê
 suivante. `read` autorise les consultations, `wake` les réveils et `admin` les
 opérations administratives ; `admin` implique les autres permissions.
 
+L'API ne possède plus le moteur de jobs ni le moniteur NUT. Elle les joint par
+le socket local protégé du daemon `wol-manager.service`. L'arrêt de l'API ne
+coupe donc pas la reprise automatique. Si le daemon est arrêté, les lectures
+de configuration restent disponibles, `/automations` signale explicitement
+son absence et les opérations asynchrones renvoient `503 daemon_unavailable`.
+
 Chaque client est limité par le couple identifiant du jeton/adresse IP selon
 `api.rate_per_minute`. Les réponses utilisent `application/json`,
 `Cache-Control: no-store` et `X-Content-Type-Options: nosniff`.
@@ -33,6 +39,9 @@ Chaque client est limité par le couple identifiant du jeton/adresse IP selon
 - Les opérations réseau doivent d'abord écrire l'événement `requested` dans le
   journal durable. En cas d'échec, l'API renvoie `503 audit_unavailable` et ne
   crée pas de tâche.
+- Les créations, consultations et annulations de jobs exigent le daemon local.
+  S'il est arrêté, l'API renvoie `503 daemon_unavailable` sans exécuter
+  l'opération ni modifier l'état.
 - Deux tâches actives incompatibles peuvent produire `409 job_conflict`.
 - Les erreurs ont la forme
   `{"error":{"code":"not_found","message":"serveur inconnu"}}`.
@@ -73,7 +82,7 @@ AUTH=(-H "Authorization: Bearer $WOL_TOKEN")
 
 - Permission : `read`.
 - Paramètres/corps : aucun.
-- Réponse `200` représentative : `{"status":"ok","version":"1.3.0"}`.
+- Réponse `200` représentative : `{"status":"ok","version":"1.4.0"}`.
 
 ```sh
 curl --fail-with-body "${AUTH[@]}" "$WOL_API/health"
@@ -114,7 +123,7 @@ machine injoignable n'est pas nécessairement éteinte.
 - Chemin : `id`, identifiant d'une machine configurée.
 - Corps facultatif : `{"dry_run":true}` ; sans corps, le réveil est réel.
 - Réponses : `202` avec la tâche ; `400 invalid_json`, `404 not_found`,
-  `409 job_conflict` ou `503 audit_unavailable`.
+  `409 job_conflict`, `503 audit_unavailable` ou `503 daemon_unavailable`.
 
 ```sh
 curl --fail-with-body -X POST "${AUTH[@]}" \
@@ -132,7 +141,7 @@ curl --fail-with-body -X POST "${AUTH[@]}" \
 - Chemin : `id`, identifiant d'un groupe configuré.
 - Corps : aucun.
 - Réponses : `202` avec une tâche `wake_group`, `404 not_found`,
-  `409 job_conflict` ou `503 audit_unavailable`.
+  `409 job_conflict`, `503 audit_unavailable` ou `503 daemon_unavailable`.
 
 ```sh
 curl --fail-with-body -X POST "${AUTH[@]}" "$WOL_API/groups/infra/wake"
@@ -142,8 +151,8 @@ curl --fail-with-body -X POST "${AUTH[@]}" "$WOL_API/groups/infra/wake"
 
 - Permission : `wake`.
 - Paramètres/corps : aucun.
-- Réponses : `202` avec une tâche `wake_all`, `409 job_conflict` ou
-  `503 audit_unavailable`.
+- Réponses : `202` avec une tâche `wake_all`, `409 job_conflict`,
+  `503 audit_unavailable` ou `503 daemon_unavailable`.
 
 ```sh
 curl --fail-with-body -X POST "${AUTH[@]}" "$WOL_API/wake-all"
@@ -170,8 +179,11 @@ Une mesure absente n'est jamais interprétée comme zéro.
 
 - Permission : `read`.
 - Paramètres/corps : aucun.
-- Réponse `200` : `cycles`, `policies` et `jobs`. Si le moteur automatique
-  n'est pas attaché, `cycles` et `policies` sont des listes vides.
+- Réponse `200` : `daemon`, `monitors`, `cycles`, `policies` et `jobs`.
+  `daemon.active` prouve que le processus permanent répond ; chaque entrée de
+  `monitors` distingue une lecture NUT opérationnelle d'une erreur de
+  communication. Une politique configurée n'est jamais présentée comme la
+  preuve que sa surveillance est active.
 
 ```sh
 curl --fail-with-body "${AUTH[@]}" "$WOL_API/automations"
@@ -184,7 +196,8 @@ champs portant le suffixe `_ns`.
 
 - Permission : `read`.
 - Chemin : identifiant de tâche renvoyé par une opération asynchrone.
-- Réponses : `200` avec la tâche et son éventuel `result` ; `404 not_found`.
+- Réponses : `200` avec la tâche et son éventuel `result` ; `404 not_found` ou
+  `503 daemon_unavailable`.
 
 ```sh
 curl --fail-with-body "${AUTH[@]}" "$WOL_API/jobs/job-123"
@@ -198,6 +211,7 @@ curl --fail-with-body "${AUTH[@]}" "$WOL_API/jobs/job-123"
 - Réponse `202` : `{"status":"cancellation_requested"}`.
 - Réponse `409 not_cancellable` : tâche inconnue, déjà terminale ou non
   annulable. Si la fin naturelle gagne la course, son état reste terminal.
+- Réponse `503 daemon_unavailable` : le propriétaire des jobs est arrêté.
 
 ```sh
 curl --fail-with-body -X POST "${AUTH[@]}" \
@@ -234,7 +248,7 @@ Le plan n'émet aucun Magic Packet et ne prouve pas le réveil.
 - Corps obligatoire : `active`, `confirm` et `dry_run`, booléens.
 - Réponses : `202` avec une tâche `network_discovery`, `400 invalid_json`,
   `403 passive_discovery_blocked` ou `active_discovery_blocked`,
-  `409 job_conflict`, `503 audit_unavailable`.
+  `409 job_conflict`, `503 audit_unavailable` ou `503 daemon_unavailable`.
 
 Découverte passive :
 

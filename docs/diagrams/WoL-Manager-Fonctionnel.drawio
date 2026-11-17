@@ -131,7 +131,7 @@
         <mxCell id="f02-download" value="Résoudre main vers un commit puis télécharger via HTTPS" style="whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=0;strokeWidth=2;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="910" y="290" width="240" height="75" as="geometry" />
         </mxCell>
-        <mxCell id="f02-backup" value="Choisir mode systemd; créer compte/répertoires; sauvegarder l&amp;#x27;existant" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
+<mxCell id="f02-backup" value="Choisir CLI / daemon / API / les deux; créer compte/répertoires; sauvegarder l&amp;#x27;existant" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">
           <mxGeometry x="620" y="430" width="250" height="85" as="geometry" />
         </mxCell>
         <mxCell id="f02-atomic" value="Installer binaire + installateur + complétion par renommage" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontColor=#1f2937;align=center;verticalAlign=middle;spacing=6;shadow=0;rounded=1;arcSize=12;" vertex="1" parent="1">

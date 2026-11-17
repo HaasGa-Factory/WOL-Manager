@@ -1,5 +1,5 @@
 [Unit]
-Description=WoL Manager API and automation service
+Description=WoL Manager automation daemon
 After=network-online.target
 Wants=network-online.target
 
@@ -7,9 +7,12 @@ Wants=network-online.target
 Type=simple
 User=wol-manager
 Group=wol-manager
-ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml api serve
+ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml daemon
 Restart=on-failure
 RestartSec=5s
+RuntimeDirectory=wol-manager
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=restart
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

@@ -39,7 +39,7 @@ CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 |---|---|---|
 | Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
 
-La branche `dev` prépare WoL Manager `v1.3.0`. La release GitHub marquée
+La branche `dev` prépare WoL Manager `v1.4.0`. La release GitHub marquée
 **Latest** reste la version stable officielle. WoL Manager est un gestionnaire Wake-on-LAN Linux centralisé pour
 plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
 et sans accès Internet à l'exécution.
@@ -75,7 +75,7 @@ stable proposée par ce lien.
 - API `/api/v1` avec jetons hachés, permissions et limitation de débit ;
 - sauvegarde et restauration contrôlées de la configuration, des jetons et de l'état persistant ;
 - client NUT facultatif ;
-- binaire unique, service systemd facultatif.
+- binaire unique, daemon d'automatisation et API systemd indépendants et facultatifs.
 
 ## Installation stable
 
@@ -111,7 +111,7 @@ source /etc/bash_completion.d/wol-manager
 source <(wol completion bash)
 ```
 
-L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose le mode systemd. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
+L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose cinq choix systemd : daemon NUT, API, daemon + API (choix 3), CLI seule, ou installation des deux unités sans activation. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
 
 L'utilisateur réel ayant lancé `sudo ./install.sh` est ajouté de façon idempotente au groupe
 `wol-manager` afin de lire la configuration protégée sans `sudo`. Root n'est jamais ajouté. Ouvrez
@@ -127,7 +127,7 @@ interactifs, saisissez `?` pour afficher l'aide du contexte courant. L'aide colo
 automatiquement dans les pipes et redirections ; utilisez `wol --no-color --help` ou `NO_COLOR=1`
 pour la désactiver explicitement.
 
-Si vous activez immédiatement le service lors d'une première installation interactive, l'installateur crée et affiche le premier jeton administrateur. En mode CLI ou si vous configurez l'API plus tard :
+Si vous activez immédiatement l'API lors d'une première installation interactive, l'installateur crée et affiche le premier jeton administrateur. Le daemon seul n'a pas besoin de jeton. En mode CLI ou si vous configurez l'API plus tard :
 
 ```sh
 sudo wol token create --id admin --permissions read,wake,admin
@@ -186,7 +186,17 @@ wol update --check --channel dev
 sudo wol update --channel dev
 wol version
 wol ups test
-wol automation status
+sudo wol automation status
+systemctl status wol-manager.service
+systemctl status wol-manager-api.service
+```
+
+`wol-manager.service` exécute `wol daemon` et reste responsable de la surveillance NUT même si
+l'API est arrêtée. `wol-manager-api.service` expose uniquement l'API et délègue les jobs au daemon.
+Pour activer les deux composants après une installation CLI :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
 ```
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.

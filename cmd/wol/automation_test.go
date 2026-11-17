@@ -101,6 +101,31 @@ func TestPowerRestoreRequiresRecordedOutageAndKnownBattery(t *testing.T) {
 	}
 }
 
+func TestAutomationMonitorReportsNUTCommunicationHealth(t *testing.T) {
+	cfg := automationConfig(t)
+	manager, _ := automationManagerForTest(t, cfg)
+	now := time.Date(2026, 11, 16, 20, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return now }
+	manager.status = func(context.Context, string, UPSConfig) UPSStatus {
+		return UPSStatus{State: "unknown", Error: "connexion NUT refusée"}
+	}
+	manager.poll(context.Background())
+	monitors := manager.monitorStatuses()
+	if len(monitors) != 1 || monitors[0].Operational || monitors[0].Error != "connexion NUT refusée" || !monitors[0].LastPoll.Equal(now) {
+		t.Fatalf("état NUT défaillant absent: %#v", monitors)
+	}
+
+	now = now.Add(5 * time.Second)
+	manager.status = func(context.Context, string, UPSConfig) UPSStatus {
+		return UPSStatus{State: "OL", Battery: 80, BatteryKnown: true}
+	}
+	manager.poll(context.Background())
+	monitors = manager.monitorStatuses()
+	if len(monitors) != 1 || !monitors[0].Operational || monitors[0].State != "OL" || monitors[0].Battery != 80 {
+		t.Fatalf("état NUT opérationnel absent: %#v", monitors)
+	}
+}
+
 func TestUPSSafetyBlockReturnsAutomaticCycleToWaiting(t *testing.T) {
 	cfg := automationConfig(t)
 	manager, jobs := automationManagerForTest(t, cfg)
