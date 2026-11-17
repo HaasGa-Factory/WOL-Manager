@@ -26,14 +26,110 @@ Un avertissement BETA/DEV est affiché. Ce choix vaut uniquement pour cette comm
 
 Une configuration peut être syntaxiquement valide (`valid: true`) tout en étant non opérationnelle
 (`ready: false`), par exemple lorsqu'aucun transport WoL n'est utilisable. Cet état ne bloque pas
-la mise à jour et le YAML n'est pas modifié. Le diagnostic indique la machine et le réseau concernés,
-la raison du refus de chaque transport, puis les actions à effectuer dans `sudo wol setup`. Après la
-correction, contrôlez la machine et l'ensemble de la configuration :
+la mise à jour et le YAML n'est pas modifié. À partir de `1.4.2`, le diagnostic regroupe les machines
+qui partagent le même défaut afin de ne pas répéter la correction pour chaque serveur. Il indique le
+réseau concerné, les transports refusés et les commandes exactes à exécuter. Par exemple :
+
+```text
+CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE
+
+RÉSEAU À CORRIGER : lan
+
+Machines concernées
+  - home_assistant
+  - proxmox
+  - truenas
+
+Transports examinés
+  - Broadcast local : interface eth0 indisponible
+  - Broadcast dirigé : autorisation explicite absente
+  - Relais : aucun relais configuré
+
+CORRECTION RECOMMANDÉE
+  1. Identifiez l’interface IPv4 actuellement utilisée :
+       ip -br -4 address
+  2. Ouvrez l’assistant :
+       sudo wol setup
+  3. Sélectionnez Réseaux WoL -> Modifier -> lan.
+```
+
+Après la correction, contrôlez chaque machine indiquée et l'ensemble de la configuration :
 
 ```sh
 wol network test IDENTIFIANT_MACHINE
 wol config check
 ```
+
+La sortie JSON de `wol --json config check` conserve les champs `valid`, `ready`, `version` et
+`issues`. Une validation humaine ou JSON non opérationnelle retourne toujours le code `1`.
+
+### Amorçage de l'installateur 1.4.1 vers 1.4.2
+
+L'installateur système `1.4.1` reconnaît l'état `ready: false` dans l'ancienne sortie JSON de
+`wol config check`. La version `1.4.2` affiche désormais le rapport humain structuré ci-dessus.
+Si la configuration installée n'est pas encore opérationnelle, l'ancien installateur ne reconnaît
+pas ce nouveau format et peut arrêter la mise à jour avec :
+
+```text
+ERREUR: Configuration incompatible avec 1.4.2
+```
+
+Dans ce cas seulement, amorcez l'installateur `1.4.2` signé avant de relancer la mise à jour. Les
+commandes suivantes résolvent `dev` vers un commit précis, puis téléchargent le manifeste, sa
+signature et l'installateur depuis ce même commit :
+
+```sh
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+cd "$work"
+
+publication=$(curl -fsSL \
+  https://api.github.com/repos/HaasGa-Factory/WOL-Manager/commits/dev \
+  | sed -n 's/^[[:space:]]*"sha":[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' \
+  | head -n1)
+
+printf '%s\n' "$publication" | grep -Eq '^[0-9a-f]{40}$' || {
+  echo "ERREUR: commit de publication dev introuvable" >&2
+  exit 1
+}
+
+base="https://raw.githubusercontent.com/HaasGa-Factory/WOL-Manager/$publication/dist"
+curl -fSLo manifest.json "$base/manifest.json"
+curl -fSLo manifest.json.sig "$base/manifest.json.sig"
+curl -fSLo install.sh "$base/install.sh"
+
+openssl base64 -d -A -in manifest.json.sig -out manifest.sig
+openssl pkeyutl -verify -rawin -pubin \
+  -inkey /usr/local/lib/wol-manager/packaging/release-public.pem \
+  -in manifest.json -sigfile manifest.sig
+
+grep -Fq '"version": "1.4.2"' manifest.json &&
+grep -Fq '"channel": "dev"' manifest.json || {
+  echo "ERREUR: le canal dev ne publie pas encore 1.4.2" >&2
+  exit 1
+}
+
+expected=$(sed -n \
+  's/^[[:space:]]*"installer_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+  manifest.json)
+actual=$(sha256sum install.sh | awk '{print $1}')
+[ -n "$expected" ] && [ "$actual" = "$expected" ] || {
+  echo "ERREUR: install.sh ne correspond pas au manifeste signé" >&2
+  exit 1
+}
+
+sudo install -o root -g root -m 0755 \
+  install.sh \
+  /usr/local/lib/wol-manager/install.sh
+
+sudo /usr/local/lib/wol-manager/install.sh --version
+sudo wol update --channel dev
+```
+
+Cette procédure ne remplace que le moteur d'installation après vérification Ed25519 et SHA-256.
+Elle ne modifie ni le binaire `wol`, ni le YAML, ni les secrets, ni l'état persistant. La dernière
+commande reprend la mise à jour normale ; le nouveau rapport explique ensuite les transports à
+corriger sans bloquer l'installation.
 
 Une machine encore équipée de l'installateur système `1.3.0` peut toutefois
 s'arrêter avant d'installer cette correction. Suivez alors la

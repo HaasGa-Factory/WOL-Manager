@@ -1109,18 +1109,39 @@ func wakeSummary(cfg *Config, id string) string {
 	return strings.Join(parts, " ")
 }
 
-func readinessIssues(cfg *Config) []string {
-	var issues []string
+type readinessProblem struct {
+	Server    string
+	Network   string
+	Decisions []TransportDecision
+	Err       error
+}
+
+func collectReadinessProblems(cfg *Config) []readinessProblem {
+	var problems []readinessProblem
 	for _, id := range sortedKeys(cfg.Servers) {
 		if !enabled(cfg.Servers[id]) {
 			continue
 		}
 		decisions, err := transportPlan(cfg, id)
 		if err != nil {
-			issues = append(issues, readinessIssue(id, cfg.Servers[id].Network, decisions, err))
+			problems = append(problems, readinessProblem{
+				Server: id, Network: cfg.Servers[id].Network, Decisions: decisions, Err: err,
+			})
 		}
 	}
+	return problems
+}
+
+func readinessIssuesFromProblems(problems []readinessProblem) []string {
+	issues := make([]string, 0, len(problems))
+	for _, problem := range problems {
+		issues = append(issues, readinessIssue(problem.Server, problem.Network, problem.Decisions, problem.Err))
+	}
 	return issues
+}
+
+func readinessIssues(cfg *Config) []string {
+	return readinessIssuesFromProblems(collectReadinessProblems(cfg))
 }
 
 func readinessIssue(id, network string, decisions []TransportDecision, planErr error) string {
@@ -1148,6 +1169,147 @@ func readinessIssue(id, network string, decisions []TransportDecision, planErr e
 	}
 	issue += "; transports examinés: " + strings.Join(blockers, ", ")
 	return issue + fmt.Sprintf(". Correction: lancez « sudo wol setup », ouvrez « Réseaux WoL », modifiez le réseau « %s » et rendez au moins un transport utilisable; vérifiez ensuite avec « wol network test %s », puis « wol config check »", network, id)
+}
+
+type readinessNetworkGroup struct {
+	Network  string
+	Failures []readinessFailureGroup
+}
+
+type readinessFailureGroup struct {
+	Servers   []string
+	Decisions []TransportDecision
+}
+
+func readinessDecisionName(name string) string {
+	switch name {
+	case "local_broadcast":
+		return "Broadcast local"
+	case "directed_broadcast":
+		return "Broadcast dirigé"
+	case "relay":
+		return "Relais"
+	default:
+		return name
+	}
+}
+
+func readinessDecisionKey(problem readinessProblem) string {
+	if len(problem.Decisions) == 0 || !strings.Contains(problem.Err.Error(), "aucun transport autorisé et disponible") {
+		return ""
+	}
+	var parts []string
+	for _, decision := range problem.Decisions {
+		parts = append(parts, strings.Join([]string{decision.Name, decision.State, decision.Reason}, "\x1f"))
+	}
+	return strings.Join(parts, "\x1d")
+}
+
+func readinessUnavailableInterface(decisions []TransportDecision) string {
+	for _, decision := range decisions {
+		if decision.Name != "local_broadcast" {
+			continue
+		}
+		const prefix = "interface "
+		const suffix = " indisponible"
+		if strings.HasPrefix(decision.Reason, prefix) && strings.HasSuffix(decision.Reason, suffix) {
+			return strings.TrimSuffix(strings.TrimPrefix(decision.Reason, prefix), suffix)
+		}
+	}
+	return ""
+}
+
+func renderReadinessReport(output io.Writer, problems []readinessProblem) {
+	if len(problems) == 0 {
+		return
+	}
+	fmt.Fprintln(output, "CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Le fichier YAML est syntaxiquement valide et n’a pas été modifié.")
+	fmt.Fprintln(output, "Cet état n’empêche pas une mise à jour logicielle, mais les réveils resteront")
+	fmt.Fprintln(output, "indisponibles tant que les points suivants ne sont pas corrigés.")
+
+	groups := make([]readinessNetworkGroup, 0)
+	networkIndexes := make(map[string]int)
+	failureIndexes := make(map[string]map[string]int)
+	var individual []readinessProblem
+	for _, problem := range problems {
+		key := readinessDecisionKey(problem)
+		if key == "" {
+			individual = append(individual, problem)
+			continue
+		}
+		networkIndex, ok := networkIndexes[problem.Network]
+		if !ok {
+			networkIndex = len(groups)
+			networkIndexes[problem.Network] = networkIndex
+			failureIndexes[problem.Network] = make(map[string]int)
+			groups = append(groups, readinessNetworkGroup{Network: problem.Network})
+		}
+		failureIndex, ok := failureIndexes[problem.Network][key]
+		if !ok {
+			failureIndex = len(groups[networkIndex].Failures)
+			failureIndexes[problem.Network][key] = failureIndex
+			groups[networkIndex].Failures = append(groups[networkIndex].Failures, readinessFailureGroup{Decisions: problem.Decisions})
+		}
+		groups[networkIndex].Failures[failureIndex].Servers = append(groups[networkIndex].Failures[failureIndex].Servers, problem.Server)
+	}
+
+	for _, group := range groups {
+		fmt.Fprintf(output, "\nRÉSEAU À CORRIGER : %s\n", sanitizeExternalText(group.Network))
+		for failureIndex, failure := range group.Failures {
+			if len(group.Failures) > 1 {
+				fmt.Fprintf(output, "\nCAS %d\n", failureIndex+1)
+			}
+			fmt.Fprintln(output, "\nMachines concernées")
+			for _, server := range failure.Servers {
+				fmt.Fprintf(output, "  - %s\n", sanitizeExternalText(server))
+			}
+			fmt.Fprintln(output, "\nTransports examinés")
+			for _, decision := range failure.Decisions {
+				reason := decision.Reason
+				if reason == "" {
+					reason = decision.State
+				}
+				fmt.Fprintf(output, "  - %s : %s\n", sanitizeExternalText(readinessDecisionName(decision.Name)), sanitizeExternalText(reason))
+			}
+			fmt.Fprintln(output, "\nCORRECTION RECOMMANDÉE")
+			if unavailable := readinessUnavailableInterface(failure.Decisions); unavailable != "" {
+				fmt.Fprintln(output, "  1. Identifiez l’interface IPv4 actuellement utilisée :")
+				fmt.Fprintln(output, "       ip -br -4 address")
+				fmt.Fprintln(output, "  2. Ouvrez l’assistant :")
+				fmt.Fprintln(output, "       sudo wol setup")
+				fmt.Fprintf(output, "  3. Sélectionnez Réseaux WoL -> Modifier -> %s.\n", sanitizeExternalText(group.Network))
+				fmt.Fprintf(output, "  4. Remplacez l’interface « %s » et vérifiez l’adresse IP source.\n", sanitizeExternalText(unavailable))
+			} else {
+				fmt.Fprintln(output, "  1. Ouvrez l’assistant :")
+				fmt.Fprintln(output, "       sudo wol setup")
+				fmt.Fprintf(output, "  2. Sélectionnez Réseaux WoL -> Modifier -> %s.\n", sanitizeExternalText(group.Network))
+				fmt.Fprintln(output, "  3. Rendez au moins un transport utilisable pour ce réseau.")
+			}
+			fmt.Fprintln(output, "\nVérifications")
+			for _, server := range failure.Servers {
+				fmt.Fprintf(output, "  wol network test %s\n", sanitizeExternalText(server))
+			}
+		}
+		fmt.Fprintln(output, "  wol --json config check")
+	}
+
+	for _, problem := range individual {
+		fmt.Fprintf(output, "\nMACHINE À CORRIGER : %s\n", sanitizeExternalText(problem.Server))
+		fmt.Fprintf(output, "  Réseau   : %s\n", sanitizeExternalText(problem.Network))
+		fmt.Fprintf(output, "  Problème : %s\n", sanitizeExternalText(problem.Err.Error()))
+		fmt.Fprintln(output, "\nCORRECTION RECOMMANDÉE")
+		fmt.Fprintln(output, "  1. Lancez sudo wol setup.")
+		fmt.Fprintf(output, "  2. Dans Machines, vérifiez l’Adresse IP de « %s ».\n", sanitizeExternalText(problem.Server))
+		fmt.Fprintf(output, "  3. Dans Réseaux WoL, vérifiez le CIDR de « %s ».\n", sanitizeExternalText(problem.Network))
+		fmt.Fprintln(output, "\nVérifications")
+		fmt.Fprintf(output, "  wol network test %s\n", sanitizeExternalText(problem.Server))
+		fmt.Fprintln(output, "  wol --json config check")
+	}
+
+	fmt.Fprintln(output, "\nRésultat attendu : ready: true")
+	fmt.Fprintln(output, "Aucun YAML n’a été modifié automatiquement.")
 }
 
 func simulateAllMachines(output io.Writer, cfg *Config) error {

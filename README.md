@@ -39,7 +39,7 @@ CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 |---|---|---|
 | Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
 
-La branche `dev` prépare WoL Manager `v1.4.1`. La release GitHub marquée
+La branche `dev` prépare WoL Manager `v1.4.2`. La release GitHub marquée
 **Latest** reste la version stable officielle. WoL Manager est un gestionnaire Wake-on-LAN Linux centralisé pour
 plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
 et sans accès Internet à l'exécution.
@@ -51,6 +51,7 @@ et sans accès Internet à l'exécution.
 - [Sauvegardes et restauration](#sauvegardes-et-restauration)
 - [Mises à jour et canaux](#mises-à-jour-et-canaux)
 - [Mise à niveau 1.3.0 vers 1.4.1](#mise-à-niveau-130-vers-141)
+- [Diagnostic `ready: false` et amorçage 1.4.2](docs/updates.md#amorçage-de-linstallateur-141-vers-142)
 - [Essai sans installation](#essai-sans-installation)
 - [Documentation](#documentation)
 - [Limites connues](#limites-connues)
@@ -219,6 +220,12 @@ doivent indiquer des services actifs. Consultez le
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
 
 Si une version `dev` utilisant le manifeste de format 2 est installée alors que `main` publie encore le format signé 1, `wol update --check` explique cette transition et ne modifie rien. Utilisez `wol update --check --channel dev` jusqu'à la publication de cette version sur `main` ; aucun retour automatique vers une ancienne version n'est tenté.
+
+Depuis `1.4.2`, une configuration syntaxiquement valide mais non opérationnelle affiche un rapport
+regroupé par réseau avec les machines concernées, les transports refusés et les étapes exactes de
+correction. Le YAML n'est jamais modifié automatiquement. Si une machine encore équipée de
+l'installateur `1.4.1` refuse cette transition, suivez la
+[procédure d'amorçage signée](docs/updates.md#amorçage-de-linstallateur-141-vers-142).
 
 ### Mise à niveau 1.3.0 vers 1.4.1
 

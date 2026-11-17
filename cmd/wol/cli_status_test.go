@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -79,6 +80,61 @@ func writeStatusConfig(t *testing.T, port int) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func writeNotReadyConfig(t *testing.T) (string, []string) {
+	t.Helper()
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8"}
+	cfg.Groups = map[string]Group{}
+	cfg.Servers = map[string]Server{
+		"home_assistant": {Name: "Home Assistant", MAC: "02:00:00:00:00:21", IP: "127.0.0.2", Network: "lan"},
+		"proxmox":        {Name: "Proxmox", MAC: "02:00:00:00:00:22", IP: "127.0.0.3", Network: "lan"},
+		"truenas":        {Name: "TrueNAS", MAC: "02:00:00:00:00:23", IP: "127.0.0.4", Network: "lan"},
+	}
+	expectedIssues := readinessIssues(cfg)
+	content, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(testDir(t), "not-ready.yaml")
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path, expectedIssues
+}
+
+func TestConfigCheckUsesHumanReadinessReportAndPreservesJSON(t *testing.T) {
+	config, expectedIssues := writeNotReadyConfig(t)
+
+	stdout, stderr, code := runStatusProcess(t, "--config", config, "config", "check")
+	if code != 1 || !strings.Contains(stdout, "CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE") {
+		t.Fatalf("rapport humain absent: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Count(stdout, "RÉSEAU À CORRIGER : lan") != 1 {
+		t.Fatalf("rapport humain non regroupé:\n%s", stdout)
+	}
+	if strings.Contains(stderr, "; machine ") || !strings.Contains(stderr, "3 machine(s) concernée(s)") {
+		t.Fatalf("erreur terminale encore concaténée: %q", stderr)
+	}
+
+	stdout, stderr, code = runStatusProcess(t, "--config", config, "--json", "config", "check")
+	if code != 1 || strings.Contains(stdout, "CONFIGURATION VALIDE") {
+		t.Fatalf("sortie JSON décorée: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var result struct {
+		Valid   bool     `json:"valid"`
+		Ready   bool     `json:"ready"`
+		Version int      `json:"version"`
+		Issues  []string `json:"issues"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("JSON readiness invalide: %v (%q)", err, stdout)
+	}
+	if !result.Valid || result.Ready || result.Version != 1 || !reflect.DeepEqual(result.Issues, expectedIssues) {
+		t.Fatalf("contrat JSON modifié: %#v attendu issues=%#v", result, expectedIssues)
+	}
 }
 
 func TestStatusCLIExitCodesAndStreams(t *testing.T) {

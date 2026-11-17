@@ -150,16 +150,53 @@ if [ "\${3:-}" = config ] && [ "\${4:-}" = check ]; then
     echo "ERREUR: format de configuration incompatible" >&2
     exit 1
   fi
-  if [ -f "\$2" ] && grep -Fq '# WOL_TEST_NOT_READY' "\$2"; then
-    cat <<'JSON'
+  if [ -f "\$2" ] && grep -Fxq '# WOL_TEST_NOT_READY' "\$2"; then
+    cat <<'REPORT'
+CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE
+
+RÉSEAU À CORRIGER : lan
+
+Machines concernées
+  - home_assistant
+  - proxmox
+  - truenas
+
+Transports examinés
+  - Broadcast local : interface eth0 indisponible
+  - Broadcast dirigé : autorisation explicite absente
+  - Relais : aucun relais configuré
+
+CORRECTION RECOMMANDÉE
+  1. Identifiez l’interface IPv4 actuellement utilisée :
+       ip -br -4 address
+  2. Ouvrez l’assistant :
+       sudo wol setup
+  3. Sélectionnez Réseaux WoL -> Modifier -> lan.
+
+Vérifications
+  wol network test home_assistant
+  wol network test proxmox
+  wol network test truenas
+  wol --json config check
+
+Résultat attendu : ready: true
+Aucun YAML n’a été modifié automatiquement.
+REPORT
+    echo "ERREUR: configuration syntaxiquement valide mais non opérationnelle: 3 machine(s) concernée(s); consultez le rapport ci-dessus" >&2
+    exit 1
+  fi
+  if [ -f "\$2" ] && grep -Fq '# WOL_TEST_NOT_READY_LEGACY' "\$2"; then
+    cat <<'REPORT'
 {
-  "issues": ["machine test (réseau lan): aucun transport autorisé et disponible; transports examinés: broadcast local: non autorisé par le réseau, broadcast dirigé: autorisation explicite absente, relais: aucun relais configuré. Correction: lancez « sudo wol setup », ouvrez « Réseaux WoL », modifiez le réseau « lan » et rendez au moins un transport utilisable; vérifiez ensuite avec « wol network test test », puis « wol config check »"],
+  "issues": [
+    "machine legacy (réseau lan): aucun transport autorisé et disponible pour legacy"
+  ],
   "ready": false,
   "valid": true,
   "version": 1
 }
-JSON
-    echo "ERREUR: configuration syntaxiquement valide mais non opérationnelle: machine test (réseau lan): aucun transport autorisé et disponible; transports examinés: broadcast local: non autorisé par le réseau, broadcast dirigé: autorisation explicite absente, relais: aucun relais configuré. Correction: lancez « sudo wol setup », ouvrez « Réseaux WoL », modifiez le réseau « lan » et rendez au moins un transport utilisable; vérifiez ensuite avec « wol network test test », puis « wol config check »" >&2
+REPORT
+    echo "ERREUR: configuration syntaxiquement valide mais non opérationnelle: machine legacy (réseau lan): aucun transport autorisé et disponible pour legacy" >&2
     exit 1
   fi
   if [ -f "\$2" ] && grep -Eq 'allow_unicast|unicast' "\$2"; then
@@ -269,7 +306,7 @@ PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.1"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.2"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
@@ -326,7 +363,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.4.1"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.4.2"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"
@@ -533,11 +570,36 @@ assert_contains "$WORK/not-ready-update.log" "syntaxiquement valide mais non op�
 assert_contains "$WORK/not-ready-update.log" "la mise à jour continue sans modifier le YAML"
 assert_contains "$WORK/not-ready-update.log" "sudo wol setup"
 assert_contains "$WORK/not-ready-update.log" "Réseaux WoL"
-assert_contains "$WORK/not-ready-update.log" "broadcast dirigé: autorisation explicite absente"
-assert_contains "$WORK/not-ready-update.log" "wol network test test"
-assert_contains "$WORK/not-ready-update.log" "wol config check"
+assert_contains "$WORK/not-ready-update.log" "RÉSEAU À CORRIGER : lan"
+assert_contains "$WORK/not-ready-update.log" "  - home_assistant"
+assert_contains "$WORK/not-ready-update.log" "  - proxmox"
+assert_contains "$WORK/not-ready-update.log" "  - truenas"
+assert_contains "$WORK/not-ready-update.log" "Broadcast dirigé : autorisation explicite absente"
+assert_contains "$WORK/not-ready-update.log" "1. Identifiez l’interface IPv4"
+assert_contains "$WORK/not-ready-update.log" "wol network test home_assistant"
+assert_contains "$WORK/not-ready-update.log" "wol network test proxmox"
+assert_contains "$WORK/not-ready-update.log" "wol network test truenas"
+assert_contains "$WORK/not-ready-update.log" "ready: true"
+assert_not_contains "$WORK/not-ready-update.log" "; machine proxmox"
+[[ $(grep -Fc -- "RÉSEAU À CORRIGER : lan" "$WORK/not-ready-update.log") -eq 1 ]] || fail "le bloc réseau a été répété"
 [[ $("$ROOT_NOT_READY/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "une configuration valide mais non prête a bloqué la mise à jour"
 cmp -s "$WORK/not-ready-before.yaml" "$ROOT_NOT_READY/etc/wol-manager/wol.yaml" || fail "la mise à jour a modifié la configuration non prête"
+
+echo "[compatibilité update] ancien rapport JSON valide mais non prêt"
+ROOT_NOT_READY_LEGACY="$WORK/root-not-ready-legacy"
+prepare_root "$ROOT_NOT_READY_LEGACY" 13
+run_installer "$PAYLOAD" "$ROOT_NOT_READY_LEGACY" amd64 --non-interactive --yes --service cli >/dev/null
+mkdir -p "$ROOT_NOT_READY_LEGACY/etc/wol-manager"
+cat >"$ROOT_NOT_READY_LEGACY/etc/wol-manager/wol.yaml" <<'EOF'
+version: 1
+# WOL_TEST_NOT_READY_LEGACY
+EOF
+cp "$ROOT_NOT_READY_LEGACY/etc/wol-manager/wol.yaml" "$WORK/not-ready-legacy-before.yaml"
+run_update "$ROOT_NOT_READY_LEGACY" main --yes --non-interactive >"$WORK/not-ready-legacy-update.log" 2>&1
+assert_contains "$WORK/not-ready-legacy-update.log" "syntaxiquement valide mais non opérationnelle"
+assert_not_contains "$WORK/not-ready-legacy-update.log" "CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE"
+[[ $("$ROOT_NOT_READY_LEGACY/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "l'ancien rapport JSON a bloqué la mise à jour"
+cmp -s "$WORK/not-ready-legacy-before.yaml" "$ROOT_NOT_READY_LEGACY/etc/wol-manager/wol.yaml" || fail "l'ancien rapport JSON a modifié la configuration"
 
 echo "[compatibilité update] configuration invalide toujours refusée"
 ROOT_INVALID_CONFIG="$WORK/root-invalid-config"

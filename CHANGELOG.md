@@ -1,6 +1,14 @@
 # Changelog
 
-## 1.4.1 - en préparation
+## 1.4.2 - en préparation
+
+### Modifié
+
+- `wol config check` regroupe les machines ayant le même défaut de transport par réseau et affiche des étapes de correction lisibles ;
+- l'installateur relaie ce rapport structuré sans concaténer toutes les machines sur une seule ligne ;
+- la sortie JSON et les codes de retour de la validation restent inchangés.
+
+## 1.4.1 - 2026-11-17
 
 ### Ajouté
 

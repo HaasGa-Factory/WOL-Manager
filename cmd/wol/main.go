@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	version        = "1.4.1"
+	version        = "1.4.2"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -112,12 +112,17 @@ func run(args []string) error {
 		return err
 	}
 	if cmd == "config" && len(args) > 0 && args[0] == "check" {
-		issues := readinessIssues(c)
+		problems := collectReadinessProblems(c)
+		issues := readinessIssuesFromProblems(problems)
 		if len(issues) > 0 {
-			if err := output(*jsonOut, map[string]any{"valid": true, "ready": false, "version": c.Version, "issues": issues}, ""); err != nil {
-				return err
+			if *jsonOut {
+				if err := output(true, map[string]any{"valid": true, "ready": false, "version": c.Version, "issues": issues}, ""); err != nil {
+					return err
+				}
+			} else {
+				renderReadinessReport(os.Stdout, problems)
 			}
-			return fmt.Errorf("configuration syntaxiquement valide mais non opérationnelle: %s", strings.Join(issues, "; "))
+			return fmt.Errorf("configuration syntaxiquement valide mais non opérationnelle: %d machine(s) concernée(s); consultez le rapport ci-dessus", len(issues))
 		}
 		return output(*jsonOut, map[string]any{"valid": true, "ready": true, "version": c.Version}, "configuration syntaxiquement valide et opérationnelle")
 	}

@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-APP_VERSION="1.4.1"
+APP_VERSION="1.4.2"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -726,26 +726,44 @@ rollback() {
   log "Rollback terminé"
 }
 config_valid_but_not_ready() {
-  check_log=$1
-  grep -Eq '^[[:space:]]*"valid"[[:space:]]*:[[:space:]]*true,?[[:space:]]*$' "$check_log" &&
-    grep -Eq '^[[:space:]]*"ready"[[:space:]]*:[[:space:]]*false,?[[:space:]]*$' "$check_log"
+  check_output=$1
+  check_error=${2:-$1}
+  if grep -Eq '^[[:space:]]*"valid"[[:space:]]*:[[:space:]]*true,?[[:space:]]*$' "$check_output" &&
+    grep -Eq '^[[:space:]]*"ready"[[:space:]]*:[[:space:]]*false,?[[:space:]]*$' "$check_output"; then
+    return 0
+  fi
+  grep -Eq '^ERREUR: configuration syntaxiquement valide mais non opérationnelle: ([0-9]+ correction\(s\) requise\(s\)|[0-9]+ machine\(s\) concernée\(s\)); consultez le rapport ci-dessus$' "$check_error"
+}
+append_config_check_logs() {
+  check_output=$1
+  check_error=$2
+  [ ! -s "$check_output" ] || cat "$check_output" >>"$LOG_FILE"
+  [ ! -s "$check_error" ] || cat "$check_error" >>"$LOG_FILE"
+}
+print_readiness_report() {
+  report_file=$1
+  [ -s "$report_file" ] || return 0
+  grep -Fq 'CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE' "$report_file" || return 0
+  printf '\n' >&2
+  cat "$report_file" >&2
+  printf '\n' >&2
 }
 validate_candidate_config() {
   [ -f "$CONFIG" ] || return 0
-  config_check_log="$TMP_WORK/config-check.log"
-  if "$CANDIDATE" --config "$CONFIG" config check >"$config_check_log" 2>&1; then
-    cat "$config_check_log" >>"$LOG_FILE"
+  config_check_output="$TMP_WORK/config-check.out"
+  config_check_error="$TMP_WORK/config-check.err"
+  if "$CANDIDATE" --config "$CONFIG" config check >"$config_check_output" 2>"$config_check_error"; then
+    append_config_check_logs "$config_check_output" "$config_check_error"
     return 0
   fi
-  cat "$config_check_log" >>"$LOG_FILE"
-  if config_valid_but_not_ready "$config_check_log"; then
+  append_config_check_logs "$config_check_output" "$config_check_error"
+  if config_valid_but_not_ready "$config_check_output" "$config_check_error"; then
     warn "Configuration syntaxiquement valide mais non opérationnelle: la mise à jour continue sans modifier le YAML."
-    config_detail=$(sed -n 's/^ERREUR: configuration syntaxiquement valide mais non opérationnelle: //p' "$config_check_log" | head -n1)
-    [ -z "$config_detail" ] || warn "$config_detail"
+    print_readiness_report "$config_check_output"
     warn "Les réveils concernés resteront indisponibles jusqu'à la correction des transports avec sudo wol setup."
     return 0
   fi
-  if ! grep -Eq "transport inconnu unicast|allow_unicast n'est plus pris en charge" "$config_check_log"; then
+  if ! grep -Eq "transport inconnu unicast|allow_unicast n'est plus pris en charge" "$config_check_output" "$config_check_error"; then
     die "Configuration incompatible avec $CANDIDATE_VERSION"
   fi
 
@@ -757,11 +775,11 @@ validate_candidate_config() {
   confirm "Lancer maintenant la migration guidée avec le nouveau binaire vérifié ?" || \
     die "Mise à jour annulée: la configuration existante n'a pas été modifiée"
   "$CANDIDATE" --config "$CONFIG" setup || die "Migration guidée interrompue; la mise à jour n'a pas été installée"
-  if ! "$CANDIDATE" --config "$CONFIG" config check >"$config_check_log" 2>&1; then
-    cat "$config_check_log" >>"$LOG_FILE"
+  if ! "$CANDIDATE" --config "$CONFIG" config check >"$config_check_output" 2>"$config_check_error"; then
+    append_config_check_logs "$config_check_output" "$config_check_error"
     die "Migration non enregistrée ou configuration encore incompatible avec $CANDIDATE_VERSION"
   fi
-  cat "$config_check_log" >>"$LOG_FILE"
+  append_config_check_logs "$config_check_output" "$config_check_error"
   success "Configuration migrée et validée pour $CANDIDATE_VERSION"
 }
 install_candidate() {
@@ -820,12 +838,13 @@ install_candidate() {
     "$REPOSITORY" "$CHANNEL" "$CANDIDATE_VERSION" "$CANDIDATE_REVISION" "$PUBLICATION_COMMIT" >"$RELEASE_CONFIG"
   "$BIN" version >>"$LOG_FILE" 2>&1 || die "Le binaire installé ne démarre pas"
   if [ -f "$CONFIG" ]; then
-    post_config_check_log="$TMP_WORK/post-config-check.log"
-    if "$BIN" --config "$CONFIG" config check >"$post_config_check_log" 2>&1; then
-      cat "$post_config_check_log" >>"$LOG_FILE"
+    post_config_check_output="$TMP_WORK/post-config-check.out"
+    post_config_check_error="$TMP_WORK/post-config-check.err"
+    if "$BIN" --config "$CONFIG" config check >"$post_config_check_output" 2>"$post_config_check_error"; then
+      append_config_check_logs "$post_config_check_output" "$post_config_check_error"
     else
-      cat "$post_config_check_log" >>"$LOG_FILE"
-      config_valid_but_not_ready "$post_config_check_log" || die "Validation post-installation en échec"
+      append_config_check_logs "$post_config_check_output" "$post_config_check_error"
+      config_valid_but_not_ready "$post_config_check_output" "$post_config_check_error" || die "Validation post-installation en échec"
     fi
   fi
   if [ "$SYSTEMD" = yes ] && can_manage_systemd; then

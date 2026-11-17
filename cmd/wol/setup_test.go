@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -747,6 +748,46 @@ func TestReadinessRejectsEnabledMachineWithoutTransport(t *testing.T) {
 	}
 }
 
+func TestReadinessReportGroupsIdenticalTransportFailuresByNetwork(t *testing.T) {
+	previousResolver := localBroadcastResolver
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{}, errors.New("interface eth0 indisponible")
+	}
+	t.Cleanup(func() { localBroadcastResolver = previousResolver })
+
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", Interface: "eth0", AllowLocalBroadcast: true}
+	for id, ip := range map[string]string{
+		"home_assistant": "127.0.0.2",
+		"proxmox":        "127.0.0.3",
+		"truenas":        "127.0.0.4",
+	} {
+		cfg.Servers[id] = Server{Name: id, MAC: "02:00:00:00:00:10", IP: ip, Network: "lan"}
+	}
+	delete(cfg.Servers, "two")
+
+	var output strings.Builder
+	renderReadinessReport(&output, collectReadinessProblems(cfg))
+	report := output.String()
+	if strings.Count(report, "RÉSEAU À CORRIGER : lan") != 1 {
+		t.Fatalf("réseau non regroupé:\n%s", report)
+	}
+	if strings.Count(report, "interface eth0 indisponible") != 1 {
+		t.Fatalf("cause réseau répétée:\n%s", report)
+	}
+	for _, expected := range []string{
+		"home_assistant", "proxmox", "truenas",
+		"ip -br -4 address", "Réseaux WoL", "Modifier", "lan",
+		"wol network test home_assistant", "wol network test proxmox", "wol network test truenas",
+		"ready: true",
+	} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("élément manquant (%s):\n%s", expected, report)
+		}
+	}
+}
+
 func TestReadinessExplainsIPOutsideNetwork(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Networks["lan"] = Network{CIDR: "192.0.2.0/24", AllowDirectedBroadcast: true}
@@ -757,6 +798,52 @@ func TestReadinessExplainsIPOutsideNetwork(t *testing.T) {
 	for _, expected := range []string{"IP hors du réseau", "Machines", "Adresse IP", "Réseaux WoL", "CIDR", "wol network test two"} {
 		if !strings.Contains(issues[0], expected) {
 			t.Fatalf("conseil IP/réseau manquant (%s): %s", expected, issues[0])
+		}
+	}
+	var output strings.Builder
+	renderReadinessReport(&output, collectReadinessProblems(cfg))
+	for _, expected := range []string{"MACHINE À CORRIGER : two", "Adresse IP", "CIDR", "wol network test two"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("rapport IP/réseau incomplet (%s):\n%s", expected, output.String())
+		}
+	}
+}
+
+func TestReadinessReportSeparatesDifferentFailuresOnSameNetwork(t *testing.T) {
+	var output strings.Builder
+	renderReadinessReport(&output, []readinessProblem{
+		{
+			Server: "one", Network: "lan", Err: errors.New("aucun transport autorisé et disponible pour one"),
+			Decisions: []TransportDecision{{Name: "local_broadcast", State: "unavailable", Reason: "interface eth0 indisponible"}},
+		},
+		{
+			Server: "two", Network: "lan", Err: errors.New("aucun transport autorisé et disponible pour two"),
+			Decisions: []TransportDecision{{Name: "local_broadcast", State: "unavailable", Reason: "interface eth1 indisponible"}},
+		},
+		{Server: "outside", Network: "lan", Err: errors.New("IP hors du réseau")},
+	})
+	report := output.String()
+	if strings.Count(report, "RÉSEAU À CORRIGER : lan") != 1 || strings.Count(report, "CAS ") != 2 || strings.Count(report, "MACHINE À CORRIGER : outside") != 1 {
+		t.Fatalf("causes différentes fusionnées:\n%s", report)
+	}
+	if !strings.Contains(report, "interface eth0 indisponible") || !strings.Contains(report, "interface eth1 indisponible") || !strings.Contains(report, "IP hors du réseau") {
+		t.Fatalf("causes distinctes absentes:\n%s", report)
+	}
+}
+
+func TestReadinessReportSanitizesControlCharacters(t *testing.T) {
+	var output strings.Builder
+	renderReadinessReport(&output, []readinessProblem{{
+		Server: "server\nname", Network: "lan\x1b", Err: errors.New("aucun transport autorisé et disponible"),
+		Decisions: []TransportDecision{{Name: "local_broadcast", State: "unavailable", Reason: "interface eth0\x1b[31m\nindisponible"}},
+	}})
+	report := output.String()
+	if strings.Contains(report, "\x1b") || strings.Contains(report, "server\nname") || strings.Contains(report, "eth0\x1b[31m\n") {
+		t.Fatalf("caractère de contrôle non neutralisé: %q", report)
+	}
+	for _, escaped := range []string{`server\x0Aname`, `lan\x1B`, `eth0\x1B[31m\x0Aindisponible`} {
+		if !strings.Contains(report, escaped) {
+			t.Fatalf("valeur neutralisée absente (%s): %q", escaped, report)
 		}
 	}
 }
