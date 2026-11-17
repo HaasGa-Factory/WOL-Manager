@@ -27,6 +27,20 @@ coupe donc pas la reprise automatique. Si le daemon est arrêté, les lectures
 de configuration restent disponibles, `/automations` signale explicitement
 son absence et les opérations asynchrones renvoient `503 daemon_unavailable`.
 
+Pour ajouter l'API après une installation avec daemon NUT uniquement, gardez
+les deux composants en sélectionnant l'état final `both` :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh \
+  --configure-services \
+  --service both
+```
+
+N'utilisez pas `--service api` pour cette transition : ce mode sélectionne
+l'API seule et retire l'unité du daemon. La procédure complète et les
+contrôles systemd sont détaillés dans
+[Installation — Modifier les composants](installation.md#modifier-les-composants-après-linstallation).
+
 Chaque client est limité par le couple identifiant du jeton/adresse IP selon
 `api.rate_per_minute`. Les réponses utilisent `application/json`,
 `Cache-Control: no-store` et `X-Content-Type-Options: nosniff`.

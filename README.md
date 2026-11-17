@@ -113,6 +113,8 @@ source <(wol completion bash)
 
 L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose cinq choix systemd : daemon NUT, API, daemon + API (choix 3), CLI seule, ou installation des deux unités sans activation. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
 
+Le [guide d'installation détaille les cinq choix ligne par ligne](docs/installation.md#choix-du-mode-systemd), notamment les services activés, les fonctions disponibles et les limites de chaque mode. En résumé : le choix `1` assure l'automatisation NUT sans API, le choix `2` fournit l'API sans moteur de jobs permanent, le choix `3` active les deux composants, le choix `4` conserve uniquement la CLI et le choix `5` prépare les deux unités sans les démarrer.
+
 L'utilisateur réel ayant lancé `sudo ./install.sh` est ajouté de façon idempotente au groupe
 `wol-manager` afin de lire la configuration protégée sans `sudo`. Root n'est jamais ajouté. Ouvrez
 ensuite une nouvelle session ou exécutez `newgrp wol-manager`. Les écritures administratives
@@ -193,11 +195,25 @@ systemctl status wol-manager-api.service
 
 `wol-manager.service` exécute `wol daemon` et reste responsable de la surveillance NUT même si
 l'API est arrêtée. `wol-manager-api.service` expose uniquement l'API et délègue les jobs au daemon.
-Pour activer les deux composants après une installation CLI :
+Pour ajouter l'API après une installation « daemon NUT uniquement », ou pour activer les deux
+composants après une installation CLI :
 
 ```sh
-sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
+sudo /usr/local/lib/wol-manager/install.sh \
+  --configure-services \
+  --service both
+
+systemctl status wol-manager.service
+systemctl status wol-manager-api.service
 ```
+
+La valeur de `--service` représente l'état final souhaité. N'utilisez pas `--service api` pour
+compléter une installation daemon : ce mode bascule vers l'API seule. Utilisez `both` pour conserver
+la surveillance NUT et ajouter l'API. Le secret du premier jeton éventuellement créé n'est affiché
+qu'une seule fois. La commande ne réinstalle pas le binaire et préserve la configuration, les
+secrets, les jobs et les cycles existants. Après son exécution, les deux commandes `systemctl status`
+doivent indiquer des services actifs. Consultez le
+[détail des modes et de leur modification](docs/installation.md#modifier-les-composants-après-linstallation).
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
 

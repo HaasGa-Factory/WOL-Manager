@@ -71,6 +71,87 @@ Services systemd: 1 daemon NUT, 2 API, 3 daemon + API,
 | `4` — CLI seule | N'installe aucune unité systemd. | Pour un usage manuel sans processus permanent. |
 | `5` — installer sans activer | Installe les deux unités sans les démarrer ni les activer au boot. C'est le défaut avec Entrée. | Pour configurer et tester avant activation. |
 
+#### Choix 1 — Daemon NUT uniquement
+
+Ce choix installe et active `wol-manager.service`. Le daemon fonctionne en
+arrière-plan, surveille les UPS NUT configurés, conserve les cycles et les
+jobs, puis applique les politiques de reprise après une coupure réellement
+observée. Il redémarre automatiquement avec Debian et après une défaillance.
+
+L'API REST n'est ni installée ni activée et aucun port HTTP WoL Manager n'est
+ouvert. La CLI, `wol menu`, les diagnostics et les commandes manuelles restent
+disponibles.
+
+Utilisez ce choix pour automatiser les reprises NUT sans exposer d'API :
+
+```sh
+systemctl status wol-manager.service
+sudo wol automation status
+journalctl -u wol-manager.service -n 100 --no-pager
+```
+
+#### Choix 2 — API uniquement
+
+Ce choix installe et active uniquement `wol-manager-api.service`. L'API REST
+est disponible, mais aucun daemon ne surveille NUT et aucune reprise
+automatique n'est exécutée. Les opérations API qui doivent créer ou suivre un
+job renvoient `503 daemon_unavailable` tant que le daemon est absent.
+
+Ce mode convient surtout à une consultation de l'API, à sa préparation ou à
+un déploiement dans lequel le daemon sera ajouté plus tard. Il ne constitue
+pas une installation d'automatisation complète.
+
+```sh
+systemctl status wol-manager-api.service
+journalctl -u wol-manager-api.service -n 100 --no-pager
+```
+
+#### Choix 3 — Daemon NUT et API
+
+Ce choix installe et active les deux unités indépendantes :
+
+- `wol-manager.service` possède les jobs, l'état persistant et la surveillance
+  NUT ;
+- `wol-manager-api.service` expose l'API authentifiée et délègue les actions au
+  daemon par un socket Unix local protégé.
+
+Un seul moniteur NUT fonctionne : l'API ne démarre pas un second moteur. Elle
+peut être arrêtée sans interrompre les automatismes. Si aucun jeton n'existe,
+l'installateur crée le premier jeton administrateur et n'affiche son secret
+qu'une seule fois.
+
+Utilisez ce choix lorsque l'automatisation NUT et l'accès API sont tous deux
+nécessaires :
+
+```sh
+systemctl status wol-manager.service
+systemctl status wol-manager-api.service
+sudo wol automation status
+```
+
+#### Choix 4 — CLI uniquement
+
+Ce choix installe la commande `wol`, mais aucune unité systemd WoL Manager.
+Rien ne reste actif en arrière-plan et rien ne démarre automatiquement avec
+Debian. Les commandes manuelles restent disponibles, notamment `wol menu`,
+`wol status`, `wol ups test` et `wol wake`.
+
+Sans daemon, aucune surveillance NUT permanente et aucune reprise automatique
+ne sont possibles. Sans service API, aucun port HTTP WoL Manager n'est ouvert.
+Utilisez ce choix pour un poste d'administration manuelle ou des essais sans
+service permanent.
+
+#### Choix 5 — Installer les deux unités sans les activer
+
+Ce choix installe les fichiers `wol-manager.service` et
+`wol-manager-api.service`, mais les laisse arrêtés et désactivés au démarrage.
+Il permet de terminer la configuration, de vérifier les permissions et de
+choisir ensuite précisément les composants à démarrer.
+
+Tant qu'aucune unité n'est activée, aucune surveillance NUT permanente, aucune
+reprise automatique et aucune API ne fonctionnent. Ce choix est la valeur par
+défaut lorsque l'utilisateur appuie simplement sur Entrée.
+
 Après le choix `5`, configurez et vérifiez d'abord WoL Manager, puis activez
 les composants lorsque vous êtes prêt :
 
@@ -138,6 +219,41 @@ sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
 sudo /usr/local/lib/wol-manager/install.sh --configure-services --service install
 sudo /usr/local/lib/wol-manager/install.sh --configure-services --service cli
 ```
+
+> **Important :** la valeur de `--service` décrit l'ensemble final des
+> composants souhaités ; elle ne s'ajoute pas aux services déjà installés.
+> Ainsi, `--service api` bascule vers une installation **API uniquement** et
+> retire l'unité du daemon. Pour ajouter l'API à un daemon NUT déjà installé
+> tout en conservant l'automatisation, utilisez obligatoirement
+> `--service both`.
+
+#### Ajouter l'API après une installation « daemon NUT uniquement »
+
+Si le choix `1` a été utilisé lors de l'installation initiale, ajoutez plus
+tard l'API avec :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh \
+  --configure-services \
+  --service both
+```
+
+Cette opération conserve la configuration, les secrets, les jobs, les cycles
+et la surveillance NUT. Elle installe et active l'unité API en plus du daemon.
+Si aucun jeton API n'existe, le premier jeton administrateur est créé et son
+secret n'est affiché qu'une seule fois : conservez-le immédiatement dans un
+emplacement sûr.
+
+Vérifiez ensuite les deux composants :
+
+```sh
+systemctl status wol-manager.service
+systemctl status wol-manager-api.service
+sudo wol automation status
+```
+
+Un arrêt ultérieur de `wol-manager-api.service` n'interrompt pas le daemon ni
+la reprise automatique NUT.
 
 `install` conserve les deux fichiers d'unité sans les activer ; `cli` arrête,
 désactive et retire les deux unités sans supprimer la configuration, les
