@@ -59,7 +59,22 @@ cat >"$MOCK_BIN/systemctl" <<'EOF'
 #!/bin/sh
 state=${SYSTEMD_STATE:?}
 printf '%s\n' "$*" >>"$state/calls"
+unit=
+for argument in "$@"; do
+  case "$argument" in
+    *.service) unit=$argument ;;
+  esac
+done
+unit_file=${WOL_ROOT:?}/etc/systemd/system/$unit
 case "${1:-}" in
+  show)
+    [ "${WOL_TEST_SYSTEMD_SHOW_FAIL:-0}" != 1 ] || exit 6
+    if [ -n "$unit" ] && [ -e "$unit_file" ]; then
+      printf 'loaded\n'
+    else
+      printf 'not-found\n'
+    fi
+    ;;
   is-active) test -f "$state/active" ;;
   is-enabled) test -f "$state/enabled" ;;
   stop) rm -f "$state/active" ;;
@@ -77,7 +92,21 @@ case "${1:-}" in
         ;;
     esac
     ;;
-  disable) rm -f "$state/enabled" "$state/active" ;;
+  disable)
+    if [ "${WOL_TEST_STRICT_SYSTEMD_UNITS:-0}" = 1 ]; then
+      for argument in "$@"; do
+        case "$argument" in
+          *.service)
+            [ -e "${WOL_ROOT:?}/etc/systemd/system/$argument" ] || {
+              echo "Failed to disable unit: Unit $argument does not exist" >&2
+              exit 5
+            }
+            ;;
+        esac
+      done
+    fi
+    rm -f "$state/enabled" "$state/active"
+    ;;
   daemon-reload) : ;;
   *) : ;;
 esac
@@ -904,6 +933,67 @@ assert_file "$ROOT_API/etc/systemd/system/wol-manager-api.service"
 [[ ! -e "$ROOT_API/etc/systemd/system/wol-manager.service" ]] || fail "l'unité daemon a été installée en mode API"
 assert_contains "$ROOT_API/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
 assert_contains "$ROOT_API/systemd-state/calls" "enable --now wol-manager-api.service"
+
+echo "[régression systemd] configuration initiale et transitions entre tous les modes"
+ROOT_SERVICE_FRESH="$WORK/root-service-fresh"
+prepare_root "$ROOT_SERVICE_FRESH" 13
+WOL_TEST_SYSTEMD=1 run_installer "$PAYLOAD" "$ROOT_SERVICE_FRESH" amd64 --non-interactive --yes --service cli --setup
+configure_service_mode() {
+  mode=$1
+  APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_SERVICE_FRESH/systemd-state" \
+    WOL_ROOT="$ROOT_SERVICE_FRESH" WOL_OS_RELEASE="$ROOT_SERVICE_FRESH/os-release" WOL_ARCH=amd64 \
+    WOL_TEST_MODE=1 WOL_TEST_SYSTEMD=1 WOL_TEST_STRICT_SYSTEMD_UNITS=1 WOL_TEST_UNAME=Linux \
+    PATH="$MOCK_BIN:$PATH" "$ROOT_SERVICE_FRESH/usr/local/lib/wol-manager/install.sh" \
+    --configure-services --service "$mode" --yes --non-interactive
+}
+
+configure_service_mode both
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service"
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service"
+assert_file "$ROOT_SERVICE_FRESH/systemd-state/enabled"
+assert_file "$ROOT_SERVICE_FRESH/systemd-state/active"
+
+echo "[régression systemd] une erreur réelle de consultation déclenche le rollback"
+DAEMON_UNIT_SHA=$(sha256sum "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service" | awk '{print $1}')
+API_UNIT_SHA=$(sha256sum "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service" | awk '{print $1}')
+if APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_SERVICE_FRESH/systemd-state" \
+  WOL_ROOT="$ROOT_SERVICE_FRESH" WOL_OS_RELEASE="$ROOT_SERVICE_FRESH/os-release" WOL_ARCH=amd64 \
+  WOL_TEST_MODE=1 WOL_TEST_SYSTEMD=1 WOL_TEST_STRICT_SYSTEMD_UNITS=1 WOL_TEST_SYSTEMD_SHOW_FAIL=1 \
+  WOL_TEST_UNAME=Linux PATH="$MOCK_BIN:$PATH" "$ROOT_SERVICE_FRESH/usr/local/lib/wol-manager/install.sh" \
+  --configure-services --service daemon --yes --non-interactive >"$WORK/service-show-error.log" 2>&1; then
+  fail "une erreur systemd réelle a été ignorée"
+fi
+assert_contains "$WORK/service-show-error.log" "Rollback terminé"
+[[ $(sha256sum "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service" | awk '{print $1}') = "$DAEMON_UNIT_SHA" ]] || fail "le rollback a modifié l'unité daemon"
+[[ $(sha256sum "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service" | awk '{print $1}') = "$API_UNIT_SHA" ]] || fail "le rollback a modifié l'unité API"
+
+configure_service_mode daemon
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service"
+[[ ! -e "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service" ]] || fail "both vers daemon a conservé l'unité API"
+assert_file "$ROOT_SERVICE_FRESH/systemd-state/enabled"
+assert_file "$ROOT_SERVICE_FRESH/systemd-state/active"
+
+configure_service_mode api
+[[ ! -e "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service" ]] || fail "daemon vers API a conservé l'unité daemon"
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service"
+assert_file "$ROOT_SERVICE_FRESH/systemd-state/enabled"
+assert_file "$ROOT_SERVICE_FRESH/systemd-state/active"
+
+configure_service_mode install
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service"
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service"
+[[ ! -e "$ROOT_SERVICE_FRESH/systemd-state/enabled" ]] || fail "le mode install a laissé un service activé"
+[[ ! -e "$ROOT_SERVICE_FRESH/systemd-state/active" ]] || fail "le mode install a laissé un service actif"
+
+configure_service_mode cli
+[[ ! -e "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service" ]] || fail "le mode CLI a conservé l'unité daemon"
+[[ ! -e "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service" ]] || fail "le mode CLI a conservé l'unité API"
+[[ ! -e "$ROOT_SERVICE_FRESH/systemd-state/enabled" ]] || fail "le mode CLI a laissé un service activé"
+[[ ! -e "$ROOT_SERVICE_FRESH/systemd-state/active" ]] || fail "le mode CLI a laissé un service actif"
+
+configure_service_mode both
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager.service"
+assert_file "$ROOT_SERVICE_FRESH/etc/systemd/system/wol-manager-api.service"
 
 echo "[complément] migration sans réinstallation vers le choix 3"
 rm -f "$ROOT_DAEMON/usr/local/lib/wol-manager/packaging/systemd/wol-manager.service" \

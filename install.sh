@@ -912,6 +912,23 @@ uninstall() {
   log "Programme et services supprimés; configuration, secrets, données, journaux et sauvegardes conservés"
 }
 
+disable_systemd_unit_if_present() {
+  unit_name=$1
+  load_state=$(systemctl show --property=LoadState --value "$unit_name" 2>>"$LOG_FILE") || \
+    die "Impossible de vérifier l'existence de l'unité $unit_name"
+  case "$load_state" in
+    not-found)
+      info "Unité systemd absente: $unit_name; aucune désactivation nécessaire"
+      ;;
+    '')
+      die "État systemd vide pour $unit_name"
+      ;;
+    *)
+      run systemctl disable --now "$unit_name"
+      ;;
+  esac
+}
+
 configure_services() {
   need_root
   [ "$SYSTEMD" = yes ] || die "systemd est requis pour configurer les services"
@@ -928,7 +945,8 @@ configure_services() {
   create_account_and_dirs
   backup_existing
   ROLLBACK_READY=1
-  run systemctl disable --now wol-manager-api.service wol-manager.service
+  disable_systemd_unit_if_present wol-manager-api.service
+  disable_systemd_unit_if_present wol-manager.service
   if [ "$INSTALL_DAEMON" -eq 1 ]; then write_daemon_unit "$UNIT"; else rm -f "$UNIT"; fi
   if [ "$INSTALL_API" -eq 1 ]; then write_api_unit "$API_UNIT"; else rm -f "$API_UNIT"; fi
   run systemctl daemon-reload
