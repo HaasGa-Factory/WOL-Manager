@@ -8,12 +8,16 @@ else
 fi
 export PATH
 
-APP_VERSION="1.3.0"
+APP_VERSION="1.4.0"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
 CHANNEL_EXPLICIT=0
 SERVICE_MODE=""
+INSTALL_DAEMON=0
+INSTALL_API=0
+ENABLE_DAEMON=0
+ENABLE_API=0
 RUN_SETUP=0
 NON_INTERACTIVE=0
 ASSUME_YES=0
@@ -33,6 +37,9 @@ INSTALLER_CANDIDATE=""
 ROLLBACK_READY=0
 PREVIOUS_ACTIVE=0
 PREVIOUS_ENABLED=0
+PREVIOUS_API_ACTIVE=0
+PREVIOUS_API_ENABLED=0
+LEGACY_COMBINED_SERVICE=0
 PUBLIC_KEY="$SCRIPT_DIR/packaging/release-public.pem"
 
 path() { printf '%s%s' "$ROOT" "$1"; }
@@ -41,6 +48,7 @@ BIN=$(path /usr/local/bin/wol)
 HELPER_DIR=$(path /usr/local/lib/wol-manager)
 HELPER="$HELPER_DIR/install.sh"
 UNIT=$(path /etc/systemd/system/wol-manager.service)
+API_UNIT=$(path /etc/systemd/system/wol-manager-api.service)
 LOGROTATE=$(path /etc/logrotate.d/wol-manager)
 COMPLETION=$(path /etc/bash_completion.d/wol-manager)
 LEGACY_COMPLETION=$(path /usr/share/bash-completion/completions/wol)
@@ -87,9 +95,13 @@ Une ancienne configuration unicast déclenche une migration guidée et confirmé
 
 Options:
   --channel main|dev      choisir le canal (main par défaut)
-  --service enable        installer et activer immédiatement le service systemd
-  --service install       installer le service sans l'activer
-  --service cli           ne pas installer le service
+  --service daemon        installer et activer le daemon NUT uniquement
+  --service api           installer et activer l'API uniquement
+  --service both          installer et activer le daemon NUT et l'API (choix 3)
+  --service enable        alias historique de --service both
+  --service install       installer les deux unités sans les activer
+  --service cli           ne pas installer de service
+  --configure-services    modifier les services sans réinstaller le binaire
   --setup                 lancer l'assistant après l'installation
   --yes                   accepter les confirmations prévues
   --non-interactive       ne poser aucune question
@@ -112,7 +124,7 @@ while [ "$#" -gt 0 ]; do
     --update) ACTION=update ;;
     --check) CHECK_ONLY=1 ;;
     --channel) [ "$#" -ge 2 ] || { echo "--channel exige main ou dev" >&2; exit 2; }; CHANNEL=$2; CHANNEL_EXPLICIT=1; shift ;;
-    --service) [ "$#" -ge 2 ] || { echo "--service exige enable, install ou cli" >&2; exit 2; }; SERVICE_MODE=$2; shift ;;
+    --service) [ "$#" -ge 2 ] || { echo "--service exige daemon, api, both, enable, install ou cli" >&2; exit 2; }; SERVICE_MODE=$2; shift ;;
     --setup) RUN_SETUP=1 ;;
     --non-interactive) NON_INTERACTIVE=1 ;;
     --yes) ASSUME_YES=1 ;;
@@ -120,6 +132,7 @@ while [ "$#" -gt 0 ]; do
     --verbose) VERBOSE=1 ;;
     --version) ACTION=version ;;
     --uninstall) ACTION=uninstall ;;
+    --configure-services) ACTION=services ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Option inconnue: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -127,7 +140,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$CHANNEL" in main|dev) ;; *) echo "Canal invalide: utilisez main ou dev" >&2; exit 2 ;; esac
-case "$SERVICE_MODE" in ""|enable|install|cli) ;; *) echo "Mode service invalide" >&2; exit 2 ;; esac
+case "$SERVICE_MODE" in ""|daemon|api|both|enable|install|cli) ;; *) echo "Mode service invalide" >&2; exit 2 ;; esac
 if [ -z "$REPOSITORY_OVERRIDE" ] && [ -r "$RELEASE_CONFIG" ]; then
   saved_repository=$(sed -n 's/^repository=//p' "$RELEASE_CONFIG" | head -n1)
   [ -z "$saved_repository" ] || REPOSITORY=$saved_repository
@@ -465,24 +478,59 @@ show_comparison() {
 }
 
 choose_service_mode() {
-  [ -n "$SERVICE_MODE" ] && return
+	if [ -n "$SERVICE_MODE" ]; then
+		case "$SERVICE_MODE" in
+			daemon) INSTALL_DAEMON=1; ENABLE_DAEMON=1 ;;
+			api) INSTALL_API=1; ENABLE_API=1 ;;
+			both|enable) INSTALL_DAEMON=1; INSTALL_API=1; ENABLE_DAEMON=1; ENABLE_API=1 ;;
+			install) INSTALL_DAEMON=1; INSTALL_API=1 ;;
+			cli) : ;;
+		esac
+		return
+	fi
   if [ "$ACTION" = update ]; then
-    if [ -e "$UNIT" ]; then SERVICE_MODE=install; else SERVICE_MODE=cli; fi
+		if [ -e "$UNIT" ]; then
+			INSTALL_DAEMON=1
+			if grep -Fq ' api serve' "$UNIT" 2>/dev/null; then
+				INSTALL_API=1
+				LEGACY_COMBINED_SERVICE=1
+			fi
+		fi
+		[ ! -e "$API_UNIT" ] || INSTALL_API=1
     return
   fi
-  if [ "$SYSTEMD" = no ]; then SERVICE_MODE=cli; warn "systemd absent: installation CLI uniquement"; return; fi
-  if [ "$NON_INTERACTIVE" -eq 1 ]; then SERVICE_MODE=install; return; fi
+	if [ "$SYSTEMD" = no ]; then SERVICE_MODE=cli; warn "systemd absent: installation CLI uniquement"; return; fi
+	if [ "$NON_INTERACTIVE" -eq 1 ]; then SERVICE_MODE=install; INSTALL_DAEMON=1; INSTALL_API=1; return; fi
   while :; do
-    printf 'Service systemd: 1 activer, 2 installer sans activer, 3 CLI seule [2]: ' >/dev/tty
+		printf 'Services systemd: 1 daemon NUT, 2 API, 3 daemon + API, 4 CLI seule, 5 installer sans activer [5]: ' >/dev/tty
     read choice </dev/tty || choice=
     case "$choice" in
-      1) SERVICE_MODE=enable; return ;;
-      ''|2) SERVICE_MODE=install; return ;;
-      3) SERVICE_MODE=cli; return ;;
-      '?') info "Aide: 1 installe et démarre le service après la configuration et le premier jeton; 2 installe l'unité sans la démarrer; 3 installe seulement la commande wol." ;;
-      *) warn "Choix invalide: saisissez 1, 2, 3, ? ou appuyez sur Entrée pour 2." ;;
+			1) SERVICE_MODE=daemon; INSTALL_DAEMON=1; ENABLE_DAEMON=1; return ;;
+			2) SERVICE_MODE=api; INSTALL_API=1; ENABLE_API=1; return ;;
+			3) SERVICE_MODE=both; INSTALL_DAEMON=1; INSTALL_API=1; ENABLE_DAEMON=1; ENABLE_API=1; return ;;
+			4) SERVICE_MODE=cli; return ;;
+			''|5) SERVICE_MODE=install; INSTALL_DAEMON=1; INSTALL_API=1; return ;;
+			'?') info "Aide: 1 active uniquement le daemon NUT; 2 active uniquement l'API; 3 active les deux services indépendants; 4 installe seulement la CLI; 5 installe les deux unités sans les activer." ;;
+			*) warn "Choix invalide: saisissez 1, 2, 3, 4, 5, ? ou appuyez sur Entrée pour 5." ;;
     esac
   done
+}
+
+capture_service_state() {
+	if [ "$SYSTEMD" != yes ] || ! can_manage_systemd; then return; fi
+	if [ -e "$UNIT" ]; then
+		systemctl is-active --quiet wol-manager.service 2>/dev/null && PREVIOUS_ACTIVE=1 || true
+		systemctl is-enabled --quiet wol-manager.service 2>/dev/null && PREVIOUS_ENABLED=1 || true
+		if grep -Fq ' api serve' "$UNIT" 2>/dev/null; then
+			LEGACY_COMBINED_SERVICE=1
+			PREVIOUS_API_ACTIVE=$PREVIOUS_ACTIVE
+			PREVIOUS_API_ENABLED=$PREVIOUS_ENABLED
+		fi
+	fi
+	if [ -e "$API_UNIT" ]; then
+		systemctl is-active --quiet wol-manager-api.service 2>/dev/null && PREVIOUS_API_ACTIVE=1 || true
+		systemctl is-enabled --quiet wol-manager-api.service 2>/dev/null && PREVIOUS_API_ENABLED=1 || true
+	fi
 }
 
 grant_client_access() {
@@ -518,7 +566,7 @@ create_account_and_dirs() {
   fi
   install -d -m 0750 "$(path /etc/wol-manager)" "$(path /etc/wol-manager/secrets)" "$STATE_DIR" "$LOG_DIR"
   install -d -m 0755 "$(path /usr/local/bin)" "$HELPER_DIR" "$HELPER_DIR/configs" "$HELPER_DIR/packaging/systemd" "$HELPER_DIR/packaging/logrotate" "$(path /usr/share/doc/wol-manager)" "$(dirname "$COMPLETION")" "$(dirname "$LOGROTATE")"
-  [ "$SERVICE_MODE" = cli ] || install -d -m 0755 "$(path /etc/systemd/system)"
+  [ "$INSTALL_DAEMON" -eq 0 ] && [ "$INSTALL_API" -eq 0 ] || install -d -m 0755 "$(path /etc/systemd/system)"
   if [ "$TEST_MODE" != 1 ]; then
     chown wol-manager:wol-manager "$STATE_DIR" "$LOG_DIR"
     chown root:wol-manager "$(path /etc/wol-manager)" "$(path /etc/wol-manager/secrets)"
@@ -542,6 +590,88 @@ create_account_and_dirs() {
   chmod 0600 "$TOKENS_FILE"
   [ "$TEST_MODE" = 1 ] || chown wol-manager:wol-manager "$TOKENS_FILE"
 }
+
+write_daemon_unit() {
+  destination=$1
+  temporary="$TMP_WORK/wol-manager.service"
+  cat >"$temporary" <<'EOF'
+[Unit]
+Description=WoL Manager automation daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wol-manager
+Group=wol-manager
+ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml daemon
+Restart=on-failure
+RestartSec=5s
+RuntimeDirectory=wol-manager
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=restart
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/wol-manager /var/log/wol-manager
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+MemoryMax=256M
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  install -m 0644 "$temporary" "$destination"
+}
+
+write_api_unit() {
+  destination=$1
+  temporary="$TMP_WORK/wol-manager-api.service"
+  cat >"$temporary" <<'EOF'
+[Unit]
+Description=WoL Manager REST API
+After=network-online.target wol-manager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wol-manager
+Group=wol-manager
+ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml api serve
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/wol-manager
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+MemoryMax=256M
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  install -m 0644 "$temporary" "$destination"
+}
+
 backup_existing() {
   prepare_root_directory "$INSTALLER_STATE_DIR"
   prepare_root_directory "$BACKUP_ROOT"
@@ -549,6 +679,7 @@ backup_existing() {
   verify_root_directory "$BACKUP_DIR"
   backup_file "$BIN" "$BACKUP_DIR/wol" 0755
   backup_file "$UNIT" "$BACKUP_DIR/wol-manager.service" 0644
+  backup_file "$API_UNIT" "$BACKUP_DIR/wol-manager-api.service" 0644
   backup_file "$LOGROTATE" "$BACKUP_DIR/logrotate-wol-manager" 0644
   backup_file "$HELPER" "$BACKUP_DIR/install.sh" 0755
   backup_file "$COMPLETION" "$BACKUP_DIR/bash-completion-wol" 0644
@@ -576,6 +707,7 @@ rollback() {
   verify_root_directory "$BACKUP_DIR"
   if [ -e "$BACKUP_DIR/wol" ] || [ -L "$BACKUP_DIR/wol" ]; then verify_backup_file "$BACKUP_DIR/wol" 755; install -m 0755 "$BACKUP_DIR/wol" "$BIN"; else rm -f "$BIN"; fi
   if [ -e "$BACKUP_DIR/wol-manager.service" ] || [ -L "$BACKUP_DIR/wol-manager.service" ]; then verify_backup_file "$BACKUP_DIR/wol-manager.service" 644; install -m 0644 "$BACKUP_DIR/wol-manager.service" "$UNIT"; else rm -f "$UNIT"; fi
+  if [ -e "$BACKUP_DIR/wol-manager-api.service" ] || [ -L "$BACKUP_DIR/wol-manager-api.service" ]; then verify_backup_file "$BACKUP_DIR/wol-manager-api.service" 644; install -m 0644 "$BACKUP_DIR/wol-manager-api.service" "$API_UNIT"; else rm -f "$API_UNIT"; fi
   if [ -e "$BACKUP_DIR/logrotate-wol-manager" ] || [ -L "$BACKUP_DIR/logrotate-wol-manager" ]; then verify_backup_file "$BACKUP_DIR/logrotate-wol-manager" 644; install -m 0644 "$BACKUP_DIR/logrotate-wol-manager" "$LOGROTATE"; else rm -f "$LOGROTATE"; fi
   if [ -e "$BACKUP_DIR/install.sh" ] || [ -L "$BACKUP_DIR/install.sh" ]; then verify_backup_file "$BACKUP_DIR/install.sh" 755; install -m 0755 "$BACKUP_DIR/install.sh" "$HELPER"; else rm -f "$HELPER"; fi
   if [ -e "$BACKUP_DIR/bash-completion-wol" ] || [ -L "$BACKUP_DIR/bash-completion-wol" ]; then verify_backup_file "$BACKUP_DIR/bash-completion-wol" 644; install -m 0644 "$BACKUP_DIR/bash-completion-wol" "$COMPLETION"; else rm -f "$COMPLETION"; fi
@@ -587,7 +719,9 @@ rollback() {
   if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
     systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true
     [ "$PREVIOUS_ENABLED" -eq 0 ] || systemctl enable wol-manager.service >>"$LOG_FILE" 2>&1 || true
+    [ "$PREVIOUS_API_ENABLED" -eq 0 ] || systemctl enable wol-manager-api.service >>"$LOG_FILE" 2>&1 || true
     [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl restart wol-manager.service >>"$LOG_FILE" 2>&1 || true
+    [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || systemctl restart wol-manager-api.service >>"$LOG_FILE" 2>&1 || true
   fi
   log "Rollback terminé"
 }
@@ -629,15 +763,15 @@ install_candidate() {
     confirm "Installer cette mise à jour ?" || { log "Mise à jour annulée"; return 0; }
   fi
   validate_candidate_config
-  if [ "$SYSTEMD" = yes ] && can_manage_systemd && [ -e "$UNIT" ]; then
-    systemctl is-active --quiet wol-manager.service 2>/dev/null && PREVIOUS_ACTIVE=1 || true
-    systemctl is-enabled --quiet wol-manager.service 2>/dev/null && PREVIOUS_ENABLED=1 || true
-  fi
+  capture_service_state
   choose_service_mode
   create_account_and_dirs
   backup_existing
   ROLLBACK_READY=1
   [ "$PREVIOUS_ACTIVE" -eq 0 ] || run systemctl stop wol-manager.service
+  if [ "$PREVIOUS_API_ACTIVE" -ne 0 ] && [ "$LEGACY_COMBINED_SERVICE" -eq 0 ]; then
+    run systemctl stop wol-manager-api.service
+  fi
   install -m 0755 "$CANDIDATE" "$BIN.new.$$"
   mv -f "$BIN.new.$$" "$BIN"
   install -m 0755 "$INSTALLER_CANDIDATE" "$HELPER.new.$$"
@@ -649,11 +783,13 @@ install_candidate() {
   if [ "$SCRIPT_DIR" != "$HELPER_DIR" ]; then
     install -m 0644 "$SCRIPT_DIR/packaging/release-public.pem" "$HELPER_DIR/packaging/release-public.pem"
     install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$HELPER_DIR/configs/wol.example.yaml"
-    install -m 0644 "$SCRIPT_DIR/packaging/systemd/wol-manager.service" "$HELPER_DIR/packaging/systemd/wol-manager.service"
     install -m 0644 "$SCRIPT_DIR/packaging/logrotate/wol-manager" "$HELPER_DIR/packaging/logrotate/wol-manager"
   fi
+  write_daemon_unit "$HELPER_DIR/packaging/systemd/wol-manager.service"
+  write_api_unit "$HELPER_DIR/packaging/systemd/wol-manager-api.service"
   install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$(path /usr/share/doc/wol-manager/wol.example.yaml)"
-  [ "$SERVICE_MODE" = cli ] || install -m 0644 "$SCRIPT_DIR/packaging/systemd/wol-manager.service" "$UNIT"
+  [ "$INSTALL_DAEMON" -eq 0 ] || write_daemon_unit "$UNIT"
+  [ "$INSTALL_API" -eq 0 ] || write_api_unit "$API_UNIT"
   logrotate_source="$SCRIPT_DIR/packaging/logrotate/wol-manager"
   [ ! -L "$logrotate_source" ] || die "Ressource Logrotate interdite (lien symbolique): $logrotate_source"
   if [ -f "$logrotate_source" ]; then
@@ -676,14 +812,17 @@ install_candidate() {
     run systemctl daemon-reload
     if [ "$ACTION" = update ]; then
       [ "$PREVIOUS_ENABLED" -eq 0 ] || run systemctl enable wol-manager.service
+      [ "$PREVIOUS_API_ENABLED" -eq 0 ] || run systemctl enable wol-manager-api.service
       [ "$PREVIOUS_ACTIVE" -eq 0 ] || run systemctl restart wol-manager.service
+      [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || run systemctl restart wol-manager-api.service
     else
       case "$SERVICE_MODE" in
         enable) : ;; # activation différée jusqu'à la création du premier jeton
         install|cli) : ;;
       esac
     fi
-    [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le service ne fonctionne pas après mise à jour"
+    [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le daemon ne fonctionne pas après mise à jour"
+    [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager-api.service || die "Le service API ne fonctionne pas après mise à jour"
   fi
   success "Installation atomique terminée: $CANDIDATE_VERSION ($CANDIDATE_REVISION)"
 }
@@ -699,28 +838,76 @@ run_setup_if_requested() {
     chmod 0640 "$CONFIG"
     [ "$TEST_MODE" = 1 ] || chown root:wol-manager "$CONFIG"
   fi
-  if [ "$SERVICE_MODE" = enable ]; then
+  if [ "$ENABLE_DAEMON" -eq 1 ] || [ "$ENABLE_API" -eq 1 ]; then
     if [ ! -f "$CONFIG" ]; then
-      warn "Service non activé: configurez d'abord WoL Manager avec sudo wol setup"
+      warn "Services non activés: configurez d'abord WoL Manager avec sudo wol setup"
       return 0
     fi
-    if ! grep -q '[^[:space:]]' "$TOKENS_FILE"; then
+    if [ "$ENABLE_API" -eq 1 ] && ! grep -q '[^[:space:]]' "$TOKENS_FILE"; then
       log "Création du premier jeton administrateur requis par le service"
       "$BIN" --config "$CONFIG" token create --id admin
     fi
     if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
-      run systemctl enable --now wol-manager.service
-      systemctl is-active --quiet wol-manager.service || die "Le service ne fonctionne pas après configuration"
+      if [ "$ENABLE_DAEMON" -eq 1 ] && [ "$ENABLE_API" -eq 1 ]; then
+        run systemctl enable --now wol-manager.service wol-manager-api.service
+      elif [ "$ENABLE_DAEMON" -eq 1 ]; then
+        run systemctl enable --now wol-manager.service
+      else
+        run systemctl enable --now wol-manager-api.service
+      fi
+      [ "$ENABLE_DAEMON" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le daemon ne fonctionne pas après configuration"
+      [ "$ENABLE_API" -eq 0 ] || systemctl is-active --quiet wol-manager-api.service || die "Le service API ne fonctionne pas après configuration"
     fi
   fi
 }
 uninstall() {
   need_root
-  if [ "$SYSTEMD" = yes ]; then systemctl disable --now wol-manager.service >>"$LOG_FILE" 2>&1 || true; rm -f "$UNIT"; systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true; fi
+  if [ "$SYSTEMD" = yes ]; then
+    systemctl disable --now wol-manager-api.service wol-manager.service >>"$LOG_FILE" 2>&1 || true
+    rm -f "$API_UNIT" "$UNIT"
+    systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true
+  fi
   rm -f "$LOGROTATE"
   rm -f "$BIN" "$RELEASE_CONFIG" "$COMPLETION"
   rm -rf -- "$HELPER_DIR"
-  log "Programme et service supprimés; configuration, secrets, données, journaux et sauvegardes conservés"
+  log "Programme et services supprimés; configuration, secrets, données, journaux et sauvegardes conservés"
+}
+
+configure_services() {
+  need_root
+  [ "$SYSTEMD" = yes ] || die "systemd est requis pour configurer les services"
+  can_manage_systemd || die "systemd n'est pas disponible dans cet environnement"
+  [ -x "$BIN" ] || die "WoL Manager n'est pas installé"
+  [ -n "$SERVICE_MODE" ] || die "--configure-services exige --service daemon, api, both, install ou cli"
+  choose_service_mode
+  if { [ "$ENABLE_DAEMON" -eq 1 ] || [ "$ENABLE_API" -eq 1 ]; } && [ ! -f "$CONFIG" ]; then
+    die "Configuration absente: lancez d'abord sudo wol setup"
+  fi
+
+  TMP_WORK=$(mktemp -d "${TMPDIR:-/tmp}/wol-manager-services.XXXXXX")
+  capture_service_state
+  create_account_and_dirs
+  backup_existing
+  ROLLBACK_READY=1
+  run systemctl disable --now wol-manager-api.service wol-manager.service
+  if [ "$INSTALL_DAEMON" -eq 1 ]; then write_daemon_unit "$UNIT"; else rm -f "$UNIT"; fi
+  if [ "$INSTALL_API" -eq 1 ]; then write_api_unit "$API_UNIT"; else rm -f "$API_UNIT"; fi
+  run systemctl daemon-reload
+
+  if [ "$ENABLE_API" -eq 1 ] && ! grep -q '[^[:space:]]' "$TOKENS_FILE"; then
+    log "Création du premier jeton administrateur requis par le service API"
+    "$BIN" --config "$CONFIG" token create --id admin
+  fi
+  if [ "$ENABLE_DAEMON" -eq 1 ] && [ "$ENABLE_API" -eq 1 ]; then
+    run systemctl enable --now wol-manager.service wol-manager-api.service
+  elif [ "$ENABLE_DAEMON" -eq 1 ]; then
+    run systemctl enable --now wol-manager.service
+  elif [ "$ENABLE_API" -eq 1 ]; then
+    run systemctl enable --now wol-manager-api.service
+  fi
+  [ "$ENABLE_DAEMON" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le daemon ne fonctionne pas"
+  [ "$ENABLE_API" -eq 0 ] || systemctl is-active --quiet wol-manager-api.service || die "Le service API ne fonctionne pas"
+  success "Configuration des services terminée"
 }
 
 if [ "$ACTION" = version ]; then log "Installateur $APP_VERSION; version installée: $(installed_version)"; exit 0; fi
@@ -728,6 +915,11 @@ detect_system
 check_legacy_completion
 [ "$CHANNEL" != dev ] || warn "CANAL DEV/BETA: ce choix n'est jamais enregistré comme canal par défaut"
 if [ "$ACTION" = uninstall ]; then uninstall; exit 0; fi
+if [ "$ACTION" = services ]; then
+  configure_services
+  ROLLBACK_READY=0
+  exit 0
+fi
 if [ "$ACTION" = install ] && [ -x "$BIN" ]; then die "WoL Manager est déjà installé; utilisez sudo wol update"; fi
 detect_dependencies
 install_dependencies
