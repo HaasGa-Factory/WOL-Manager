@@ -24,6 +24,17 @@ sudo wol update --channel dev
 
 Un avertissement BETA/DEV est affiché. Ce choix vaut uniquement pour cette commande : l'exécution suivante de `sudo wol update` revient automatiquement à `main`.
 
+Une configuration peut être syntaxiquement valide (`valid: true`) tout en étant non opérationnelle
+(`ready: false`), par exemple lorsqu'aucun transport WoL n'est utilisable. Cet état ne bloque pas
+la mise à jour et le YAML n'est pas modifié. Le diagnostic indique la machine et le réseau concernés,
+la raison du refus de chaque transport, puis les actions à effectuer dans `sudo wol setup`. Après la
+correction, contrôlez la machine et l'ensemble de la configuration :
+
+```sh
+wol network test IDENTIFIANT_MACHINE
+wol config check
+```
+
 ### Amorçage depuis l'installateur 1.2.1
 
 L'installateur système `1.2.1` télécharge et authentifie bien les fichiers `1.2.3`, mais il contrôle
@@ -152,6 +163,16 @@ Cette opération sauvegarde et remplace les unités uniquement. Elle préserve l
 configuration, les jetons, les jobs et les cycles, ne contacte pas NUT et ne
 redémarre aucun service NUT. `wol-manager.service` devient l'unique propriétaire
 de l'état ; `wol-manager-api.service` lui délègue les jobs par socket local.
+
+Une configuration peut être syntaxiquement valide tout en étant non
+opérationnelle, par exemple lorsqu'un ancien backup référence des machines
+mais que leur réseau n'autorise plus aucun transport WoL. Cet état reste
+signalé par `wol config check` avec `valid: true`, `ready: false` et un code de
+sortie non nul. Il ne bloque toutefois plus l'installation d'une mise à jour :
+l'installateur conserve le YAML, affiche un avertissement et rappelle de
+corriger ensuite les transports avec `sudo wol setup`. Une configuration
+syntaxiquement invalide ou utilisant un format incompatible reste strictement
+refusée.
 
 ## Installation atomique et rollback
 

@@ -145,6 +145,23 @@ if [ "\${1:-}" = --config ] && [ "\${3:-}" = token ] && [ "\${4:-}" = create ]; 
   exit 0
 fi
 if [ "\${3:-}" = config ] && [ "\${4:-}" = check ]; then
+  if [ -f "\$2" ] && grep -Fq '# WOL_TEST_INVALID' "\$2"; then
+    echo '{"valid":false,"ready":false,"error":"format incompatible"}'
+    echo "ERREUR: format de configuration incompatible" >&2
+    exit 1
+  fi
+  if [ -f "\$2" ] && grep -Fq '# WOL_TEST_NOT_READY' "\$2"; then
+    cat <<'JSON'
+{
+  "issues": ["machine test (réseau lan): aucun transport autorisé et disponible; transports examinés: broadcast local: non autorisé par le réseau, broadcast dirigé: autorisation explicite absente, relais: aucun relais configuré. Correction: lancez « sudo wol setup », ouvrez « Réseaux WoL », modifiez le réseau « lan » et rendez au moins un transport utilisable; vérifiez ensuite avec « wol network test test », puis « wol config check »"],
+  "ready": false,
+  "valid": true,
+  "version": 1
+}
+JSON
+    echo "ERREUR: configuration syntaxiquement valide mais non opérationnelle: machine test (réseau lan): aucun transport autorisé et disponible; transports examinés: broadcast local: non autorisé par le réseau, broadcast dirigé: autorisation explicite absente, relais: aucun relais configuré. Correction: lancez « sudo wol setup », ouvrez « Réseaux WoL », modifiez le réseau « lan » et rendez au moins un transport utilisable; vérifiez ensuite avec « wol network test test », puis « wol config check »" >&2
+    exit 1
+  fi
   if [ -f "\$2" ] && grep -Eq 'allow_unicast|unicast' "\$2"; then
     echo "global.transport_order: transport inconnu unicast" >&2
     echo "allow_unicast n'est plus pris en charge; utilisez wol setup pour une migration confirmée" >&2
@@ -500,6 +517,44 @@ echo "[8/16] vérification main sans installation"
 run_update "$ROOT12" main --check --non-interactive >"$WORK/check.log"
 assert_contains "$WORK/check.log" "Mise à jour disponible"
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "--check a modifié le binaire"
+
+echo "[compatibilité update] configuration valide mais non prête"
+ROOT_NOT_READY="$WORK/root-not-ready"
+prepare_root "$ROOT_NOT_READY" 13
+run_installer "$PAYLOAD" "$ROOT_NOT_READY" amd64 --non-interactive --yes --service cli >/dev/null
+mkdir -p "$ROOT_NOT_READY/etc/wol-manager"
+cat >"$ROOT_NOT_READY/etc/wol-manager/wol.yaml" <<'EOF'
+version: 1
+# WOL_TEST_NOT_READY
+EOF
+cp "$ROOT_NOT_READY/etc/wol-manager/wol.yaml" "$WORK/not-ready-before.yaml"
+run_update "$ROOT_NOT_READY" main --yes --non-interactive >"$WORK/not-ready-update.log" 2>&1
+assert_contains "$WORK/not-ready-update.log" "syntaxiquement valide mais non opérationnelle"
+assert_contains "$WORK/not-ready-update.log" "la mise à jour continue sans modifier le YAML"
+assert_contains "$WORK/not-ready-update.log" "sudo wol setup"
+assert_contains "$WORK/not-ready-update.log" "Réseaux WoL"
+assert_contains "$WORK/not-ready-update.log" "broadcast dirigé: autorisation explicite absente"
+assert_contains "$WORK/not-ready-update.log" "wol network test test"
+assert_contains "$WORK/not-ready-update.log" "wol config check"
+[[ $("$ROOT_NOT_READY/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "une configuration valide mais non prête a bloqué la mise à jour"
+cmp -s "$WORK/not-ready-before.yaml" "$ROOT_NOT_READY/etc/wol-manager/wol.yaml" || fail "la mise à jour a modifié la configuration non prête"
+
+echo "[compatibilité update] configuration invalide toujours refusée"
+ROOT_INVALID_CONFIG="$WORK/root-invalid-config"
+prepare_root "$ROOT_INVALID_CONFIG" 13
+run_installer "$PAYLOAD" "$ROOT_INVALID_CONFIG" amd64 --non-interactive --yes --service cli >/dev/null
+mkdir -p "$ROOT_INVALID_CONFIG/etc/wol-manager"
+cat >"$ROOT_INVALID_CONFIG/etc/wol-manager/wol.yaml" <<'EOF'
+version: 1
+# WOL_TEST_INVALID
+EOF
+cp "$ROOT_INVALID_CONFIG/etc/wol-manager/wol.yaml" "$WORK/invalid-before.yaml"
+if run_update "$ROOT_INVALID_CONFIG" main --yes --non-interactive >"$WORK/invalid-update.log" 2>&1; then
+  fail "une configuration invalide a été acceptée pendant la mise à jour"
+fi
+assert_contains "$WORK/invalid-update.log" "Configuration incompatible"
+[[ $("$ROOT_INVALID_CONFIG/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "le refus d'une configuration invalide a remplacé le binaire"
+cmp -s "$WORK/invalid-before.yaml" "$ROOT_INVALID_CONFIG/etc/wol-manager/wol.yaml" || fail "le refus a modifié la configuration invalide"
 
 echo "[migration update] ancienne configuration unicast"
 ROOT_LEGACY_UPDATE="$WORK/root-legacy-update"

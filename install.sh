@@ -725,6 +725,11 @@ rollback() {
   fi
   log "Rollback terminé"
 }
+config_valid_but_not_ready() {
+  check_log=$1
+  grep -Eq '^[[:space:]]*"valid"[[:space:]]*:[[:space:]]*true,?[[:space:]]*$' "$check_log" &&
+    grep -Eq '^[[:space:]]*"ready"[[:space:]]*:[[:space:]]*false,?[[:space:]]*$' "$check_log"
+}
 validate_candidate_config() {
   [ -f "$CONFIG" ] || return 0
   config_check_log="$TMP_WORK/config-check.log"
@@ -733,6 +738,13 @@ validate_candidate_config() {
     return 0
   fi
   cat "$config_check_log" >>"$LOG_FILE"
+  if config_valid_but_not_ready "$config_check_log"; then
+    warn "Configuration syntaxiquement valide mais non opérationnelle: la mise à jour continue sans modifier le YAML."
+    config_detail=$(sed -n 's/^ERREUR: configuration syntaxiquement valide mais non opérationnelle: //p' "$config_check_log" | head -n1)
+    [ -z "$config_detail" ] || warn "$config_detail"
+    warn "Les réveils concernés resteront indisponibles jusqu'à la correction des transports avec sudo wol setup."
+    return 0
+  fi
   if ! grep -Eq "transport inconnu unicast|allow_unicast n'est plus pris en charge" "$config_check_log"; then
     die "Configuration incompatible avec $CANDIDATE_VERSION"
   fi
@@ -807,7 +819,15 @@ install_candidate() {
   printf 'repository=%s\ndefault_channel=main\ninstalled_channel=%s\ninstalled_version=%s\nsource_revision=%s\npublication_commit=%s\n' \
     "$REPOSITORY" "$CHANNEL" "$CANDIDATE_VERSION" "$CANDIDATE_REVISION" "$PUBLICATION_COMMIT" >"$RELEASE_CONFIG"
   "$BIN" version >>"$LOG_FILE" 2>&1 || die "Le binaire installé ne démarre pas"
-  [ ! -f "$CONFIG" ] || "$BIN" --config "$CONFIG" config check >>"$LOG_FILE" 2>&1 || die "Validation post-installation en échec"
+  if [ -f "$CONFIG" ]; then
+    post_config_check_log="$TMP_WORK/post-config-check.log"
+    if "$BIN" --config "$CONFIG" config check >"$post_config_check_log" 2>&1; then
+      cat "$post_config_check_log" >>"$LOG_FILE"
+    else
+      cat "$post_config_check_log" >>"$LOG_FILE"
+      config_valid_but_not_ready "$post_config_check_log" || die "Validation post-installation en échec"
+    fi
+  fi
   if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
     run systemctl daemon-reload
     if [ "$ACTION" = update ]; then

@@ -17,6 +17,7 @@
 - l'installateur migre l'ancienne unité combinée vers les deux unités séparées en préservant configuration, jetons, jobs et cycles ;
 - un mode de compatibilité temporaire maintient la surveillance NUT lorsqu'un ancien installateur a déjà remplacé le binaire sans encore migrer l'unité systemd.
 - la chaîne de publication exige Go 1.26.11 afin d'intégrer le correctif de sécurité `net/http` contrôlé par `govulncheck`.
+- une configuration syntaxiquement valide mais temporairement non opérationnelle ne bloque plus une mise à jour ; l'installateur conserve le YAML et détaille, par machine, les transports refusés ainsi que les commandes de correction et de vérification.
 
 ## 1.3.0 - en préparation
 

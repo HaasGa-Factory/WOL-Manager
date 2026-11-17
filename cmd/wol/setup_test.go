@@ -729,9 +729,35 @@ func TestReadinessRejectsEnabledMachineWithoutTransport(t *testing.T) {
 	if len(issues) == 0 || !strings.Contains(issues[0], "aucun transport") {
 		t.Fatalf("absence de transport non détectée: %v", issues)
 	}
+	for _, expected := range []string{
+		"réseau lan",
+		"broadcast dirigé: autorisation explicite absente",
+		"sudo wol setup",
+		"Réseaux WoL",
+		"wol network test two",
+		"wol config check",
+	} {
+		if !strings.Contains(issues[0], expected) {
+			t.Fatalf("conseil de correction manquant (%s): %s", expected, issues[0])
+		}
+	}
 	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", AllowDirectedBroadcast: true}
 	if issues := readinessIssues(cfg); len(issues) != 0 {
 		t.Fatalf("broadcast dirigé utilisable refusé: %v", issues)
+	}
+}
+
+func TestReadinessExplainsIPOutsideNetwork(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Networks["lan"] = Network{CIDR: "192.0.2.0/24", AllowDirectedBroadcast: true}
+	issues := readinessIssues(cfg)
+	if len(issues) != 1 {
+		t.Fatalf("problème IP/réseau non détecté: %v", issues)
+	}
+	for _, expected := range []string{"IP hors du réseau", "Machines", "Adresse IP", "Réseaux WoL", "CIDR", "wol network test two"} {
+		if !strings.Contains(issues[0], expected) {
+			t.Fatalf("conseil IP/réseau manquant (%s): %s", expected, issues[0])
+		}
 	}
 }
 

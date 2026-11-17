@@ -1115,11 +1115,39 @@ func readinessIssues(cfg *Config) []string {
 		if !enabled(cfg.Servers[id]) {
 			continue
 		}
-		if _, err := transportPlan(cfg, id); err != nil {
-			issues = append(issues, fmt.Sprintf("machine %s (réseau %s): %v", id, cfg.Servers[id].Network, err))
+		decisions, err := transportPlan(cfg, id)
+		if err != nil {
+			issues = append(issues, readinessIssue(id, cfg.Servers[id].Network, decisions, err))
 		}
 	}
 	return issues
+}
+
+func readinessIssue(id, network string, decisions []TransportDecision, planErr error) string {
+	issue := fmt.Sprintf("machine %s (réseau %s): %v", id, network, planErr)
+	if len(decisions) == 0 {
+		return issue + fmt.Sprintf(". Correction: lancez « sudo wol setup »; dans « Machines », vérifiez l’Adresse IP de « %s », puis dans « Réseaux WoL », vérifiez le CIDR du réseau « %s »; contrôlez ensuite avec « wol network test %s », puis « wol config check »", id, network, id)
+	}
+
+	blockers := make([]string, 0, len(decisions))
+	for _, decision := range decisions {
+		name := decision.Name
+		switch decision.Name {
+		case "local_broadcast":
+			name = "broadcast local"
+		case "directed_broadcast":
+			name = "broadcast dirigé"
+		case "relay":
+			name = "relais"
+		}
+		reason := decision.Reason
+		if reason == "" {
+			reason = decision.State
+		}
+		blockers = append(blockers, fmt.Sprintf("%s: %s", name, reason))
+	}
+	issue += "; transports examinés: " + strings.Join(blockers, ", ")
+	return issue + fmt.Sprintf(". Correction: lancez « sudo wol setup », ouvrez « Réseaux WoL », modifiez le réseau « %s » et rendez au moins un transport utilisable; vérifiez ensuite avec « wol network test %s », puis « wol config check »", network, id)
 }
 
 func simulateAllMachines(output io.Writer, cfg *Config) error {
