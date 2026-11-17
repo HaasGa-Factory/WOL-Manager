@@ -35,6 +35,12 @@ wol network test IDENTIFIANT_MACHINE
 wol config check
 ```
 
+Une machine encore équipée de l'installateur système `1.3.0` peut toutefois
+s'arrêter avant d'installer cette correction. Suivez alors la
+[procédure d'amorçage 1.3.0 vers 1.4.1](../README.md#mise-à-niveau-130-vers-141),
+qui authentifie le nouvel installateur avant de remplacer uniquement sa copie
+système.
+
 ### Amorçage depuis l'installateur 1.2.1
 
 L'installateur système `1.2.1` télécharge et authentifie bien les fichiers `1.2.3`, mais il contrôle

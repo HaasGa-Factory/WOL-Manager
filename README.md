@@ -50,6 +50,7 @@ et sans accès Internet à l'exécution.
 - [Fonctions](#fonctions)
 - [Sauvegardes et restauration](#sauvegardes-et-restauration)
 - [Mises à jour et canaux](#mises-à-jour-et-canaux)
+- [Mise à niveau 1.3.0 vers 1.4.1](#mise-à-niveau-130-vers-141)
 - [Essai sans installation](#essai-sans-installation)
 - [Documentation](#documentation)
 - [Limites connues](#limites-connues)
@@ -218,6 +219,88 @@ doivent indiquer des services actifs. Consultez le
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
 
 Si une version `dev` utilisant le manifeste de format 2 est installée alors que `main` publie encore le format signé 1, `wol update --check` explique cette transition et ne modifie rien. Utilisez `wol update --check --channel dev` jusqu'à la publication de cette version sur `main` ; aucun retour automatique vers une ancienne version n'est tenté.
+
+### Mise à niveau 1.3.0 vers 1.4.1
+
+Une installation `1.3.0` peut encore utiliser un ancien
+`/usr/local/lib/wol-manager/install.sh`. Si la configuration est
+syntaxiquement valide mais non opérationnelle (`valid: true`, `ready: false`),
+cet ancien installateur arrête la mise à jour avec :
+
+```text
+ERREUR: Configuration incompatible avec 1.4.1
+```
+
+Le manifeste et le binaire `1.4.1` ont alors déjà été authentifiés, mais
+l'ancien installateur s'arrête avant de pouvoir installer son propre
+remplaçant. La procédure suivante remplace uniquement l'installateur système
+par sa copie `1.4.1 dev`, après vérification de la signature officielle et du
+SHA-256 inscrit dans le manifeste signé. Elle ne remplace pas le binaire `wol`
+et ne modifie ni le YAML, ni les secrets, ni les jobs.
+
+Vérifiez d'abord la version de l'installateur actuellement utilisé :
+
+```sh
+sudo /usr/local/lib/wol-manager/install.sh --version
+```
+
+Puis exécutez ce bloc complet :
+
+```sh
+(
+  set -eu
+
+  work=$(mktemp -d)
+  trap 'rm -rf -- "$work"' EXIT
+  cd "$work"
+
+  base='https://raw.githubusercontent.com/HaasGa-Factory/WOL-Manager/87b4fa94ef418efa842f315c43dd36cb1e84dde3/dist'
+
+  curl --proto '=https' --tlsv1.2 -fSLO "$base/manifest.json"
+  curl --proto '=https' --tlsv1.2 -fSLO "$base/manifest.json.sig"
+  curl --proto '=https' --tlsv1.2 -fSLO "$base/install.sh"
+
+  openssl base64 -d -A \
+    -in manifest.json.sig \
+    -out manifest.sig
+
+  openssl pkeyutl -verify -rawin -pubin \
+    -inkey /usr/local/lib/wol-manager/packaging/release-public.pem \
+    -in manifest.json \
+    -sigfile manifest.sig
+
+  grep -Fq '"version": "1.4.1"' manifest.json
+  grep -Fq '"channel": "dev"' manifest.json
+  grep -Fq '"source_revision": "c4f75d5f49b350a6ead371ae92ccead863777f60"' manifest.json
+
+  expected=$(sed -n \
+    's/^[[:space:]]*"installer_sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+    manifest.json)
+
+  printf '%s\n' "$expected" | grep -Eq '^[0-9a-f]{64}$'
+  printf '%s  %s\n' "$expected" install.sh | sha256sum -c -
+
+  sudo install -o root -g root -m 0755 \
+    install.sh \
+    /usr/local/lib/wol-manager/install.sh
+) && \
+sudo /usr/local/lib/wol-manager/install.sh --version && \
+sudo wol update --channel dev
+```
+
+Les contrôles doivent notamment afficher :
+
+```text
+Signature Verified Successfully
+install.sh: OK
+WoL Manager installateur 1.4.1
+```
+
+Si la signature, les métadonnées attendues ou le SHA-256 ne correspondent pas,
+le bloc s'arrête avant la copie. Après la mise à jour, une configuration
+`ready: false` reste inchangée : WoL Manager installe la nouvelle version puis
+indique les réseaux et transports à corriger avec `sudo wol setup`. Une
+configuration réellement invalide reste refusée.
 
 L'installateur système `1.2.3` sait migrer une ancienne configuration utilisant `unicast` : retrait
 des anciens champs, contrôle qu'un broadcast ou un relais utilisable reste configuré, résumé,
