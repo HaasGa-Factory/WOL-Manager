@@ -32,7 +32,7 @@ for command in go govulncheck git sha256sum file openssl tar; do
   }
 done
 
-required_go=go1.26.10
+required_go=go1.26.11
 actual_go=$(go env GOVERSION)
 [[ "$actual_go" == "$required_go" ]] || {
   echo "Toolchain Go refusé: $actual_go; version requise: $required_go." >&2

@@ -2,8 +2,11 @@
 
 La compilation est réservée au développeur, sous Linux ou WSL. Aucun client Debian ne compile WoL Manager.
 
-Le build de publication exige exactement Go `1.26.10` et `govulncheck@v1.9.0`. Installer ces
+Le build de publication exige exactement Go `1.26.11` et `govulncheck@v1.9.0`. Installer ces
 versions depuis leurs sources officielles et vérifier le SHA-256 de l'archive Go avant utilisation.
+Go 1.26.11 contient notamment le correctif `net/http` exigé par le contrôle
+`GO-2026-6859`; le script refuse une version antérieure au lieu de signer un
+binaire signalé comme vulnérable.
 
 ## Préparation unique de la clé
 
