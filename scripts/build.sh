@@ -98,7 +98,7 @@ SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
 echo "Tests Go..."
 source_tree="$work/source"
 mkdir -p "$source_tree"
-git archive HEAD -- cmd api go.mod go.sum | tar -xf - -C "$source_tree"
+git archive HEAD -- cmd api packaging/systemd go.mod go.sum | tar -xf - -C "$source_tree"
 (
   cd "$source_tree"
   go mod verify
