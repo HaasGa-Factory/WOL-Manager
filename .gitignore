@@ -7,6 +7,7 @@
 .codex-remote-attachments/
 .codex-attachments/
 release-output/
+docs/superpowers/
 
 # Artefacts temporaires de développement
 dist/.build.*/
