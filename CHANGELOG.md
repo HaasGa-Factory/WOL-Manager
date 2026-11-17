@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.0 - en préparation
+## 1.4.1 - en préparation
 
 ### Ajouté
 

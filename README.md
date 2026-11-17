@@ -39,7 +39,7 @@ CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 |---|---|---|
 | Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
 
-La branche `dev` prépare WoL Manager `v1.4.0`. La release GitHub marquée
+La branche `dev` prépare WoL Manager `v1.4.1`. La release GitHub marquée
 **Latest** reste la version stable officielle. WoL Manager est un gestionnaire Wake-on-LAN Linux centralisé pour
 plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
 et sans accès Internet à l'exécution.
