@@ -1027,6 +1027,7 @@ echo "[migration v1.2.3] unité combinée active et activée vers deux unités"
 ROOT_MIG123="$WORK/root-mig123"
 prepare_root "$ROOT_MIG123" 13
 run_installer "$PAYLOAD" "$ROOT_MIG123" amd64 --non-interactive --yes --service cli --setup >/dev/null
+mkdir -p "$ROOT_MIG123/etc/systemd/system"
 cat >"$ROOT_MIG123/etc/systemd/system/wol-manager.service" <<'EOF'
 [Unit]
 Description=WoL Manager API and automation service

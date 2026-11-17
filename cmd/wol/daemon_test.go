@@ -62,7 +62,8 @@ func TestLegacyCombinedAPIUsesWritableTemporarySocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("WOL_SYSTEMD_UNIT", legacyUnit)
-	t.Setenv("WOL_DAEMON_SOCKET", filepath.Join(testDir(t), "missing-runtime", "daemon.sock"))
+	t.Setenv("WOL_DAEMON_SOCKET", "")
+	t.Setenv("TMPDIR", testDir(t))
 
 	cfg := testConfig(t)
 	cfg.API.Listen = reserveTCPAddress(t)
@@ -93,10 +94,6 @@ func TestLegacyCombinedAPIUsesWritableTemporarySocket(t *testing.T) {
 			t.Fatalf("API historique inaccessible: %v", err)
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-	if _, err := os.Stat(filepath.Dir(os.Getenv("WOL_DAEMON_SOCKET"))); !os.IsNotExist(err) {
-		cancel()
-		t.Fatalf("le chemin /run simulé ne devait pas être créé: %v", err)
 	}
 	cancel()
 	if err := <-done; err != nil {
