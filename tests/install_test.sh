@@ -78,6 +78,12 @@ case "${1:-}" in
   is-active) test -f "$state/active" ;;
   is-enabled) test -f "$state/enabled" ;;
   stop) rm -f "$state/active" ;;
+  start)
+    if [ "${WOL_TEST_SYSTEMD_START_API_FAIL:-0}" = 1 ] && [ "$unit" = wol-manager-api.service ]; then
+      exit 7
+    fi
+    : >"$state/active"
+    ;;
   restart) : >"$state/active" ;;
   enable)
     : >"$state/enabled"
@@ -507,6 +513,17 @@ run_update_from() {
   APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$root/systemd-state" \
   REMOTE_DIR="$remote" REMOTE_CHANNEL="$remote_channel" PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
   WOL_ROOT="$root" WOL_OS_RELEASE="$root/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux \
+  WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$MOCK_BIN:$PATH" \
+  "$root/usr/local/lib/wol-manager/install.sh" --update "$@"
+}
+
+run_systemd_update_from() {
+  local remote=$1 root=$2 remote_channel=$3
+  shift 3
+  APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$root/systemd-state" \
+  REMOTE_DIR="$remote" REMOTE_CHANNEL="$remote_channel" PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
+  WOL_ROOT="$root" WOL_OS_RELEASE="$root/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_SYSTEMD=1 WOL_TEST_UNAME=Linux \
+  WOL_TEST_SYSTEMD_START_API_FAIL="${WOL_TEST_SYSTEMD_START_API_FAIL:-0}" \
   WOL_GITHUB_API=https://api.test WOL_RAW_BASE=https://raw.test PATH="$MOCK_BIN:$PATH" \
   "$root/usr/local/lib/wol-manager/install.sh" --update "$@"
 }
@@ -1005,6 +1022,80 @@ assert_file "$ROOT_DAEMON/etc/systemd/system/wol-manager.service"
 assert_file "$ROOT_DAEMON/etc/systemd/system/wol-manager-api.service"
 assert_contains "$ROOT_DAEMON/etc/wol-manager/secrets/tokens.json" '"id":"admin"'
 assert_contains "$ROOT_DAEMON/systemd-state/calls" "enable --now wol-manager.service wol-manager-api.service"
+
+echo "[migration v1.2.3] unité combinée active et activée vers deux unités"
+ROOT_MIG123="$WORK/root-mig123"
+prepare_root "$ROOT_MIG123" 13
+run_installer "$PAYLOAD" "$ROOT_MIG123" amd64 --non-interactive --yes --service cli --setup >/dev/null
+cat >"$ROOT_MIG123/etc/systemd/system/wol-manager.service" <<'EOF'
+[Unit]
+Description=WoL Manager API and automation service
+[Service]
+User=wol-manager
+Group=wol-manager
+ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml api serve
+[Install]
+WantedBy=multi-user.target
+EOF
+: >"$ROOT_MIG123/systemd-state/active"
+: >"$ROOT_MIG123/systemd-state/enabled"
+MIG123_CONFIG_SHA=$(sha256sum "$ROOT_MIG123/etc/wol-manager/wol.yaml" | awk '{print $1}')
+REMOTE_MIG123="$WORK/remote-mig123"
+mkdir -p "$REMOTE_MIG123/main"
+make_distribution "$REMOTE_MIG123/main" 1.0.0-beta.1 "$REV1" main
+run_systemd_update_from "$REMOTE_MIG123" "$ROOT_MIG123" main --channel main --yes --non-interactive >"$WORK/mig123.log" 2>&1
+assert_contains "$WORK/mig123.log" "Migration systemd terminée"
+assert_contains "$ROOT_MIG123/etc/systemd/system/wol-manager.service" " daemon"
+assert_contains "$ROOT_MIG123/etc/systemd/system/wol-manager.service" "RuntimeDirectory=wol-manager"
+assert_contains "$ROOT_MIG123/etc/systemd/system/wol-manager-api.service" " api serve"
+assert_file "$ROOT_MIG123/systemd-state/active"
+assert_file "$ROOT_MIG123/systemd-state/enabled"
+assert_contains "$ROOT_MIG123/systemd-state/calls" "start wol-manager.service"
+assert_contains "$ROOT_MIG123/systemd-state/calls" "start wol-manager-api.service"
+[[ $(sha256sum "$ROOT_MIG123/etc/wol-manager/wol.yaml" | awk '{print $1}') = "$MIG123_CONFIG_SHA" ]] || fail "la migration systemd a modifié wol.yaml"
+MIG123_DAEMON_SHA=$(sha256sum "$ROOT_MIG123/etc/systemd/system/wol-manager.service" | awk '{print $1}')
+MIG123_API_SHA=$(sha256sum "$ROOT_MIG123/etc/systemd/system/wol-manager-api.service" | awk '{print $1}')
+run_systemd_update_from "$REMOTE_MIG123" "$ROOT_MIG123" main --channel main --yes --non-interactive >"$WORK/mig123-idempotent.log" 2>&1
+assert_not_contains "$WORK/mig123-idempotent.log" "Ancienne unité systemd combinée détectée"
+[[ $(sha256sum "$ROOT_MIG123/etc/systemd/system/wol-manager.service" | awk '{print $1}') = "$MIG123_DAEMON_SHA" ]] || fail "la seconde migration a modifié l'unité daemon"
+[[ $(sha256sum "$ROOT_MIG123/etc/systemd/system/wol-manager-api.service" | awk '{print $1}') = "$MIG123_API_SHA" ]] || fail "la seconde migration a modifié l'unité API"
+
+echo "[migration v1.2.3] unité volontairement désactivée reste inactive et désactivée"
+ROOT_MIG123_DISABLED="$WORK/root-mig123-disabled"
+cp -a "$ROOT_MIG123" "$ROOT_MIG123_DISABLED"
+rm -f "$ROOT_MIG123_DISABLED/etc/systemd/system/wol-manager-api.service" \
+  "$ROOT_MIG123_DISABLED/systemd-state/active" "$ROOT_MIG123_DISABLED/systemd-state/enabled"
+sed -i 's/ daemon$/ api serve/' "$ROOT_MIG123_DISABLED/etc/systemd/system/wol-manager.service"
+: >"$ROOT_MIG123_DISABLED/systemd-state/calls"
+run_systemd_update_from "$REMOTE_MIG123" "$ROOT_MIG123_DISABLED" main --channel main --yes --non-interactive >"$WORK/mig123-disabled.log" 2>&1
+assert_contains "$WORK/mig123-disabled.log" "Migration systemd terminée"
+[[ ! -e "$ROOT_MIG123_DISABLED/systemd-state/active" ]] || fail "la migration a démarré une unité volontairement inactive"
+[[ ! -e "$ROOT_MIG123_DISABLED/systemd-state/enabled" ]] || fail "la migration a activé une unité volontairement désactivée"
+assert_not_contains "$ROOT_MIG123_DISABLED/systemd-state/calls" "start wol-manager"
+assert_not_contains "$ROOT_MIG123_DISABLED/systemd-state/calls" "enable wol-manager"
+
+echo "[migration v1.2.3] rollback des unités et des états en cas d'échec API"
+ROOT_MIG123_ROLLBACK="$WORK/root-mig123-rollback"
+cp -a "$ROOT_MIG123" "$ROOT_MIG123_ROLLBACK"
+rm -f "$ROOT_MIG123_ROLLBACK/etc/systemd/system/wol-manager-api.service"
+sed -i 's/ daemon$/ api serve/' "$ROOT_MIG123_ROLLBACK/etc/systemd/system/wol-manager.service"
+: >"$ROOT_MIG123_ROLLBACK/systemd-state/active"
+: >"$ROOT_MIG123_ROLLBACK/systemd-state/enabled"
+if WOL_TEST_SYSTEMD_START_API_FAIL=1 run_systemd_update_from "$REMOTE_MIG123" "$ROOT_MIG123_ROLLBACK" main --channel main --yes --non-interactive >"$WORK/mig123-rollback.log" 2>&1; then
+  fail "l'échec de démarrage API devait déclencher le rollback de migration"
+fi
+assert_contains "$WORK/mig123-rollback.log" "Rollback terminé"
+assert_contains "$ROOT_MIG123_ROLLBACK/etc/systemd/system/wol-manager.service" " api serve"
+[[ ! -e "$ROOT_MIG123_ROLLBACK/etc/systemd/system/wol-manager-api.service" ]] || fail "le rollback a conservé la nouvelle unité API"
+assert_file "$ROOT_MIG123_ROLLBACK/systemd-state/active"
+assert_file "$ROOT_MIG123_ROLLBACK/systemd-state/enabled"
+
+echo "[migration v1.2.3] absence de gestion systemd: aucune mutation"
+ROOT_MIG123_NOSYSTEMD="$WORK/root-mig123-nosystemd"
+cp -a "$ROOT_MIG123_ROLLBACK" "$ROOT_MIG123_NOSYSTEMD"
+MIG123_OLD_UNIT_SHA=$(sha256sum "$ROOT_MIG123_NOSYSTEMD/etc/systemd/system/wol-manager.service" | awk '{print $1}')
+run_update_from "$REMOTE_MIG123" "$ROOT_MIG123_NOSYSTEMD" main --channel main --yes --non-interactive >"$WORK/mig123-nosystemd.log" 2>&1
+[[ $(sha256sum "$ROOT_MIG123_NOSYSTEMD/etc/systemd/system/wol-manager.service" | awk '{print $1}') = "$MIG123_OLD_UNIT_SHA" ]] || fail "une installation sans systemd gérable a été modifiée"
 
 echo "[complément] ancienne collision de complétion détectée sans modification"
 ROOT_LEGACY="$WORK/root-legacy"

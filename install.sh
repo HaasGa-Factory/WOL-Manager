@@ -517,6 +517,11 @@ choose_service_mode() {
 }
 
 capture_service_state() {
+	PREVIOUS_ACTIVE=0
+	PREVIOUS_ENABLED=0
+	PREVIOUS_API_ACTIVE=0
+	PREVIOUS_API_ENABLED=0
+	LEGACY_COMBINED_SERVICE=0
 	if [ "$SYSTEMD" != yes ] || ! can_manage_systemd; then return; fi
 	if [ -e "$UNIT" ]; then
 		systemctl is-active --quiet wol-manager.service 2>/dev/null && PREVIOUS_ACTIVE=1 || true
@@ -705,6 +710,10 @@ rollback() {
   ROLLBACK_READY=0
   warn "Vérification en échec: restauration de l'installation précédente"
   verify_root_directory "$BACKUP_DIR"
+  if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
+    systemctl disable --now wol-manager-api.service >>"$LOG_FILE" 2>&1 || true
+    systemctl disable --now wol-manager.service >>"$LOG_FILE" 2>&1 || true
+  fi
   if [ -e "$BACKUP_DIR/wol" ] || [ -L "$BACKUP_DIR/wol" ]; then verify_backup_file "$BACKUP_DIR/wol" 755; install -m 0755 "$BACKUP_DIR/wol" "$BIN"; else rm -f "$BIN"; fi
   if [ -e "$BACKUP_DIR/wol-manager.service" ] || [ -L "$BACKUP_DIR/wol-manager.service" ]; then verify_backup_file "$BACKUP_DIR/wol-manager.service" 644; install -m 0644 "$BACKUP_DIR/wol-manager.service" "$UNIT"; else rm -f "$UNIT"; fi
   if [ -e "$BACKUP_DIR/wol-manager-api.service" ] || [ -L "$BACKUP_DIR/wol-manager-api.service" ]; then verify_backup_file "$BACKUP_DIR/wol-manager-api.service" 644; install -m 0644 "$BACKUP_DIR/wol-manager-api.service" "$API_UNIT"; else rm -f "$API_UNIT"; fi
@@ -719,11 +728,46 @@ rollback() {
   if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
     systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true
     [ "$PREVIOUS_ENABLED" -eq 0 ] || systemctl enable wol-manager.service >>"$LOG_FILE" 2>&1 || true
-    [ "$PREVIOUS_API_ENABLED" -eq 0 ] || systemctl enable wol-manager-api.service >>"$LOG_FILE" 2>&1 || true
+    if [ "$LEGACY_COMBINED_SERVICE" -eq 0 ]; then
+      [ "$PREVIOUS_API_ENABLED" -eq 0 ] || systemctl enable wol-manager-api.service >>"$LOG_FILE" 2>&1 || true
+    fi
     [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl restart wol-manager.service >>"$LOG_FILE" 2>&1 || true
-    [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || systemctl restart wol-manager-api.service >>"$LOG_FILE" 2>&1 || true
+    if [ "$LEGACY_COMBINED_SERVICE" -eq 0 ]; then
+      [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || systemctl restart wol-manager-api.service >>"$LOG_FILE" 2>&1 || true
+    fi
   fi
   log "Rollback terminé"
+}
+
+restore_updated_service_state() {
+  [ "$SYSTEMD" = yes ] && can_manage_systemd || return 0
+  if [ "$PREVIOUS_ENABLED" -ne 0 ]; then run systemctl enable wol-manager.service; fi
+  if [ "$PREVIOUS_API_ENABLED" -ne 0 ]; then run systemctl enable wol-manager-api.service; fi
+  if [ "$PREVIOUS_ACTIVE" -ne 0 ]; then run systemctl start wol-manager.service; fi
+  if [ "$PREVIOUS_API_ACTIVE" -ne 0 ]; then run systemctl start wol-manager-api.service; fi
+  [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le daemon ne fonctionne pas après mise à jour"
+  [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager-api.service || die "Le service API ne fonctionne pas après mise à jour"
+}
+
+migrate_legacy_combined_service() {
+  [ "$SYSTEMD" = yes ] && can_manage_systemd || return 0
+  capture_service_state
+  [ "$LEGACY_COMBINED_SERVICE" -eq 1 ] || return 0
+
+  info "Ancienne unité systemd combinée détectée: migration transactionnelle vers le daemon et l'API séparés"
+  INSTALL_DAEMON=1
+  INSTALL_API=1
+  create_account_and_dirs
+  backup_existing
+  ROLLBACK_READY=1
+  [ "$PREVIOUS_ACTIVE" -eq 0 ] || run systemctl stop wol-manager.service
+  write_daemon_unit "$UNIT"
+  write_api_unit "$API_UNIT"
+  run systemctl daemon-reload
+  restore_updated_service_state
+  ROLLBACK_READY=0
+  success "Migration systemd terminée; les états actif et activé ont été conservés"
+  return 0
 }
 config_valid_but_not_ready() {
   check_output=$1
@@ -788,7 +832,10 @@ install_candidate() {
   [ "$ACTION" != install ] || [ "$current" = absente ] || die "WoL Manager est déjà installé; utilisez sudo wol update"
   if [ "$ACTION" = update ]; then
     show_comparison
-    [ "$UPDATE_NEEDED" -eq 1 ] || return 0
+    if [ "$UPDATE_NEEDED" -ne 1 ]; then
+      migrate_legacy_combined_service
+      return 0
+    fi
     version_lt "$CANDIDATE_VERSION" "$current" && [ "$ALLOW_DOWNGRADE" -ne 1 ] && die "Rétrogradation $current vers $CANDIDATE_VERSION refusée"
     confirm "Installer cette mise à jour ?" || { log "Mise à jour annulée"; return 0; }
   fi
@@ -850,18 +897,13 @@ install_candidate() {
   if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
     run systemctl daemon-reload
     if [ "$ACTION" = update ]; then
-      [ "$PREVIOUS_ENABLED" -eq 0 ] || run systemctl enable wol-manager.service
-      [ "$PREVIOUS_API_ENABLED" -eq 0 ] || run systemctl enable wol-manager-api.service
-      [ "$PREVIOUS_ACTIVE" -eq 0 ] || run systemctl restart wol-manager.service
-      [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || run systemctl restart wol-manager-api.service
+      restore_updated_service_state
     else
       case "$SERVICE_MODE" in
         enable) : ;; # activation différée jusqu'à la création du premier jeton
         install|cli) : ;;
       esac
     fi
-    [ "$PREVIOUS_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager.service || die "Le daemon ne fonctionne pas après mise à jour"
-    [ "$PREVIOUS_API_ACTIVE" -eq 0 ] || systemctl is-active --quiet wol-manager-api.service || die "Le service API ne fonctionne pas après mise à jour"
   fi
   success "Installation atomique terminée: $CANDIDATE_VERSION ($CANDIDATE_REVISION)"
 }

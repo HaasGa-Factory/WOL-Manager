@@ -245,26 +245,45 @@ anciens champs de transport et conserve une sauvegarde datée. L'état
 activé/désactivé des services est conservé. Une tâche interrompue reste
 soumise à la revalidation du moteur existant.
 
-### Migration des services en 1.4.0
+### Migration des services v1.2.3 vers v1.4.2
 
 La version 1.4.0 sépare le daemon d'automatisation de l'API REST. Un ancien
 `wol-manager.service` contenant `api serve` est reconnu comme unité combinée.
-Pendant le premier remplacement effectué par un ancien installateur, le
-nouveau binaire conserve temporairement le moniteur dans le même processus et
-affiche un avertissement : l'automatisation ne disparaît donc pas
-silencieusement. Finalisez ensuite la séparation avec l'installateur signé qui
-vient d'être remplacé :
+Le premier `wol update` lancé depuis v1.2.3 reste piloté par l'installateur
+v1.2.3 déjà présent sur la machine. Cet ancien programme sait authentifier et
+copier le nouveau binaire et le nouvel installateur, mais il ne connaît pas
+encore les deux nouvelles unités. Il ne peut donc pas exécuter rétroactivement
+leur migration pendant cette première commande.
+
+Le nouveau binaire maintient alors temporairement l'API et le moniteur dans le
+même processus. Son socket interne est créé dans un répertoire temporaire privé
+et inscriptible par `wol-manager` : il ne dépend plus de la création interdite
+de `/run/wol-manager` par l'ancien service.
+
+Relancez ensuite exactement la même mise à jour. Le nouvel installateur est
+désormais celui qui s'exécute ; même si le binaire est annoncé à jour, il
+détecte et migre automatiquement l'unité combinée :
 
 ```sh
-sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
+sudo wol update --channel dev
 systemctl status wol-manager.service wol-manager-api.service
 sudo wol automation status
 ```
 
-Cette opération sauvegarde et remplace les unités uniquement. Elle préserve la
-configuration, les jetons, les jobs et les cycles, ne contacte pas NUT et ne
-redémarre aucun service NUT. `wol-manager.service` devient l'unique propriétaire
-de l'état ; `wol-manager-api.service` lui délègue les jobs par socket local.
+Pour une publication stable, omettez `--channel dev` et relancez simplement
+`sudo wol update`.
+
+La migration sauvegarde l'ancienne unité et le binaire, préserve intégralement
+la configuration, les jetons, les jobs et les cycles, ne contacte pas NUT et ne
+redémarre aucun service NUT. Une ancienne unité active et activée produit deux
+unités actives et activées. Une unité volontairement inactive ou désactivée
+conserve exactement ces états. En cas d'échec de l'installation ou du
+démarrage, l'ancienne unité, le binaire précédent et leurs états sont restaurés.
+Une nouvelle exécution est idempotente.
+
+`wol-manager.service` devient l'unique propriétaire de l'état et crée
+`/run/wol-manager` avec `RuntimeDirectory=wol-manager` ;
+`wol-manager-api.service` lui délègue les jobs par le socket local.
 
 Une configuration peut être syntaxiquement valide tout en étant non
 opérationnelle, par exemple lorsqu'un ancien backup référence des machines

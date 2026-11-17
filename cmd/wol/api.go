@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -661,7 +662,13 @@ func serveAPIProcess(ctx context.Context, c *Config, e *Engine) error {
 	// Conserver temporairement un propriétaire unique des états dans ce même
 	// processus évite d'arrêter silencieusement la surveillance NUT. La
 	// réinstallation des unités séparées supprime automatiquement ce chemin.
-	fmt.Fprintln(os.Stderr, "AVERTISSEMENT: ancienne unité systemd combinée détectée; migration vers wol-manager.service et wol-manager-api.service requise")
+	fmt.Fprintln(os.Stderr, "AVERTISSEMENT: ancienne unité systemd combinée détectée; relancez la même commande wol update pour finaliser automatiquement la migration vers wol-manager.service et wol-manager-api.service")
+	legacySocketDir, err := os.MkdirTemp("", "wol-manager-legacy-")
+	if err != nil {
+		return fmt.Errorf("préparation du socket temporaire de migration: %w", err)
+	}
+	defer os.RemoveAll(legacySocketDir)
+	client.socket = filepath.Join(legacySocketDir, "daemon.sock")
 	jobs, err := openJobs(c.Storage.StateFile)
 	if err != nil {
 		return err

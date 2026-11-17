@@ -6,6 +6,9 @@
 
 - `wol config check` regroupe les machines ayant le même défaut de transport par réseau et affiche des étapes de correction lisibles ;
 - l'installateur relaie ce rapport structuré sans concaténer toutes les machines sur une seule ligne ;
+- le mode de compatibilité de l'ancienne unité combinée utilise un socket privé inscriptible au lieu d'échouer sur `/run/wol-manager` ;
+- l'installateur migre de façon transactionnelle l'unité combinée v1.2.3 lorsqu'il est relancé, y compris si le binaire est déjà à jour, en conservant les états actif et activé ;
+- le rollback restaure l'ancienne unité combinée et ses états sans laisser d'unité API partielle ;
 - la sortie JSON et les codes de retour de la validation restent inchangés.
 
 ## 1.4.1 - 2026-11-17

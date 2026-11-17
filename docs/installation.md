@@ -262,19 +262,33 @@ secrets ni l'état.
 ### Migration depuis l'ancien service combiné
 
 Les versions antérieures lançaient l'API et la surveillance NUT dans
-`wol-manager.service`. Lors de la transition, le nouveau binaire détecte
-temporairement cette ancienne unité et conserve la surveillance avec un
-avertissement afin d'éviter une interruption silencieuse. Finalisez ensuite la
-migration avec :
+`wol-manager.service`. Lors du premier saut depuis v1.2.3, l'ancien installateur
+remplace le binaire et sa propre copie, mais ne sait pas encore créer les deux
+unités séparées. Le nouveau binaire conserve temporairement la surveillance et
+l'API avec un socket privé inscriptible, sans dépendre de `/run/wol-manager`.
+
+Relancez la même commande de mise à jour : le nouvel installateur migre alors
+automatiquement les unités, même si la version du binaire est déjà à jour.
+
+Canal de développement :
 
 ```sh
-sudo /usr/local/lib/wol-manager/install.sh --configure-services --service both
+sudo wol update --channel dev
 systemctl status wol-manager.service wol-manager-api.service
 ```
 
-Cette commande sauvegarde les unités précédentes, préserve le YAML, les
-jetons, les jobs et les cycles, puis installe les deux services séparés. Elle
-ne modifie et ne redémarre jamais `nut-server` ou `nut-monitor`.
+Canal stable :
+
+```sh
+sudo wol update
+systemctl status wol-manager.service wol-manager-api.service
+```
+
+La migration sauvegarde les unités précédentes et le binaire, préserve le YAML,
+les jetons, les jobs et les cycles, puis installe les deux services séparés.
+Elle conserve les états actif/inactif et activé/désactivé, ne modifie et ne
+redémarre jamais `nut-server` ou `nut-monitor`, et restaure l'ancienne
+installation si une vérification échoue.
 
 ## Dépendances
 

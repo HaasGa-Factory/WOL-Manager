@@ -56,6 +56,54 @@ func TestSystemdUnitsSeparateDaemonAndAPI(t *testing.T) {
 	}
 }
 
+func TestLegacyCombinedAPIUsesWritableTemporarySocket(t *testing.T) {
+	legacyUnit := filepath.Join(testDir(t), "wol-manager.service")
+	if err := os.WriteFile(legacyUnit, []byte("ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml api serve\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WOL_SYSTEMD_UNIT", legacyUnit)
+	t.Setenv("WOL_DAEMON_SOCKET", filepath.Join(testDir(t), "missing-runtime", "daemon.sock"))
+
+	cfg := testConfig(t)
+	cfg.API.Listen = reserveTCPAddress(t)
+	cfg.Storage.StateFile = filepath.Join(testDir(t), "state.json")
+	cfg.API.TokensFile = filepath.Join(testDir(t), "tokens.json")
+	if err := os.WriteFile(cfg.API.TokensFile, []byte(`{"tokens":[{"id":"test","sha256":"0000000000000000000000000000000000000000000000000000000000000000","permissions":["read"]}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine := &Engine{cfg: cfg, audit: &Auditor{}, sendPacket: func(string, string, bool, []byte) error { return nil }}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serveAPIProcess(ctx, cfg, engine) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		connection, err := net.DialTimeout("tcp", cfg.API.Listen, 50*time.Millisecond)
+		if err == nil {
+			connection.Close()
+			break
+		}
+		select {
+		case processErr := <-done:
+			t.Fatalf("mode historique arrêté avant l'API: %v", processErr)
+		default:
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatalf("API historique inaccessible: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(filepath.Dir(os.Getenv("WOL_DAEMON_SOCKET"))); !os.IsNotExist(err) {
+		cancel()
+		t.Fatalf("le chemin /run simulé ne devait pas être créé: %v", err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("arrêt du mode historique: %v", err)
+	}
+}
+
 func TestDaemonRunsWithoutOpeningAPI(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.API.Listen = reserveTCPAddress(t)

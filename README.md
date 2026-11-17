@@ -219,6 +219,13 @@ doivent indiquer des services actifs. Consultez le
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
 
+Lors d'une migration depuis v1.2.3, relancez une seconde fois la même commande
+`wol update` après le remplacement initial. Le premier saut est encore piloté
+par l'ancien installateur ; le second, exécuté par le nouvel installateur signé,
+migre automatiquement l'unité combinée vers le daemon et l'API séparés en
+conservant leurs états. Aucune édition manuelle de systemd n'est nécessaire.
+Consultez la [procédure détaillée et le rollback](docs/updates.md#migration-des-services-v123-vers-v142).
+
 Si une version `dev` utilisant le manifeste de format 2 est installée alors que `main` publie encore le format signé 1, `wol update --check` explique cette transition et ne modifie rien. Utilisez `wol update --check --channel dev` jusqu'à la publication de cette version sur `main` ; aucun retour automatique vers une ancienne version n'est tenté.
 
 Depuis `1.4.2`, une configuration syntaxiquement valide mais non opérationnelle affiche un rapport
