@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -47,11 +49,22 @@ func TestAuditorMirrorsServiceEventsWhenRequested(t *testing.T) {
 }
 
 func TestAuditorReturnsWriteErrors(t *testing.T) {
+	var processLog bytes.Buffer
+
 	parent := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(parent, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := (&Auditor{path: filepath.Join(parent, "audit.jsonl")}).write("wake", "tester", "one", "requested", nil); err == nil {
+	auditor := &Auditor{path: filepath.Join(parent, "audit.jsonl"), eventLog: func(level, format string, args ...any) {
+		processLog.WriteString(level + " " + fmt.Sprintf(format, args...) + "\n")
+	}}
+	if err := auditor.write("wake", "tester", "one", "requested", nil); err == nil {
 		t.Fatal("erreur d'écriture audit silencieusement ignorée")
+	}
+	if err := auditor.write("wake", "tester", "one", "requested", nil); err == nil {
+		t.Fatal("seconde erreur d'écriture audit silencieusement ignorée")
+	}
+	if count := strings.Count(processLog.String(), "ERROR audit:"); count != 1 {
+		t.Fatalf("erreur d'audit répétée pendant le polling: count=%d log=%q", count, processLog.String())
 	}
 }

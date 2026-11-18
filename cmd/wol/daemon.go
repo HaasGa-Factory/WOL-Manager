@@ -238,6 +238,11 @@ func serveDaemon(ctx context.Context, cfg *Config, jobs *JobStore, engine *Engin
 		_ = listener.Close()
 		_ = os.Remove(socket)
 	}()
+	policyCount := len(cfg.restorePlans())
+	if engine.eventLog == nil {
+		engine.eventLog = processServiceLog
+	}
+	engine.logEvent("INFO", "daemon: démarrage; socket=%s politiques=%d", socket, policyCount)
 
 	if err := jobs.markInterrupted(); err != nil {
 		return fmt.Errorf("revalidation des tâches interrompues: %w", err)
@@ -248,14 +253,17 @@ func serveDaemon(ctx context.Context, cfg *Config, jobs *JobStore, engine *Engin
 	service := rpc.NewServer()
 	if err := service.RegisterName("Daemon", &daemonRPC{status: daemonStatus{
 		Active:     true,
-		Monitoring: len(cfg.restorePlans()) > 0,
-		Policies:   len(cfg.restorePlans()),
+		Monitoring: policyCount > 0,
+		Policies:   policyCount,
 		StartedAt:  time.Now().UTC(),
 	}, jobs: jobs, engine: engine, automations: manager}); err != nil {
 		return err
 	}
-	if len(cfg.restorePlans()) > 0 {
+	if policyCount > 0 {
+		engine.logEvent("INFO", "daemon: moniteur NUT actif; politiques=%d", policyCount)
 		go manager.monitor(ctx)
+	} else {
+		engine.logEvent("INFO", "daemon: moniteur NUT inactif; aucune politique configurée")
 	}
 
 	acceptErrors := make(chan error, 1)
@@ -272,12 +280,15 @@ func serveDaemon(ctx context.Context, cfg *Config, jobs *JobStore, engine *Engin
 
 	select {
 	case <-ctx.Done():
+		engine.logEvent("INFO", "daemon: arrêt demandé")
 		_ = listener.Close()
 		return nil
 	case err := <-acceptErrors:
 		if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+			engine.logEvent("INFO", "daemon: arrêt demandé")
 			return nil
 		}
+		engine.logEvent("ERROR", "daemon: arrêt inattendu: %v", err)
 		return err
 	}
 }

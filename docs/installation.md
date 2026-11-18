@@ -416,3 +416,9 @@ secret n'y est écrit. L'installateur déploie aussi
 hebdomadaire, 12 archives, seuil de 10 MiB et compression. Une mise à jour
 sauvegarde et restaure ce fichier lors d'un rollback ; une désinstallation le
 retire sans supprimer les journaux existants.
+
+Le répertoire `/var/log/wol-manager` appartient à `wol-manager:wol-manager`
+avec le mode `0750`. L'installateur crée ou normalise
+`/var/log/wol-manager/audit.jsonl` en `wol-manager:wol-manager` avec le mode
+`0640`, sans vider son contenu. La règle logrotate recrée le fichier avec les
+mêmes propriétaire, groupe et permissions après chaque rotation.

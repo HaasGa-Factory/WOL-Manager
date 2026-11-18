@@ -1,5 +1,31 @@
 # Mises à jour et rollback
 
+## Mise à jour 1.4.2 vers 1.4.3
+
+Cette mise à jour utilise le parcours standard :
+
+```sh
+wol update --check --channel dev
+sudo wol update --channel dev
+```
+
+L'installateur conserve le contenu de
+`/var/log/wol-manager/audit.jsonl`, puis normalise automatiquement le journal
+en `wol-manager:wol-manager` avec le mode `0640`. Aucune copie manuelle du
+journal ni modification de la configuration YAML n'est nécessaire.
+
+Après la mise à jour :
+
+```sh
+sudo systemctl restart wol-manager.service
+sudo stat -c '%U:%G %a %n' /var/log/wol-manager/audit.jsonl
+sudo journalctl -u wol-manager.service -n 100 --no-pager
+```
+
+Le fichier doit être annoncé comme `wol-manager:wol-manager 640`. Les
+événements importants du daemon sont visibles dans journald, tandis que
+`audit.jsonl` conserve la trace JSON structurée.
+
 ## Canal principal
 
 ```sh

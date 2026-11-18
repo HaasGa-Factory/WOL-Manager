@@ -84,6 +84,26 @@ systemctl status wol-manager-api.service
 journalctl -u wol-manager-api.service -n 100 --no-pager
 ```
 
+Le journal du daemon signale uniquement les événements significatifs :
+démarrage et arrêt, perte ou rétablissement de la communication NUT, coupure
+confirmée, armement d'un groupe, retour secteur, attente de stabilité,
+batterie insuffisante, déclenchement de reprise, demande de Magic Packet,
+machine vérifiée, échec et fin de cycle. Le polling NUT normal n'ajoute pas une
+ligne à chaque lecture.
+
+Pour contrôler séparément la trace structurée et ses permissions :
+
+```sh
+sudo stat -c '%U:%G %a %n' \
+  /var/log/wol-manager \
+  /var/log/wol-manager/audit.jsonl
+sudo tail -n 20 /var/log/wol-manager/audit.jsonl
+```
+
+Les valeurs attendues sont `wol-manager:wol-manager 750` pour le répertoire et
+`wol-manager:wol-manager 640` pour `audit.jsonl`. Une mise à jour vers 1.4.3
+normalise un ancien fichier `root:root` sans supprimer ses événements.
+
 L'API arrêtée n'interrompt pas le daemon. Inversement, une API active sans
 daemon répond aux lectures simples, mais refuse les créations et annulations
 de jobs avec `503 daemon_unavailable`.

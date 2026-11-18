@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-APP_VERSION="1.4.2"
+APP_VERSION="1.4.3"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -57,6 +57,7 @@ TOKENS_FILE=$(path /etc/wol-manager/secrets/tokens.json)
 RELEASE_CONFIG=$(path /etc/wol-manager/release.conf)
 STATE_DIR=$(path /var/lib/wol-manager)
 LOG_DIR=$(path /var/log/wol-manager)
+AUDIT_FILE="$LOG_DIR/audit.jsonl"
 INSTALLER_STATE_DIR=$(path /var/lib/wol-manager-installer)
 INSTALLER_LOG_DIR=$(path /var/log/wol-manager-installer)
 BACKUP_ROOT="$INSTALLER_STATE_DIR/backups"
@@ -589,6 +590,15 @@ create_account_and_dirs() {
       printf '%s\n' "wol-manager:wol-manager $STATE_DIR/state.json" >>"$WOL_TEST_CHOWN_LOG"
     fi
   fi
+  [ ! -L "$AUDIT_FILE" ] || die "Le journal d'audit ne doit pas être un lien symbolique: $AUDIT_FILE"
+  [ ! -e "$AUDIT_FILE" ] || [ -f "$AUDIT_FILE" ] || die "Le chemin du journal d'audit n'est pas un fichier régulier: $AUDIT_FILE"
+  [ -e "$AUDIT_FILE" ] || : >"$AUDIT_FILE"
+  chmod 0640 "$AUDIT_FILE"
+  if [ "$TEST_MODE" != 1 ]; then
+    chown wol-manager:wol-manager "$AUDIT_FILE"
+  elif [ -n "${WOL_TEST_CHOWN_LOG:-}" ]; then
+    printf '%s\n' "wol-manager:wol-manager $AUDIT_FILE" >>"$WOL_TEST_CHOWN_LOG"
+  fi
   [ ! -L "$TOKENS_FILE" ] || die "Le fichier de jetons ne doit pas être un lien symbolique: $TOKENS_FILE"
   [ ! -e "$TOKENS_FILE" ] || [ -f "$TOKENS_FILE" ] || die "Le chemin des jetons n'est pas un fichier régulier: $TOKENS_FILE"
   [ -e "$TOKENS_FILE" ] || : >"$TOKENS_FILE"
@@ -612,6 +622,9 @@ Group=wol-manager
 ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml daemon
 Restart=on-failure
 RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogLevelPrefix=true
 RuntimeDirectory=wol-manager
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=restart

@@ -86,6 +86,39 @@ func TestPowerRestoreThresholdsAndStablePower(t *testing.T) {
 	}
 }
 
+func TestAutomationLogsSignificantTransitionsWithoutPollingNoise(t *testing.T) {
+	cfg := automationConfig(t)
+	manager, _ := automationManagerForTest(t, cfg)
+	var events []string
+	manager.eventLog = func(level, format string, args ...any) {
+		events = append(events, level+" "+fmt.Sprintf(format, args...))
+	}
+	started := time.Date(2026, 11, 17, 17, 23, 0, 0, time.UTC)
+
+	manager.handleStatus("ups-main", UPSStatus{State: "OB", Battery: 55, BatteryKnown: true}, started)
+	manager.handleStatus("ups-main", UPSStatus{State: "OB", Battery: 55, BatteryKnown: true}, started.Add(5*time.Second))
+	manager.handleStatus("ups-main", UPSStatus{State: "OL", Battery: 40, BatteryKnown: true}, started.Add(10*time.Second))
+	manager.handleStatus("ups-main", UPSStatus{State: "OL", Battery: 40, BatteryKnown: true}, started.Add(15*time.Second))
+
+	joined := strings.Join(events, "\n")
+	for _, expected := range []string{
+		"WARNING coupure détectée; ups=ups-main état=OB",
+		"INFO groupe armé; ups=ups-main groupe=core",
+		"INFO retour secteur; ups=ups-main état=OL",
+		"INFO attente de stabilité démarrée; ups=ups-main durée=30s",
+		"WARNING batterie insuffisante; ups=ups-main batterie=40% seuil=70%",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("événement significatif absent (%s):\n%s", expected, joined)
+		}
+	}
+	for _, fragment := range []string{"coupure détectée", "groupe armé", "retour secteur", "attente de stabilité", "batterie insuffisante"} {
+		if strings.Count(joined, fragment) != 1 {
+			t.Fatalf("événement répété pendant le polling (%s):\n%s", fragment, joined)
+		}
+	}
+}
+
 func TestPowerRestoreRequiresRecordedOutageAndKnownBattery(t *testing.T) {
 	cfg := automationConfig(t)
 	manager, jobs := automationManagerForTest(t, cfg)
@@ -104,11 +137,16 @@ func TestPowerRestoreRequiresRecordedOutageAndKnownBattery(t *testing.T) {
 func TestAutomationMonitorReportsNUTCommunicationHealth(t *testing.T) {
 	cfg := automationConfig(t)
 	manager, _ := automationManagerForTest(t, cfg)
+	var events []string
+	manager.eventLog = func(level, format string, args ...any) {
+		events = append(events, level+" "+fmt.Sprintf(format, args...))
+	}
 	now := time.Date(2026, 11, 16, 20, 0, 0, 0, time.UTC)
 	manager.now = func() time.Time { return now }
 	manager.status = func(context.Context, string, UPSConfig) UPSStatus {
 		return UPSStatus{State: "unknown", Error: "connexion NUT refusée"}
 	}
+	manager.poll(context.Background())
 	manager.poll(context.Background())
 	monitors := manager.monitorStatuses()
 	if len(monitors) != 1 || monitors[0].Operational || monitors[0].Error != "connexion NUT refusée" || !monitors[0].LastPoll.Equal(now) {
@@ -123,6 +161,18 @@ func TestAutomationMonitorReportsNUTCommunicationHealth(t *testing.T) {
 	monitors = manager.monitorStatuses()
 	if len(monitors) != 1 || !monitors[0].Operational || monitors[0].State != "OL" || monitors[0].Battery != 80 {
 		t.Fatalf("état NUT opérationnel absent: %#v", monitors)
+	}
+	joined := strings.Join(events, "\n")
+	for _, expected := range []string{
+		"WARNING communication NUT défaillante; ups=ups-main erreur=connexion NUT refusée",
+		"INFO communication NUT rétablie; ups=ups-main état=OL",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("transition de communication absente (%s):\n%s", expected, joined)
+		}
+	}
+	if strings.Count(joined, "communication NUT défaillante") != 1 {
+		t.Fatalf("erreur NUT répétée sans changement d'état:\n%s", joined)
 	}
 }
 
@@ -185,6 +235,53 @@ func TestPermanentRestoreErrorRemainsFailed(t *testing.T) {
 	stored, _ := jobs.cycle("ups-main")
 	if stored.State != "failed" {
 		t.Fatalf("erreur permanente rendue récupérable: %#v", stored)
+	}
+}
+
+func TestAutomationLogsCycleCompletion(t *testing.T) {
+	cfg := automationConfig(t)
+	manager, jobs := automationManagerForTest(t, cfg)
+	var events []string
+	manager.eventLog = func(level, format string, args ...any) {
+		events = append(events, level+" "+fmt.Sprintf(format, args...))
+	}
+	if err := jobs.setCycle(PowerCycle{
+		UPS:             "ups-main",
+		State:           "running",
+		ArmedGroups:     map[string]bool{"group.core": true},
+		CompletedGroups: map[string]bool{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.finishCycle("ups-main", manager.plansForUPS("ups-main"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if joined := strings.Join(events, "\n"); !strings.Contains(joined, "INFO fin du cycle; ups=ups-main état=completed") {
+		t.Fatalf("fin de cycle absente du journal:\n%s", joined)
+	}
+}
+
+func TestAutomationLogsRecoveryTrigger(t *testing.T) {
+	cfg := automationConfig(t)
+	manager, jobs := automationManagerForTest(t, cfg)
+	var events []string
+	manager.eventLog = func(level, format string, args ...any) {
+		events = append(events, level+" "+fmt.Sprintf(format, args...))
+	}
+	now := time.Date(2026, 11, 17, 17, 30, 0, 0, time.UTC)
+	stable := now.Add(-time.Minute)
+	if err := jobs.setCycle(PowerCycle{
+		UPS:             "ups-main",
+		State:           "waiting",
+		StableSince:     &stable,
+		ArmedGroups:     map[string]bool{"group.core": true},
+		CompletedGroups: map[string]bool{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager.handleStatus("ups-main", UPSStatus{State: "OL", Battery: 70, BatteryKnown: true}, now)
+	if joined := strings.Join(events, "\n"); !strings.Contains(joined, "INFO déclenchement de la reprise; ups=ups-main groupes=core") {
+		t.Fatalf("déclenchement de reprise absent du journal:\n%s", joined)
 	}
 }
 

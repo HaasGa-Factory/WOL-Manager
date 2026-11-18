@@ -157,7 +157,10 @@ func TestWakeReportsUDPSendFailureWithoutFalseSuccess(t *testing.T) {
 	server.ChecksDisabled = true
 	cfg.Servers["two"] = server
 	want := errors.New("échec UDP simulé")
-	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, sendPacket: func(string, string, bool, []byte) error {
+	var events []string
+	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, eventLog: func(level, format string, args ...any) {
+		events = append(events, level+" "+fmt.Sprintf(format, args...))
+	}, sendPacket: func(string, string, bool, []byte) error {
 		return want
 	}}).wakeTree(context.Background(), "two", map[string]bool{})
 	if !errors.Is(err, want) || len(result) != 1 {
@@ -166,6 +169,12 @@ func TestWakeReportsUDPSendFailureWithoutFalseSuccess(t *testing.T) {
 	got := result[0]
 	if got.SocketAccepted || got.PacketEmitted != "not_emitted" || got.WakeVerified || got.Packet != "not_sent" {
 		t.Fatalf("faux succès après échec UDP: %#v", got)
+	}
+	joined := strings.Join(events, "\n")
+	for _, expected := range []string{"INFO Magic Packet demandé; machine=two", "WARNING échec d'envoi du Magic Packet; machine=two"} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("événement d'envoi absent (%s):\n%s", expected, joined)
+		}
 	}
 }
 
@@ -237,7 +246,10 @@ func TestWakeVerificationSucceedsAfterSeveralAttempts(t *testing.T) {
 			ready <- listener
 		}
 	}()
-	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, sendPacket: discardMagicPacket}).wakeTree(context.Background(), "two", map[string]bool{})
+	var events []string
+	result, err := (&Engine{cfg: cfg, audit: &Auditor{}, eventLog: func(level, format string, args ...any) {
+		events = append(events, level+" "+fmt.Sprintf(format, args...))
+	}, sendPacket: discardMagicPacket}).wakeTree(context.Background(), "two", map[string]bool{})
 	select {
 	case listener := <-ready:
 		defer listener.Close()
@@ -251,6 +263,12 @@ func TestWakeVerificationSucceedsAfterSeveralAttempts(t *testing.T) {
 	}
 	if len(result) != 1 || !result[0].Verified {
 		t.Fatalf("machine non vérifiée après plusieurs tentatives: %#v", result)
+	}
+	joined := strings.Join(events, "\n")
+	for _, expected := range []string{"INFO Magic Packet demandé; machine=two", "INFO machine vérifiée joignable; machine=two"} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("événement de réveil absent (%s):\n%s", expected, joined)
+		}
 	}
 }
 

@@ -31,6 +31,7 @@ func auditActor(ctx context.Context) string {
 type Engine struct {
 	cfg               *Config
 	audit             *Auditor
+	eventLog          serviceLogFunc
 	dry               bool
 	noWait            bool
 	verificationDelay *time.Duration
@@ -161,6 +162,7 @@ attemptsLoop:
 				return r, gateErr
 			}
 		}
+		e.logEvent("INFO", "Magic Packet demandé; machine=%s tentative=%d/%d transport=%s destination=%s", id, attempt, packetAttempts, d.Name, d.Destination)
 		if d.Name == "relay" {
 			err = e.sendRelay(ctx, d.Relay, id)
 		} else {
@@ -176,6 +178,7 @@ attemptsLoop:
 			}
 		}
 		if err != nil {
+			e.logEvent("WARNING", "échec d'envoi du Magic Packet; machine=%s tentative=%d/%d erreur=%v", id, attempt, packetAttempts, err)
 			if attempt == packetAttempts {
 				e.audit.write("wake", auditActor(ctx), id, "failed", err.Error())
 				return r, err
@@ -223,6 +226,7 @@ attemptsLoop:
 			if r.Verified {
 				r.Note = "socket UDP accepté et machine joignable selon les vérifications configurées"
 				e.audit.write("wake", auditActor(ctx), id, "verified", r)
+				e.logEvent("INFO", "machine vérifiée joignable; machine=%s contrôles=%d", id, checks)
 				return r, nil
 			}
 			if e.noWait {
@@ -258,7 +262,14 @@ attemptsLoop:
 		}
 	}
 	e.audit.write("wake", auditActor(ctx), id, "send_unverified", r)
+	e.logEvent("WARNING", "machine non vérifiée après réveil; machine=%s contrôles=%d", id, checks)
 	return r, nil
+}
+
+func (e *Engine) logEvent(level, format string, args ...any) {
+	if e.eventLog != nil {
+		e.eventLog(level, format, args...)
+	}
 }
 
 func (e *Engine) verificationTiming(id string) (initialDelay, timeout, interval time.Duration) {

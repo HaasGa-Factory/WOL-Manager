@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -102,12 +103,13 @@ type AutomationManager struct {
 	mu       sync.Mutex
 	nextPoll map[string]time.Time
 	monitors map[string]NUTMonitorStatus
+	eventLog serviceLogFunc
 }
 
 func newAutomationManager(c *Config, jobs *JobStore, engine *Engine) *AutomationManager {
 	gate := newPowerGate()
 	engine.gate = gate
-	manager := &AutomationManager{cfg: c, jobs: jobs, engine: engine, gate: gate, status: nutStatus, now: time.Now, nextPoll: map[string]time.Time{}, monitors: map[string]NUTMonitorStatus{}}
+	manager := &AutomationManager{cfg: c, jobs: jobs, engine: engine, gate: gate, status: nutStatus, now: time.Now, nextPoll: map[string]time.Time{}, monitors: map[string]NUTMonitorStatus{}, eventLog: engine.eventLog}
 	for _, cycle := range jobs.listCycles() {
 		if cycle.State != "completed" && cycle.State != "failed" {
 			cycle.State = "waiting"
@@ -196,7 +198,8 @@ func (m *AutomationManager) poll(ctx context.Context) {
 func (m *AutomationManager) recordMonitorStatus(ups string, status UPSStatus, now time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.monitors[ups] = NUTMonitorStatus{
+	previous, existed := m.monitors[ups]
+	current := NUTMonitorStatus{
 		UPS:          ups,
 		Operational:  status.Error == "" && status.State != "" && status.State != "unknown",
 		State:        status.State,
@@ -204,6 +207,16 @@ func (m *AutomationManager) recordMonitorStatus(ups string, status UPSStatus, no
 		LastPoll:     now,
 		Battery:      status.Battery,
 		BatteryKnown: status.BatteryKnown,
+	}
+	m.monitors[ups] = current
+	if !current.Operational && (!existed || previous.Operational || previous.Error != current.Error || previous.State != current.State) {
+		reason := current.Error
+		if reason == "" {
+			reason = "état " + current.State
+		}
+		m.logEvent("WARNING", "communication NUT défaillante; ups=%s erreur=%s", ups, reason)
+	} else if current.Operational && existed && !previous.Operational {
+		m.logEvent("INFO", "communication NUT rétablie; ups=%s état=%s", ups, current.State)
 	}
 }
 
@@ -226,6 +239,12 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 		return
 	}
 	cycle, exists := m.jobs.cycle(ups)
+	previousState := cycle.State
+	previousReason := cycle.Reason
+	previousArmed := map[string]bool{}
+	for id, armed := range cycle.ArmedGroups {
+		previousArmed[id] = armed
+	}
 	if cycle.ArmedGroups == nil {
 		cycle.ArmedGroups = map[string]bool{}
 	}
@@ -241,6 +260,7 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 		m.gate.Block(ups, reason)
 		m.jobs.cancelMatching("automation_restore", ups)
 		if status.State == "OB" || status.State == "LB" || status.State == "FSD" {
+			outageStarted := !exists || previousState != "outage"
 			if !exists || cycle.State == "completed" {
 				cycle = PowerCycle{UPS: ups, State: "outage", ObservedAt: now, ArmedGroups: map[string]bool{}, CompletedGroups: map[string]bool{}}
 			} else if cycle.State != "outage" {
@@ -260,6 +280,14 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 			cycle.UpdatedAt = now
 			if m.saveCycle(cycle) != nil {
 				return
+			}
+			if outageStarted {
+				m.logEvent("WARNING", "coupure détectée; ups=%s état=%s", ups, status.State)
+			}
+			for _, plan := range plans {
+				if cycle.ArmedGroups[plan.ID] && !previousArmed[plan.ID] {
+					m.logEvent("INFO", "groupe armé; ups=%s groupe=%s", ups, plan.Group)
+				}
 			}
 		} else if exists && cycle.State != "completed" && cycle.State != "failed" {
 			cycle.State = "waiting"
@@ -293,7 +321,9 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 			cycle.ArmedGroups[plan.ID] = true
 		}
 	}
-	if cycle.StableSince == nil {
+	returnedFromOutage := previousState == "outage"
+	stabilityStarted := cycle.StableSince == nil
+	if stabilityStarted {
 		stable := now
 		cycle.StableSince = &stable
 	}
@@ -303,6 +333,25 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 	cycle.UpdatedAt = now
 	if m.saveCycle(cycle) != nil {
 		return
+	}
+	for _, plan := range plans {
+		if cycle.ArmedGroups[plan.ID] && !previousArmed[plan.ID] {
+			m.logEvent("INFO", "groupe armé; ups=%s groupe=%s", ups, plan.Group)
+		}
+	}
+	if returnedFromOutage {
+		m.logEvent("INFO", "retour secteur; ups=%s état=OL", ups)
+	}
+	if stabilityStarted {
+		m.logEvent("INFO", "attente de stabilité démarrée; ups=%s durée=%s", ups, shortestStableDuration(plans))
+	}
+	if cycle.Reason != previousReason && strings.HasPrefix(cycle.Reason, "attente: batterie ") {
+		for _, plan := range plans {
+			if cycle.ArmedGroups[plan.ID] && !cycle.CompletedGroups[plan.ID] && plan.NeedsBattery && status.BatteryKnown && status.Battery < float64(plan.HighBattery) {
+				m.logEvent("WARNING", "batterie insuffisante; ups=%s batterie=%.0f%% seuil=%d%%", ups, status.Battery, plan.HighBattery)
+				break
+			}
+		}
 	}
 	ready := m.readyPlans(cycle, plans, status, now)
 	if len(ready) == 0 {
@@ -318,6 +367,11 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 		m.gate.Block(ups, "journal d'audit indisponible; automatisme refusé: "+err.Error())
 		return
 	}
+	groupNames := make([]string, 0, len(ready))
+	for _, plan := range ready {
+		groupNames = append(groupNames, plan.Group)
+	}
+	m.logEvent("INFO", "déclenchement de la reprise; ups=%s groupes=%s", ups, strings.Join(groupNames, ","))
 	run := func(ctx context.Context) (any, error) {
 		result, runErr := m.runPlans(ctx, ups, ready)
 		if persistErr := m.finishCycle(ups, ready, runErr); runErr == nil {
@@ -353,6 +407,22 @@ func (m *AutomationManager) handleStatus(ups string, status UPSStatus, now time.
 		return
 	}
 	_ = m.engine.audit.write("automation", "nut", ups, "accepted", map[string]any{"job": job.ID})
+}
+
+func (m *AutomationManager) logEvent(level, format string, args ...any) {
+	if m.eventLog != nil {
+		m.eventLog(level, format, args...)
+	}
+}
+
+func shortestStableDuration(plans []restorePlan) time.Duration {
+	var duration time.Duration
+	for _, plan := range plans {
+		if duration == 0 || plan.StableFor < duration {
+			duration = plan.StableFor
+		}
+	}
+	return duration
 }
 
 func (m *AutomationManager) waitReason(cycle PowerCycle, plans []restorePlan, status UPSStatus, now time.Time) string {
@@ -453,7 +523,15 @@ func (m *AutomationManager) finishCycle(ups string, plans []restorePlan, runErr 
 		cycle.Reason = runErr.Error()
 	}
 	cycle.UpdatedAt = m.now()
-	return m.saveCycle(cycle)
+	if err := m.saveCycle(cycle); err != nil {
+		return err
+	}
+	level := "INFO"
+	if cycle.State == "failed" || cycle.State == "outage" {
+		level = "WARNING"
+	}
+	m.logEvent(level, "fin du cycle; ups=%s état=%s raison=%s", ups, cycle.State, cycle.Reason)
+	return nil
 }
 
 func (m *AutomationManager) runPlans(ctx context.Context, ups string, plans []restorePlan) ([]WakeResult, error) {

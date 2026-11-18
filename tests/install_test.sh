@@ -341,7 +341,7 @@ PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.2"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.3"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
@@ -370,9 +370,28 @@ assert_contains "$ROOT12/etc/bash_completion.d/wol-manager" "complete -F _wol wo
 bash --noprofile --norc -c 'source "$1"; complete -p wol | grep -Fq "complete -F _wol wol"' _ "$ROOT12/etc/bash_completion.d/wol-manager" || fail "la complétion WoL Manager ne se charge pas"
 assert_file "$ROOT12/etc/wol-manager/secrets/tokens.json"
 assert_file "$ROOT12/etc/logrotate.d/wol-manager"
+assert_file "$ROOT12/var/log/wol-manager/audit.jsonl"
 assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "rotate 12"
+assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "create 0640 wol-manager wol-manager"
+assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "su wol-manager wol-manager"
+[[ $(stat -c %a "$ROOT12/var/log/wol-manager") = 750 ]] || fail "mode incorrect pour le répertoire d'audit"
+[[ $(stat -c %a "$ROOT12/var/log/wol-manager/audit.jsonl") = 640 ]] || fail "mode incorrect pour audit.jsonl"
+assert_contains "$WOL_TEST_CHOWN_LOG" "wol-manager:wol-manager $ROOT12/var/log/wol-manager/audit.jsonl"
 [[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "permissions dangereuses sur le fichier de jetons"
 [[ ! -s "$WORK/go.log" ]] || fail "Go a été utilisé pendant l'installation"
+
+echo "[sécurité audit] lien symbolique refusé sans altérer sa cible"
+ROOT_AUDIT_LINK="$WORK/root-audit-link"
+prepare_root "$ROOT_AUDIT_LINK" 13
+mkdir -p "$ROOT_AUDIT_LINK/var/log/wol-manager"
+AUDIT_SENTINEL="$WORK/audit-sentinel"
+printf 'journal-externe-intact\n' >"$AUDIT_SENTINEL"
+ln -s "$AUDIT_SENTINEL" "$ROOT_AUDIT_LINK/var/log/wol-manager/audit.jsonl"
+if run_installer "$PAYLOAD" "$ROOT_AUDIT_LINK" amd64 --non-interactive --yes --service cli >"$WORK/audit-link.log" 2>&1; then
+  fail "un journal d'audit symbolique a été accepté"
+fi
+assert_contains "$WORK/audit-link.log" "Le journal d'audit ne doit pas être un lien symbolique"
+assert_contains "$AUDIT_SENTINEL" "journal-externe-intact"
 
 echo "[2/16] binaire local et curl manquant"
 ROOT_CURL="$WORK/root-curl"
@@ -398,7 +417,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.4.2"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.4.3"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"
@@ -716,6 +735,8 @@ echo state >"$ROOT12/var/lib/wol-manager/state.keep"
 printf '{"jobs":{"upgrade-job":{"id":"upgrade-job","kind":"test","target":"preserve","state":"completed","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}}}\n' >"$ROOT12/var/lib/wol-manager/state.json"
 chmod 0600 "$ROOT12/var/lib/wol-manager/state.json"
 echo log >"$ROOT12/var/log/wol-manager/audit.keep"
+printf '{"event":"before-upgrade","outcome":"preserved"}\n' >"$ROOT12/var/log/wol-manager/audit.jsonl"
+chmod 0600 "$ROOT12/var/log/wol-manager/audit.jsonl"
 run_update "$ROOT12" main --yes --non-interactive
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "mise à jour main absente"
 cmp -s "$REMOTE/main/install.sh" "$ROOT12/usr/local/lib/wol-manager/install.sh" || fail "l'installateur signé n'a pas été mis à jour"
@@ -724,9 +745,12 @@ assert_file "$ROOT12/var/lib/wol-manager/state.keep"
 assert_file "$ROOT12/var/log/wol-manager/audit.keep"
 assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"upgrade-job"'
 assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"target":"preserve"'
+assert_contains "$ROOT12/var/log/wol-manager/audit.jsonl" '"event":"before-upgrade"'
 [[ $(stat -c %a "$ROOT12/var/lib/wol-manager") = 750 ]] || fail "mode incorrect pour le répertoire d'état"
 [[ $(stat -c %a "$ROOT12/var/lib/wol-manager/state.json") = 640 ]] || fail "mode incorrect pour state.json"
+[[ $(stat -c %a "$ROOT12/var/log/wol-manager/audit.jsonl") = 640 ]] || fail "mode incorrect pour audit.jsonl après mise à jour"
 assert_contains "$WOL_TEST_CHOWN_LOG" "wol-manager:wol-manager $ROOT12/var/lib/wol-manager/state.json"
+assert_contains "$WOL_TEST_CHOWN_LOG" "wol-manager:wol-manager $ROOT12/var/log/wol-manager/audit.jsonl"
 [[ -r "$ROOT12/var/lib/wol-manager/state.json" && -w "$ROOT12/var/lib/wol-manager/state.json" ]] || fail "state.json n'est pas lisible et inscriptible par son propriétaire simulé"
 [[ $(stat -c %a "$ROOT12/etc/wol-manager/secrets/tokens.json") = 600 ]] || fail "les permissions strictes des secrets ont changé"
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"

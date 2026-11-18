@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,14 @@ func TestSystemdUnitsSeparateDaemonAndAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	daemonText, apiText := string(daemonUnit), string(apiUnit)
-	for _, expected := range []string{"ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml daemon", "RuntimeDirectory=wol-manager", "Restart=on-failure"} {
+	for _, expected := range []string{
+		"ExecStart=/usr/local/bin/wol --config /etc/wol-manager/wol.yaml daemon",
+		"RuntimeDirectory=wol-manager",
+		"Restart=on-failure",
+		"StandardOutput=journal",
+		"StandardError=journal",
+		"SyslogLevelPrefix=true",
+	} {
 		if !strings.Contains(daemonText, expected) {
 			t.Fatalf("unité daemon incomplète (%s):\n%s", expected, daemonText)
 		}
@@ -102,6 +110,8 @@ func TestLegacyCombinedAPIUsesWritableTemporarySocket(t *testing.T) {
 }
 
 func TestDaemonRunsWithoutOpeningAPI(t *testing.T) {
+	var processLog bytes.Buffer
+
 	cfg := testConfig(t)
 	cfg.API.Listen = reserveTCPAddress(t)
 	group := cfg.Groups["core"]
@@ -113,7 +123,9 @@ func TestDaemonRunsWithoutOpeningAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := &Engine{cfg: cfg, audit: &Auditor{}, sendPacket: func(string, string, bool, []byte) error { return nil }}
+	engine := &Engine{cfg: cfg, audit: &Auditor{}, eventLog: func(level, format string, args ...any) {
+		fmt.Fprintf(&processLog, "%s %s\n", level, fmt.Sprintf(format, args...))
+	}, sendPacket: func(string, string, bool, []byte) error { return nil }}
 	socket := filepath.Join(testDir(t), "daemon.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -155,6 +167,15 @@ func TestDaemonRunsWithoutOpeningAPI(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("le daemon ne s'arrête pas avec son contexte")
+	}
+	for _, expected := range []string{
+		"INFO daemon: démarrage",
+		"INFO daemon: moniteur NUT actif",
+		"INFO daemon: arrêt demandé",
+	} {
+		if !strings.Contains(processLog.String(), expected) {
+			t.Fatalf("événement daemon absent (%s):\n%s", expected, processLog.String())
+		}
 	}
 }
 

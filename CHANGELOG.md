@@ -1,6 +1,19 @@
 # Changelog
 
-## 1.4.2 - en préparation
+## 1.4.3 - en préparation
+
+### Corrigé
+
+- l'installation et les mises à jour créent ou normalisent `audit.jsonl` en `wol-manager:wol-manager` avec le mode `0640`, sans tronquer les événements existants ;
+- le daemon journalise dans journald son démarrage, les transitions NUT significatives, l'armement des groupes, les reprises, les envois WoL, les vérifications et la fin des cycles ;
+- les erreurs persistantes du journal d'audit ne sont plus répétées à chaque polling et un message signale son rétablissement.
+
+### Sécurité
+
+- les cibles symboliques ou non régulières restent refusées pendant la normalisation du journal ;
+- les restrictions systemd, la journalisation JSONL indépendante et la politique logrotate existante sont conservées.
+
+## 1.4.2 - 2026-11-17
 
 ### Modifié
 

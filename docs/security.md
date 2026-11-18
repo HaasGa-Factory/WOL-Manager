@@ -10,6 +10,8 @@
 - Audit sans jetons, mots de passe ni clés.
 - Écriture d'audit préalable obligatoire avant réveil, automatisme ou découverte active ; rotation
   hebdomadaire, 12 archives, seuil de 10 MiB et compression via logrotate.
+- Journal d'audit conservé en `wol-manager:wol-manager` avec le mode `0640` dans un répertoire
+  `0750`; installation et mise à jour corrigent les anciens propriétaires sans supprimer le contenu.
 - Cardinalité bornée à 4 096 entrées pour le rate limiter API et la déduplication des requêtes relais ;
   identifiants de requête relais limités à 128 octets et expirés après 24 heures.
 - Configuration `root:wol-manager` en `0640`; seuls les membres du groupe peuvent la lire. Les
@@ -27,6 +29,11 @@ de fichiers, processus et privilèges. Seul le daemon peut écrire l'état ; le
 socket local de délégation est créé en `0600` dans `/run/wol-manager`. L'API
 n'a pas accès en écriture à `/var/lib/wol-manager`. L'accès à des interfaces
 particulières peut nécessiter une adaptation locale soigneusement documentée.
+
+Les événements d'exploitation lisibles sont envoyés à stdout/stderr et donc
+capturés par journald lorsque le daemon fonctionne sous systemd. Ils ne
+remplacent pas `audit.jsonl`, qui reste la trace structurée indépendante. Les
+messages ne contiennent ni jeton, ni mot de passe, ni secret NUT.
 
 ## Sécurité des sauvegardes
 

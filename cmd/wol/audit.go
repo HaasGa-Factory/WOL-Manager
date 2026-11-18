@@ -12,9 +12,11 @@ import (
 )
 
 type Auditor struct {
-	mu     sync.Mutex
-	path   string
-	mirror bool
+	mu        sync.Mutex
+	path      string
+	mirror    bool
+	lastError string
+	eventLog  serviceLogFunc
 }
 
 func (a *Auditor) write(event, actor, target, outcome string, details any) error {
@@ -32,12 +34,12 @@ func (a *Auditor) write(event, actor, target, outcome string, details any) error
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(a.path), 0750); err != nil {
-		log.Printf("ERREUR audit: %v", err)
+		a.reportError(err)
 		return err
 	}
 	f, err := os.OpenFile(a.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
 	if err != nil {
-		log.Printf("ERREUR audit: %v", err)
+		a.reportError(err)
 		return err
 	}
 	line := append(b, '\n')
@@ -47,12 +49,33 @@ func (a *Auditor) write(event, actor, target, outcome string, details any) error
 		writeErr = io.ErrShortWrite
 	}
 	if writeErr != nil {
-		log.Printf("ERREUR audit: %v", writeErr)
+		a.reportError(writeErr)
 		return writeErr
 	}
 	if closeErr != nil {
-		log.Printf("ERREUR audit: %v", closeErr)
+		a.reportError(closeErr)
 		return closeErr
 	}
+	if a.lastError != "" {
+		a.logEvent("INFO", "audit: journal de nouveau accessible")
+		a.lastError = ""
+	}
 	return nil
+}
+
+func (a *Auditor) reportError(err error) {
+	message := err.Error()
+	if message == a.lastError {
+		return
+	}
+	a.lastError = message
+	a.logEvent("ERROR", "audit: %v", err)
+}
+
+func (a *Auditor) logEvent(level, format string, args ...any) {
+	if a.eventLog != nil {
+		a.eventLog(level, format, args...)
+		return
+	}
+	processServiceLog(level, format, args...)
 }
