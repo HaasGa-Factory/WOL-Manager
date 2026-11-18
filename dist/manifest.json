@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "version": "1.4.2",
+  "version": "1.4.3",
   "channel": "dev",
-  "source_revision": "61d59aa50d9504e00b71f9c8291a61a8418e82ba",
+  "source_revision": "00bd78833757f23d5ccf243c554cfda9cbec3aa7",
   "go_version": "go1.26.11",
   "govulncheck_version": "govulncheck@v1.9.0",
   "govulncheck_source": "clean",
@@ -10,9 +10,9 @@
   "govulncheck_linux_arm64": "clean",
   "key_id": "wol-manager-2026-01",
   "installer_file": "install.sh",
-  "installer_sha256": "aa61e7acbc518644c480207d1f0054be9bfc7e74a8fb68ed3a7b3f2feed6c8b1",
+  "installer_sha256": "b0d52348dd4f1782d8679eb61914a94d036e1d0239875a0b62ee1f9e462f5607",
   "linux_amd64_file": "wol-linux-amd64",
-  "linux_amd64_sha256": "facdcb7f09ff7703f565e7ce1250b7440842e4b363d4e98bb36d9774d9e7d5d8",
+  "linux_amd64_sha256": "3349fb1c31acf11ba5716449ab893b7982ac2afd8654bcdac25c96e3be36ad0d",
   "linux_arm64_file": "wol-linux-arm64",
-  "linux_arm64_sha256": "68a22ccc63f95b5ff3176e6fa103fe5049f6add512b5772453ae61c8a9eac864"
+  "linux_arm64_sha256": "455f72df48030815f70234fc7c0ccea8d5359afd1ca848715ff3d2854ef03334"
 }
