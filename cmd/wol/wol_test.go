@@ -87,7 +87,7 @@ func TestOpenAPIDocumentIsValidYAMLAndExposesAutomations(t *testing.T) {
 		t.Fatalf("OpenAPI YAML invalide: %v", err)
 	}
 	text := string(content)
-	for _, expected := range []string{"version: 1.4.3", "/automations:", "DaemonStatus:", "NUTMonitorStatus:"} {
+	for _, expected := range []string{"version: 1.4.4", "/automations:", "DaemonStatus:", "NUTMonitorStatus:"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("OpenAPI incomplet, fragment absent: %s", expected)
 		}
@@ -396,6 +396,64 @@ func TestRedirectedMenuPrintsOneViewWithoutRedrawingMainMenu(t *testing.T) {
 	}
 	if strings.Contains(plain, "Appuyez sur Entrée") || strings.Contains(plain, "\x1b[") {
 		t.Fatalf("une sortie redirigée ne doit contenir ni pause ni ANSI:\n%q", plain)
+	}
+}
+
+func TestMenuValidationReportsOperationalReadiness(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", Interface: "wol-interface-does-not-exist", AllowLocalBroadcast: true}
+	cfg.Groups = map[string]Group{}
+	cfg.Servers = map[string]Server{
+		"home_assistant": {Name: "Home Assistant", MAC: "02:00:00:00:00:21", IP: "127.0.0.2", Network: "lan"},
+		"proxmox":        {Name: "Proxmox", MAC: "02:00:00:00:00:22", IP: "127.0.0.3", Network: "lan"},
+		"truenas":        {Name: "TrueNAS", MAC: "02:00:00:00:00:23", IP: "127.0.0.4", Network: "lan"},
+	}
+
+	inputReader, inputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputReader, outputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldInput, oldOutput := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = inputReader, outputWriter
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = oldInput, oldOutput
+		_ = inputReader.Close()
+		_ = outputReader.Close()
+	})
+	if _, err := inputWriter.WriteString("5\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = inputWriter.Close()
+	if err := menu("", cfg, &Engine{cfg: cfg, audit: &Auditor{}}, false); err != nil {
+		t.Fatal(err)
+	}
+	_ = outputWriter.Close()
+	text, err := io.ReadAll(outputReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := string(text)
+	for _, expected := range []string{
+		"WoL Manager — VALIDATION",
+		"CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE",
+		"RÉSEAU À CORRIGER : lan",
+		"home_assistant",
+		"proxmox",
+		"truenas",
+		"Broadcast local : interface wol-interface-does-not-exist indisponible",
+		"Aucun YAML n’a été modifié automatiquement.",
+	} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("diagnostic %q absent:\n%s", expected, plain)
+		}
+	}
+	if strings.Contains(plain, "configuration valide\n") {
+		t.Fatalf("ancien diagnostic trompeur encore présent:\n%s", plain)
 	}
 }
 

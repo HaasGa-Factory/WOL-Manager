@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-APP_VERSION="1.4.3"
+APP_VERSION="1.4.4"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main
@@ -606,6 +606,26 @@ create_account_and_dirs() {
   [ "$TEST_MODE" = 1 ] || chown wol-manager:wol-manager "$TOKENS_FILE"
 }
 
+install_logrotate_resource() {
+  local source=$1 destination=$2 normalized
+  [ ! -L "$source" ] || die "Ressource Logrotate interdite (lien symbolique): $source"
+  [ -f "$source" ] || die "Ressource Logrotate absente: $source"
+  [ ! -L "$destination" ] || die "Destination Logrotate interdite (lien symbolique): $destination"
+  normalized="$TMP_WORK/logrotate-wol-manager.normalized"
+  tr -d '\r' <"$source" >"$normalized"
+  install -m 0644 "$normalized" "$destination"
+}
+
+repair_logrotate_installation() {
+  local resource="$HELPER_DIR/packaging/logrotate/wol-manager"
+  if [ -f "$resource" ]; then
+    install_logrotate_resource "$resource" "$resource"
+    install_logrotate_resource "$resource" "$LOGROTATE"
+  elif [ -f "$LOGROTATE" ]; then
+    install_logrotate_resource "$LOGROTATE" "$LOGROTATE"
+  fi
+}
+
 write_daemon_unit() {
   destination=$1
   temporary="$TMP_WORK/wol-manager.service"
@@ -846,6 +866,7 @@ install_candidate() {
   if [ "$ACTION" = update ]; then
     show_comparison
     if [ "$UPDATE_NEEDED" -ne 1 ]; then
+      repair_logrotate_installation
       migrate_legacy_combined_service
       return 0
     fi
@@ -873,7 +894,6 @@ install_candidate() {
   if [ "$SCRIPT_DIR" != "$HELPER_DIR" ]; then
     install -m 0644 "$SCRIPT_DIR/packaging/release-public.pem" "$HELPER_DIR/packaging/release-public.pem"
     install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$HELPER_DIR/configs/wol.example.yaml"
-    install -m 0644 "$SCRIPT_DIR/packaging/logrotate/wol-manager" "$HELPER_DIR/packaging/logrotate/wol-manager"
   fi
   write_daemon_unit "$HELPER_DIR/packaging/systemd/wol-manager.service"
   write_api_unit "$HELPER_DIR/packaging/systemd/wol-manager-api.service"
@@ -881,11 +901,12 @@ install_candidate() {
   [ "$INSTALL_DAEMON" -eq 0 ] || write_daemon_unit "$UNIT"
   [ "$INSTALL_API" -eq 0 ] || write_api_unit "$API_UNIT"
   logrotate_source="$SCRIPT_DIR/packaging/logrotate/wol-manager"
-  [ ! -L "$logrotate_source" ] || die "Ressource Logrotate interdite (lien symbolique): $logrotate_source"
   if [ -f "$logrotate_source" ]; then
-    install -m 0644 "$logrotate_source" "$LOGROTATE"
+    install_logrotate_resource "$logrotate_source" "$HELPER_DIR/packaging/logrotate/wol-manager"
+    install_logrotate_resource "$HELPER_DIR/packaging/logrotate/wol-manager" "$LOGROTATE"
   elif [ "$ACTION" = update ]; then
     if [ -f "$LOGROTATE" ]; then
+      install_logrotate_resource "$LOGROTATE" "$LOGROTATE"
       warn "Ressource Logrotate absente de l'ancien agencement; configuration existante conservée"
     else
       warn "Ressource Logrotate absente de l'ancien agencement; rotation Logrotate non installée pendant cette mise à jour"

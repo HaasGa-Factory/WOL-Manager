@@ -4,6 +4,7 @@
 # Fichiers exécutés directement par Linux.
 *.sh text eol=lf
 *.service text eol=lf
+packaging/logrotate/wol-manager text eol=lf
 
 # Ces octets sont signés ou couverts par SHA256SUMS : aucune conversion EOL.
 dist/manifest.json -text

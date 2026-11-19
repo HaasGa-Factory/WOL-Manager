@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	version        = "1.4.3"
+	version        = "1.4.4"
 	sourceRevision = "unknown"
 	buildChannel   = "unknown"
 )
@@ -561,8 +561,10 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			printInteractiveViewHeader(os.Stdout, "VALIDATION")
 			if err := c.Validate(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
+			} else if problems := collectReadinessProblems(c); len(problems) > 0 {
+				renderReadinessReport(os.Stdout, problems)
 			} else {
-				fmt.Println("configuration valide")
+				fmt.Println("configuration syntaxiquement valide et opérationnelle")
 			}
 			if !waitForMenuReturn(r, os.Stdout, interactive, "menu") {
 				return nil

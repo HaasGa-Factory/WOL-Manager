@@ -1,6 +1,19 @@
 # Changelog
 
-## 1.4.3 - en préparation
+## 1.4.4 - en préparation
+
+### Corrigé
+
+- le fichier Logrotate est forcé en fins de ligne Unix `LF` dans Git et normalisé par l'installateur, même si une archive a été préparée depuis Windows ;
+- une installation fraîche, une mise à jour et une relance déjà à jour réparent `/etc/logrotate.d/wol-manager` sans toucher au journal ni à ses archives ;
+- la ressource système conservée sous `/usr/local/lib/wol-manager` est également normalisée afin que les mises à jour suivantes restent idempotentes ;
+- le choix `Valider` du menu distingue désormais une configuration structurellement valide d'une configuration réellement opérationnelle et réutilise le même diagnostic de transports que `wol config check`.
+
+### Tests
+
+- la suite vérifie l'absence de caractères `CR`, la reconnaissance par `logrotate -d`, la migration d'un fichier CRLF, l'idempotence, les permissions et la conservation de l'historique d'audit.
+
+## 1.4.3 - 2026-11-18
 
 ### Corrigé
 

@@ -1,5 +1,32 @@
 # Mises à jour et rollback
 
+## Mise à jour 1.4.3 vers 1.4.4
+
+La version `1.4.4` corrige les fins de ligne Windows `CRLF` qui peuvent rendre
+`/etc/logrotate.d/wol-manager` illisible par Logrotate. La configuration YAML,
+les états persistants, `audit.jsonl` et ses archives ne sont pas modifiés.
+
+Une installation déjà en `1.4.3` doit exécuter la commande deux fois : le
+premier passage installe le binaire et le nouvel installateur signé ; le second
+passage, désormais piloté par cet installateur, normalise la ressource et le
+fichier système même si aucune nouvelle version n'est disponible.
+
+```sh
+sudo wol update --channel dev
+sudo wol update --channel dev
+```
+
+Vérifiez ensuite l'absence de `\r` et la reconnaissance du journal :
+
+```sh
+sudo sed -n '1,15l' /etc/logrotate.d/wol-manager
+sudo logrotate -d /etc/logrotate.d/wol-manager
+```
+
+La première commande ne doit afficher aucun `\r$`. La seconde doit annoncer
+`Handling 1 logs` sans erreur de syntaxe. Cette procédure ne nécessite ni
+`dos2unix`, ni suppression, ni rotation forcée du journal.
+
 ## Mise à jour 1.4.2 vers 1.4.3
 
 Cette mise à jour utilise le parcours standard :

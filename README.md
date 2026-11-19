@@ -39,7 +39,7 @@ CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 |---|---|---|
 | Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
 
-La branche `dev` prépare WoL Manager `v1.4.3`. La release GitHub marquée
+La branche `dev` prépare WoL Manager `v1.4.4`. La release GitHub marquée
 **Latest** reste la version stable officielle. WoL Manager est un gestionnaire Wake-on-LAN Linux centralisé pour
 plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
 et sans accès Internet à l'exécution.
@@ -50,6 +50,7 @@ et sans accès Internet à l'exécution.
 - [Fonctions](#fonctions)
 - [Sauvegardes et restauration](#sauvegardes-et-restauration)
 - [Mises à jour et canaux](#mises-à-jour-et-canaux)
+- [Correction Logrotate 1.4.3 vers 1.4.4](docs/updates.md#mise-à-jour-143-vers-144)
 - [Mise à niveau 1.3.0 vers 1.4.1](#mise-à-niveau-130-vers-141)
 - [Diagnostic `ready: false` et amorçage 1.4.2](docs/updates.md#amorçage-de-linstallateur-141-vers-142)
 - [Essai sans installation](#essai-sans-installation)
@@ -218,6 +219,10 @@ doivent indiquer des services actifs. Consultez le
 [détail des modes et de leur modification](docs/installation.md#modifier-les-composants-après-linstallation).
 
 Le canal `dev` est temporaire et n'est jamais mémorisé comme canal par défaut.
+
+Une installation `1.4.3 dev` doit exécuter deux fois `sudo wol update --channel dev`
+pour installer puis appliquer la correction des fins de ligne Logrotate. Consultez la
+[procédure 1.4.3 vers 1.4.4](docs/updates.md#mise-à-jour-143-vers-144).
 
 Lors d'une migration depuis v1.2.3, relancez une seconde fois la même commande
 `wol update` après le remplacement initial. Le premier saut est encore piloté

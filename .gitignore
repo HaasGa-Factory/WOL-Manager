@@ -18,3 +18,4 @@ wol-test-*/
 *.wolbackup
 coverage.out
 inventaire-aides-wol-manager.md
+docs/COMMANDES-CHATGPT.md

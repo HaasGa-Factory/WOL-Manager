@@ -16,6 +16,22 @@ assert_contains() { grep -Fq -- "$2" "$1" || fail "'$2' absent de $1"; }
 assert_not_contains() { ! grep -Fq -- "$2" "$1" || fail "'$2' présent dans $1"; }
 assert_has_ansi() { LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI absente de $1"; }
 assert_no_ansi() { ! LC_ALL=C grep -Fq $'\033[' "$1" || fail "couleur ANSI présente dans $1"; }
+assert_no_cr() { ! LC_ALL=C grep -q $'\r' "$1" || fail "caractère CR présent dans $1"; }
+
+assert_logrotate_recognized() {
+  local source=$1 root=$2 label=$3
+  command -v logrotate >/dev/null 2>&1 || return 0
+  local config="$WORK/logrotate-$label.conf"
+  local state="$WORK/logrotate-$label.state"
+  tr -d '\r' <"$source" \
+    | sed -e "s#/var/log/wol-manager/audit.jsonl#$root/var/log/wol-manager/audit.jsonl#" \
+          -e 's/create 0640 wol-manager wol-manager/create 0640 root root/' \
+          -e 's/su wol-manager wol-manager/su root root/' >"$config"
+  chmod 0644 "$config"
+  logrotate -d -s "$state" "$config" >"$WORK/logrotate-$label.log" 2>&1 \
+    || fail "configuration logrotate refusée: $source"
+  assert_contains "$WORK/logrotate-$label.log" "Handling 1 logs"
+}
 
 openssl genpkey -algorithm Ed25519 -out "$PRIVATE_KEY"
 openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY"
@@ -340,8 +356,17 @@ REV3=cccccccccccccccccccccccccccccccccccccccc
 PAYLOAD="$WORK/payload"
 prepare_payload "$PAYLOAD" 1.0.0-beta.1 "$REV1"
 
+assert_no_cr "$REPO/packaging/logrotate/wol-manager"
+[[ $(git -C "$REPO" check-attr eol -- packaging/logrotate/wol-manager) == *"eol: lf" ]] \
+  || fail "packaging/logrotate/wol-manager n'impose pas eol=lf"
+sed 's/\r$//' "$PAYLOAD/packaging/logrotate/wol-manager" \
+  | sed 's/$/\r/' >"$WORK/logrotate-crlf"
+mv "$WORK/logrotate-crlf" "$PAYLOAD/packaging/logrotate/wol-manager"
+LC_ALL=C grep -q $'\r' "$PAYLOAD/packaging/logrotate/wol-manager" \
+  || fail "fixture logrotate CRLF invalide"
+
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.3"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.4"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
@@ -374,6 +399,9 @@ assert_file "$ROOT12/var/log/wol-manager/audit.jsonl"
 assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "rotate 12"
 assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "create 0640 wol-manager wol-manager"
 assert_contains "$ROOT12/etc/logrotate.d/wol-manager" "su wol-manager wol-manager"
+assert_no_cr "$ROOT12/etc/logrotate.d/wol-manager"
+assert_no_cr "$ROOT12/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+assert_logrotate_recognized "$ROOT12/etc/logrotate.d/wol-manager" "$ROOT12" fresh
 [[ $(stat -c %a "$ROOT12/var/log/wol-manager") = 750 ]] || fail "mode incorrect pour le répertoire d'audit"
 [[ $(stat -c %a "$ROOT12/var/log/wol-manager/audit.jsonl") = 640 ]] || fail "mode incorrect pour audit.jsonl"
 assert_contains "$WOL_TEST_CHOWN_LOG" "wol-manager:wol-manager $ROOT12/var/log/wol-manager/audit.jsonl"
@@ -417,7 +445,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.4.3"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.4.4"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"
@@ -737,6 +765,10 @@ chmod 0600 "$ROOT12/var/lib/wol-manager/state.json"
 echo log >"$ROOT12/var/log/wol-manager/audit.keep"
 printf '{"event":"before-upgrade","outcome":"preserved"}\n' >"$ROOT12/var/log/wol-manager/audit.jsonl"
 chmod 0600 "$ROOT12/var/log/wol-manager/audit.jsonl"
+sed 's/\r$//' "$ROOT12/etc/logrotate.d/wol-manager" | sed 's/$/\r/' >"$WORK/logrotate-installed-crlf"
+mv "$WORK/logrotate-installed-crlf" "$ROOT12/etc/logrotate.d/wol-manager"
+sed 's/\r$//' "$ROOT12/usr/local/lib/wol-manager/packaging/logrotate/wol-manager" | sed 's/$/\r/' >"$WORK/logrotate-helper-crlf"
+mv "$WORK/logrotate-helper-crlf" "$ROOT12/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
 run_update "$ROOT12" main --yes --non-interactive
 [[ $("$ROOT12/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "mise à jour main absente"
 cmp -s "$REMOTE/main/install.sh" "$ROOT12/usr/local/lib/wol-manager/install.sh" || fail "l'installateur signé n'a pas été mis à jour"
@@ -746,6 +778,9 @@ assert_file "$ROOT12/var/log/wol-manager/audit.keep"
 assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"upgrade-job"'
 assert_contains "$ROOT12/var/lib/wol-manager/state.json" '"target":"preserve"'
 assert_contains "$ROOT12/var/log/wol-manager/audit.jsonl" '"event":"before-upgrade"'
+assert_no_cr "$ROOT12/etc/logrotate.d/wol-manager"
+assert_no_cr "$ROOT12/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+assert_logrotate_recognized "$ROOT12/etc/logrotate.d/wol-manager" "$ROOT12" update
 [[ $(stat -c %a "$ROOT12/var/lib/wol-manager") = 750 ]] || fail "mode incorrect pour le répertoire d'état"
 [[ $(stat -c %a "$ROOT12/var/lib/wol-manager/state.json") = 640 ]] || fail "mode incorrect pour state.json"
 [[ $(stat -c %a "$ROOT12/var/log/wol-manager/audit.jsonl") = 640 ]] || fail "mode incorrect pour audit.jsonl après mise à jour"
@@ -756,6 +791,19 @@ assert_contains "$WOL_TEST_CHOWN_LOG" "wol-manager:wol-manager $ROOT12/var/log/w
 assert_contains "$ROOT12/etc/wol-manager/release.conf" "default_channel=main"
 
 echo "[10/16] absence de mise à jour"
+sed 's/\r$//' "$ROOT12/etc/logrotate.d/wol-manager" | sed 's/$/\r/' >"$WORK/logrotate-current-crlf"
+mv "$WORK/logrotate-current-crlf" "$ROOT12/etc/logrotate.d/wol-manager"
+sed 's/\r$//' "$ROOT12/usr/local/lib/wol-manager/packaging/logrotate/wol-manager" | sed 's/$/\r/' >"$WORK/logrotate-current-helper-crlf"
+mv "$WORK/logrotate-current-helper-crlf" "$ROOT12/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+run_update "$ROOT12" main --yes --non-interactive >"$WORK/current-repair.log"
+assert_no_cr "$ROOT12/etc/logrotate.d/wol-manager"
+assert_no_cr "$ROOT12/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+assert_contains "$ROOT12/var/log/wol-manager/audit.jsonl" '"event":"before-upgrade"'
+assert_logrotate_recognized "$ROOT12/etc/logrotate.d/wol-manager" "$ROOT12" current
+LOGROTATE_REPAIRED_SHA=$(sha256sum "$ROOT12/etc/logrotate.d/wol-manager" | awk '{print $1}')
+run_update "$ROOT12" main --yes --non-interactive >"$WORK/current-idempotent.log"
+[[ $(sha256sum "$ROOT12/etc/logrotate.d/wol-manager" | awk '{print $1}') = "$LOGROTATE_REPAIRED_SHA" ]] \
+  || fail "la réparation logrotate n'est pas idempotente"
 run_update "$ROOT12" main --check --non-interactive >"$WORK/current.log"
 assert_contains "$WORK/current.log" "est à jour"
 
