@@ -13,6 +13,29 @@ Les installateurs `1.2.1`, `1.2.3` et `1.3.0` peuvent bloquer une mise à jour l
 
 Le [bootstrap authentifié](scripts/migration/upgrade-network-validation.sh) vérifie le manifeste officiel signé, la signature Ed25519 et le SHA-256 de l'installateur avant de remplacer uniquement `/usr/local/lib/wol-manager/install.sh`. Il ne modifie ni le YAML, ni les secrets, ni les états, ni le binaire, ni les services. La mise à jour standard est ensuite relancée.
 
+Pour la publication `1.4.5 dev`, utilisez le commit de publication complet et
+vérifiez également le SHA-256 du script avant son exécution :
+
+```sh
+publication=$(curl -fsSL \
+  https://api.github.com/repos/HaasGa-Factory/WOL-Manager/commits/dev \
+  | sed -n 's/^[[:space:]]*"sha":[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' \
+  | head -n1)
+
+printf '%s\n' "$publication" | grep -Eq '^[0-9a-f]{40}$' || exit 1
+
+curl -fSLo upgrade-network-validation.sh \
+  "https://raw.githubusercontent.com/HaasGa-Factory/WOL-Manager/$publication/scripts/migration/upgrade-network-validation.sh"
+
+echo '3c1927909a0f118b568695b4e884878bef9bfd241fcc4f780f6a04fbe8054995  upgrade-network-validation.sh' \
+  | sha256sum -c -
+
+chmod 700 upgrade-network-validation.sh
+sudo ./upgrade-network-validation.sh --channel dev --dry-run
+sudo ./upgrade-network-validation.sh --channel dev
+sudo wol update --channel dev
+```
+
 À partir de `1.4.1`, l'installateur reconnaît déjà `valid: true`, `ready: false`; ce bootstrap n'est donc pas nécessaire.
 
 ### Tests

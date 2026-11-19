@@ -18,19 +18,29 @@ copie système. Il ne modifie ni le binaire `wol`, ni `wol.yaml`, ni les secrets
 ni les états, ni les services.
 
 Téléchargez le script depuis le **commit de publication exact** de `1.4.5`, et
-non depuis une archive ou une copie non identifiée. Pour le canal `dev`, le
-commit est celui annoncé par la ligne « Canal dev résolu vers le commit de
-publication … » de `wol update`. Remplacez la valeur ci-dessous par ce SHA de
-40 caractères :
+non depuis une archive ou une copie non identifiée. Les commandes suivantes
+résolvent d'abord la branche `dev` vers son commit complet, puis épinglent le
+contenu attendu du script avec son SHA-256 :
 
 ```sh
-publication='<COMMIT_DE_PUBLICATION_1.4.5>'
+publication=$(curl -fsSL \
+  https://api.github.com/repos/HaasGa-Factory/WOL-Manager/commits/dev \
+  | sed -n 's/^[[:space:]]*"sha":[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' \
+  | head -n1)
+
+printf '%s\n' "$publication" | grep -Eq '^[0-9a-f]{40}$' || exit 1
+
 curl -fSLo upgrade-network-validation.sh \
   "https://raw.githubusercontent.com/HaasGa-Factory/WOL-Manager/$publication/scripts/migration/upgrade-network-validation.sh"
+
+echo '3c1927909a0f118b568695b4e884878bef9bfd241fcc4f780f6a04fbe8054995  upgrade-network-validation.sh' \
+  | sha256sum -c -
+
 chmod 700 upgrade-network-validation.sh
 ```
 
-Inspectez le fichier téléchargé, puis effectuez d'abord la simulation :
+Le contrôle doit afficher `upgrade-network-validation.sh: OK`. Inspectez ensuite
+le fichier téléchargé, puis effectuez d'abord la simulation :
 
 ```sh
 sudo ./upgrade-network-validation.sh --channel dev --dry-run

@@ -182,7 +182,10 @@ else
   install -o root -g root -m 0755 "$WORK/install.sh" "$INSTALLER.new.$$"
 fi
 mv -f "$INSTALLER.new.$$" "$INSTALLER"
-if ! "$INSTALLER" --version 2>/dev/null | grep -Fq "$CANDIDATE_VERSION"; then
+INSTALLER_CHECK_LOG="$WORK/installed-version.log"
+if [ "$(sha256sum "$INSTALLER" | awk '{print $1}')" != "$ACTUAL_SHA" ] || \
+  ! "$INSTALLER" --version >"$INSTALLER_CHECK_LOG" 2>&1 || \
+  ! grep -Fq "$CANDIDATE_VERSION" "$INSTALLER_CHECK_LOG"; then
   if [ -f "$BACKUP_DIR/install.sh" ]; then
     if [ "$TEST_MODE" = 1 ]; then
       install -m 0755 "$BACKUP_DIR/install.sh" "$INSTALLER"

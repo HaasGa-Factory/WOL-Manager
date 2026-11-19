@@ -21,7 +21,10 @@ mkdir -p "$REMOTE"
 cat >"$REMOTE/install.sh" <<'INSTALLER'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
-  echo 'WoL Manager installateur 1.4.5'
+  echo '2026-11-19T12:00:00Z Installateur 1.4.5; version installée: 1.3.0'
+  sleep 0.05
+  echo '2026-11-19T12:00:00Z Résultat final: succès'
+  echo '2026-11-19T12:00:00Z Journal: /tmp/wol-manager-check.log'
   exit 0
 fi
 echo 'candidate installer'
