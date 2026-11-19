@@ -8,7 +8,7 @@ else
 fi
 export PATH
 
-APP_VERSION="1.4.4"
+APP_VERSION="1.4.5"
 ACTION=install
 CHECK_ONLY=0
 CHANNEL=main

@@ -87,7 +87,7 @@ func TestOpenAPIDocumentIsValidYAMLAndExposesAutomations(t *testing.T) {
 		t.Fatalf("OpenAPI YAML invalide: %v", err)
 	}
 	text := string(content)
-	for _, expected := range []string{"version: 1.4.4", "/automations:", "DaemonStatus:", "NUTMonitorStatus:"} {
+	for _, expected := range []string{"version: 1.4.5", "/automations:", "DaemonStatus:", "NUTMonitorStatus:"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("OpenAPI incomplet, fragment absent: %s", expected)
 		}

@@ -39,7 +39,7 @@ CLI guidée, une API authentifiée et une reprise prudente pilotée par NUT.
 |---|---|---|
 | Machines, groupes, dépendances, simulations et vérifications ICMP/TCP/ARP. | Surveillance NUT facultative, seuils batterie et reprise des seules machines nécessaires. | Configuration protégée, jetons API hachés, relais mTLS et mises à jour signées. |
 
-La branche `dev` prépare WoL Manager `v1.4.4`. La release GitHub marquée
+La branche `dev` prépare WoL Manager `v1.4.5`. La release GitHub marquée
 **Latest** reste la version stable officielle. WoL Manager est un gestionnaire Wake-on-LAN Linux centralisé pour
 plusieurs réseaux, VLAN, groupes, relais et UPS NUT. Il fonctionne sans Docker
 et sans accès Internet à l'exécution.
@@ -50,6 +50,7 @@ et sans accès Internet à l'exécution.
 - [Fonctions](#fonctions)
 - [Sauvegardes et restauration](#sauvegardes-et-restauration)
 - [Mises à jour et canaux](#mises-à-jour-et-canaux)
+- [Migration 1.2.1, 1.2.3 et 1.3.0 vers 1.4.5](docs/updates.md#migration-121-123-et-130-vers-145)
 - [Correction Logrotate 1.4.3 vers 1.4.4](docs/updates.md#mise-à-jour-143-vers-144)
 - [Mise à niveau 1.3.0 vers 1.4.1](#mise-à-niveau-130-vers-141)
 - [Diagnostic `ready: false` et amorçage 1.4.2](docs/updates.md#amorçage-de-linstallateur-141-vers-142)
@@ -174,6 +175,11 @@ des jobs et cycles. Une restauration ne remet que la configuration par défaut ;
 les autres sections exigent `--sections`. La restauration de l'état exige que
 `wol-manager.service` soit arrêté et place les jobs actifs en
 `revalidation_required`.
+
+Après une restauration sur une autre machine ou un autre VLAN, WoL Manager
+avertit si aucun réseau déclaré ne correspond à un sous-réseau IPv4 directement
+connecté. Il conserve la configuration sans la réécrire ; suivez alors le
+[diagnostic réseau après restauration](docs/backups.md#restauration-sur-un-autre-réseau).
 
 Les archives sont stockées par défaut sous `/var/backups/wol-manager`, en mode
 `0600`, hors du répertoire détenu par le service. Elles ne sont ni chiffrées ni

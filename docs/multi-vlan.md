@@ -2,6 +2,13 @@
 
 Une route IP ne constitue jamais une autorisation WoL.
 
+Un réseau distant ou un VLAN peut être conservé dans une configuration valide
+même si l'hôte actuel ne possède aucune interface sur ce sous-réseau. Dans ce
+cas, `wol config check` distingue la structure valide (`valid: true`) de
+l'aptitude au réveil (`ready: false`). Le YAML reste accepté, mais aucune
+machine concernée ne peut être réveillée avant qu'un broadcast autorisé ou un
+relais utilisable ne fournisse un transport réel.
+
 - `local_broadcast` exige une interface locale dans le CIDR cible et l'autorisation du réseau.
 - L'ancien transport `unicast` n'est plus opérationnel. `wol setup` propose une conversion confirmée et sauvegardée des anciennes configurations. L'installateur système `1.2.3` ouvre ce même parcours pendant `sudo wol update`; une installation provenant de `1.2.1` doit d'abord amorcer cet installateur signé selon le guide des [mises à jour](updates.md).
 - `directed_broadcast` utilise le broadcast calculé du CIDR et exige `allow_directed_broadcast: true`.

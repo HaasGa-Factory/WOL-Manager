@@ -85,6 +85,32 @@ Une configuration absente peut être recréée depuis l'archive. Une configurati
 présente mais invalide n'est pas écrasée automatiquement : corrigez-la ou
 mettez-la de côté après en avoir conservé une copie indépendante.
 
+### Restauration sur un autre réseau
+
+Après une restauration réelle de la configuration, WoL Manager compare les
+CIDR déclarés aux sous-réseaux IPv4 directement connectés à l'hôte. Si aucun
+réseau ne correspond, il affiche **CONFIGURATION RÉSEAU À ADAPTER**.
+
+Cet avertissement ne bloque pas la restauration et ne modifie rien
+automatiquement : les réseaux distants, VLAN, machines, groupes et dépendances
+restent intégralement conservés. Les machines sans transport utilisable restent
+toutefois impossibles à réveiller tant que leur accès n'est pas configuré.
+
+Vérifiez d'abord les interfaces de la nouvelle machine, puis ajoutez ou adaptez
+un réseau local dans l'assistant :
+
+```sh
+ip -br -4 address
+sudo wol setup
+wol network test IDENTIFIANT_MACHINE
+wol config check
+```
+
+Dans `wol setup`, ouvrez **Réseaux WoL** et renseignez le CIDR, l'interface et
+l'adresse source correspondant à l'hôte. Ne supprimez un ancien réseau que
+lorsqu'aucune machine ne l'utilise plus. La simulation `--dry-run` n'affiche
+pas cet avertissement post-restauration puisqu'elle n'écrit aucun fichier.
+
 ### Restaurer les jetons
 
 ```sh

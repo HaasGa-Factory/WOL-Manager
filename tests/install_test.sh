@@ -366,7 +366,7 @@ LC_ALL=C grep -q $'\r' "$PAYLOAD/packaging/logrotate/wol-manager" \
   || fail "fixture logrotate CRLF invalide"
 
 "$PAYLOAD/install.sh" --help >"$WORK/install-help.log"
-assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.4"
+assert_contains "$WORK/install-help.log" "WoL Manager installateur 1.4.5"
 assert_contains "$WORK/install-help.log" "--service enable"
 assert_contains "$WORK/install-help.log" "--service install"
 assert_contains "$WORK/install-help.log" "--service cli"
@@ -445,7 +445,7 @@ prepare_root "$ROOT13" 13
 run_installer "$PAYLOAD" "$ROOT13" arm64 --non-interactive --yes --service cli >"$WORK/debian13.log" 2>&1
 [[ $("$ROOT13/usr/local/bin/wol" version --channel) = main ]] || fail "mauvais canal ARM64"
 assert_not_contains "$WORK/debian13.log" "installateur annonce 13"
-assert_contains "$WORK/debian13.log" "installateur annonce 1.4.4"
+assert_contains "$WORK/debian13.log" "installateur annonce 1.4.5"
 
 echo "[présentation APT] résumé par défaut, détails seulement dans le journal"
 ROOT_APT="$WORK/root-apt"

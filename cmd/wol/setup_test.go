@@ -748,6 +748,40 @@ func TestReadinessRejectsEnabledMachineWithoutTransport(t *testing.T) {
 	}
 }
 
+func TestRemoteNetworkRemainsValidButNotReady(t *testing.T) {
+	previousResolver := localBroadcastResolver
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{}, errors.New("interface eth0 indisponible")
+	}
+	t.Cleanup(func() { localBroadcastResolver = previousResolver })
+
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{
+		CIDR:                "192.168.1.0/24",
+		Interface:           "eth0",
+		AllowLocalBroadcast: true,
+	}
+	disabledServer := cfg.Servers["one"]
+	disabledServer.IP = "192.168.1.10"
+	cfg.Servers["one"] = disabledServer
+	server := cfg.Servers["two"]
+	server.IP = "192.168.1.20"
+	server.Network = "lan"
+	cfg.Servers["two"] = server
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("réseau distant structurellement valide refusé: %v", err)
+	}
+	problems := collectReadinessProblems(cfg)
+	if len(problems) != 1 || problems[0].Server != "two" {
+		t.Fatalf("état opérationnel distant inattendu: %#v", problems)
+	}
+	if _, err := transportPlan(cfg, "two"); err == nil || !strings.Contains(err.Error(), "aucun transport") {
+		t.Fatalf("réveil distant sans transport accepté: %v", err)
+	}
+}
+
 func TestReadinessReportGroupsIdenticalTransportFailuresByNetwork(t *testing.T) {
 	previousResolver := localBroadcastResolver
 	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {

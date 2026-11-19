@@ -79,13 +79,14 @@ type backupInspection struct {
 }
 
 type backupRestoreReport struct {
-	Archive       string            `json:"archive"`
-	Sections      []string          `json:"sections"`
-	Differences   map[string]string `json:"differences"`
-	DryRun        bool              `json:"dry_run"`
-	SafetyBackup  string            `json:"safety_backup,omitempty"`
-	Applied       bool              `json:"applied"`
-	Revalidations int               `json:"jobs_requiring_revalidation,omitempty"`
+	Archive             string            `json:"archive"`
+	Sections            []string          `json:"sections"`
+	Differences         map[string]string `json:"differences"`
+	DryRun              bool              `json:"dry_run"`
+	SafetyBackup        string            `json:"safety_backup,omitempty"`
+	Applied             bool              `json:"applied"`
+	Revalidations       int               `json:"jobs_requiring_revalidation,omitempty"`
+	MissingLocalNetwork bool              `json:"-"`
 }
 
 type backupListItem struct {
@@ -782,6 +783,35 @@ func printRestoreReport(output io.Writer, report backupRestoreReport) {
 	if report.Revalidations > 0 {
 		fmt.Fprintf(output, "Jobs suspendus       : %d\n", report.Revalidations)
 	}
+	if report.MissingLocalNetwork {
+		fmt.Fprintln(output, "\n⚠️ CONFIGURATION RÉSEAU À ADAPTER")
+		fmt.Fprintln(output, "\nAucun réseau WoL correspondant au réseau local de cet hôte")
+		fmt.Fprintln(output, "n'a été trouvé dans la configuration restaurée.")
+		fmt.Fprintln(output, "\nLa configuration restaurée a été conservée sans modification automatique.")
+		fmt.Fprintln(output, "Les réseaux distants et leurs machines restent déclarés, mais leurs réveils")
+		fmt.Fprintln(output, "resteront indisponibles tant qu'aucun transport utilisable n'existe.")
+		fmt.Fprintln(output, "\nCORRECTION RECOMMANDÉE")
+		fmt.Fprintln(output, "\n1. Créez un réseau avec le CIDR, l'interface et l'adresse source de cet hôte.")
+		fmt.Fprintln(output, "2. Migrez uniquement les machines concernées si nécessaire.")
+		fmt.Fprintln(output, "3. Supprimez les anciens réseaux seulement lorsqu'ils ne sont plus utilisés.")
+		fmt.Fprintln(output, "\nCommande : sudo wol setup")
+	}
+}
+
+func hasDirectlyConnectedNetwork(cfg *Config, interfaces []ipv4Interface) bool {
+	for _, network := range cfg.Networks {
+		configured, err := parseIPv4CIDR(network.CIDR)
+		if err != nil {
+			continue
+		}
+		for _, item := range interfaces {
+			connected, err := parseIPv4CIDR(item.CIDR)
+			if err == nil && configured.String() == connected.String() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type restoreTarget struct {
@@ -861,7 +891,8 @@ func applyRestore(configPath string, archive backupArchive, selected []string, r
 			return report, fmt.Errorf("restauration de %s échouée; état précédent restauré: %w", targets[i].section, err)
 		}
 	}
-	if _, err := LoadConfig(configPath); err != nil {
+	validatedConfig, err := LoadConfig(configPath)
+	if err != nil {
 		rollbackErr := rollbackRestoreTargets(targets)
 		if rollbackErr != nil {
 			return report, fmt.Errorf("configuration restaurée invalide: %v; rollback incomplet: %w", err, rollbackErr)
@@ -869,6 +900,9 @@ func applyRestore(configPath string, archive backupArchive, selected []string, r
 		return report, fmt.Errorf("configuration restaurée invalide; état précédent restauré: %w", err)
 	}
 	report.Applied = true
+	if containsString(selected, "config") {
+		report.MissingLocalNetwork = !hasDirectlyConnectedNetwork(validatedConfig, detectIPv4Interfaces())
+	}
 	return report, nil
 }
 

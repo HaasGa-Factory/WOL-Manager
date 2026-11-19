@@ -279,6 +279,105 @@ func TestBackupRestoreConfigurationCanRecoverAMissingConfiguration(t *testing.T)
 	}
 }
 
+func TestBackupRestoreWarnsWhenNoConfiguredNetworkMatchesTheHost(t *testing.T) {
+	fixture := newBackupFixture(t)
+	remote := testConfig(t)
+	remote.Networks = map[string]Network{
+		"lan": {CIDR: "192.168.1.0/24", AllowDirectedBroadcast: true},
+	}
+	remote.Servers = map[string]Server{
+		"truenas": {Name: "TrueNAS", MAC: "02:00:00:00:00:31", IP: "192.168.1.30", Network: "lan"},
+	}
+	remote.Groups = map[string]Group{}
+	remote.API.TokensFile = fixture.tokensPath
+	remote.Storage.StateFile = fixture.statePath
+	remote.Storage.AuditFile = filepath.Join(fixture.dir, "audit.jsonl")
+	writeBackupTestConfig(t, fixture.configPath, remote)
+	result, err := createBackupArchive(fixture.configPath, backupCreateOptions{Output: filepath.Join(fixture.dir, "remote.wolbackup")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBackupTestConfig(t, fixture.configPath, testConfig(t))
+
+	previous := detectIPv4Interfaces
+	detectIPv4Interfaces = func() []ipv4Interface {
+		return []ipv4Interface{{Name: "ens18", Address: "192.168.208.10", CIDR: "192.168.208.0/24"}}
+	}
+	t.Cleanup(func() { detectIPv4Interfaces = previous })
+
+	var output bytes.Buffer
+	if err := backupCLIWithIO(fixture.configPath, []string{"restore", "--yes", result.Path}, false, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"CONFIGURATION RÉSEAU À ADAPTER",
+		"Aucun réseau WoL correspondant au réseau local de cet hôte",
+		"sudo wol setup",
+		"La configuration restaurée a été conservée sans modification automatique",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("avertissement %q absent:\n%s", expected, output.String())
+		}
+	}
+	restored, err := LoadConfig(fixture.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := restored.Networks["lan"]; !ok || len(restored.Networks) != 1 || restored.Servers["truenas"].Network != "lan" {
+		t.Fatalf("la restauration distante a été modifiée: réseaux=%#v machines=%#v", restored.Networks, restored.Servers)
+	}
+}
+
+func TestBackupRestoreDoesNotWarnWhenALocalNetworkExists(t *testing.T) {
+	fixture := newBackupFixture(t)
+	mixed := testConfig(t)
+	mixed.Networks = map[string]Network{
+		"lan":     {CIDR: "192.168.1.0/24", AllowDirectedBroadcast: true},
+		"lan-dev": {CIDR: "192.168.208.0/24", Interface: "ens18", SourceIP: "192.168.208.10", AllowLocalBroadcast: true},
+	}
+	mixed.Servers = map[string]Server{
+		"truenas": {Name: "TrueNAS", MAC: "02:00:00:00:00:31", IP: "192.168.1.30", Network: "lan"},
+	}
+	mixed.Groups = map[string]Group{}
+	mixed.API.TokensFile = fixture.tokensPath
+	mixed.Storage.StateFile = fixture.statePath
+	mixed.Storage.AuditFile = filepath.Join(fixture.dir, "audit.jsonl")
+	writeBackupTestConfig(t, fixture.configPath, mixed)
+	result, err := createBackupArchive(fixture.configPath, backupCreateOptions{Output: filepath.Join(fixture.dir, "mixed.wolbackup")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBackupTestConfig(t, fixture.configPath, testConfig(t))
+
+	previous := detectIPv4Interfaces
+	detectIPv4Interfaces = func() []ipv4Interface {
+		return []ipv4Interface{{Name: "ens18", Address: "192.168.208.10", CIDR: "192.168.208.0/24"}}
+	}
+	t.Cleanup(func() { detectIPv4Interfaces = previous })
+
+	var output bytes.Buffer
+	if err := backupCLIWithIO(fixture.configPath, []string{"restore", "--yes", result.Path}, false, strings.NewReader(""), &output); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "CONFIGURATION RÉSEAU À ADAPTER") {
+		t.Fatalf("avertissement incorrect malgré un réseau local correspondant:\n%s", output.String())
+	}
+}
+
+func TestBackupRestoreNetworkWarningDoesNotChangeJSON(t *testing.T) {
+	encoded, err := json.Marshal(backupRestoreReport{
+		Archive:             "backup.wolbackup",
+		Applied:             true,
+		MissingLocalNetwork: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "local_network") || strings.Contains(string(encoded), "MissingLocalNetwork") {
+		t.Fatalf("champ interne exposé dans le JSON public: %s", encoded)
+	}
+}
+
 func TestBackupRestoreFullRevalidatesActiveJobsAndCreatesSafetyBackup(t *testing.T) {
 	fixture := newBackupFixture(t)
 	result, err := createBackupArchive(fixture.configPath, backupCreateOptions{Output: filepath.Join(fixture.dir, "restore-full.wolbackup"), Full: true})

@@ -1,6 +1,25 @@
 # Changelog
 
-## 1.4.4 - en préparation
+## 1.4.5 - en préparation
+
+### Corrigé
+
+- une configuration structurellement valide reste acceptée lorsque certains réseaux distants, VLAN, interfaces ou transports ne sont pas disponibles sur l'hôte actuel ; ces machines restent signalées `ready: false` et aucun réveil sans transport n'est autorisé ;
+- après restauration d'une sauvegarde, WoL Manager avertit lorsque aucun réseau déclaré ne correspond à un sous-réseau IPv4 directement connecté, sans modifier ni supprimer les réseaux et machines restaurés.
+
+### Migration depuis les anciennes versions
+
+Les installateurs `1.2.1`, `1.2.3` et `1.3.0` peuvent bloquer une mise à jour lorsque le binaire candidat retourne `valid: true`, `ready: false`. Leur commande `wol update` atteint le binaire candidat, mais l'ancien installateur interprète encore ce diagnostic opérationnel comme une incompatibilité.
+
+Le [bootstrap authentifié](scripts/migration/upgrade-network-validation.sh) vérifie le manifeste officiel signé, la signature Ed25519 et le SHA-256 de l'installateur avant de remplacer uniquement `/usr/local/lib/wol-manager/install.sh`. Il ne modifie ni le YAML, ni les secrets, ni les états, ni le binaire, ni les services. La mise à jour standard est ensuite relancée.
+
+À partir de `1.4.1`, l'installateur reconnaît déjà `valid: true`, `ready: false`; ce bootstrap n'est donc pas nécessaire.
+
+### Tests
+
+- restauration depuis un autre sous-réseau, présence ou absence d'un réseau local, conservation des VLAN distants, bootstrap depuis `1.2.1`/`1.2.3`/`1.3.0`, signature et SHA-256, simulation, idempotence et préservation des données protégées.
+
+## 1.4.4 - 2026-11-19
 
 ### Corrigé
 

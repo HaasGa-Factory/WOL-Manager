@@ -1,5 +1,63 @@
 # Mises à jour et rollback
 
+## Migration 1.2.1, 1.2.3 et 1.3.0 vers 1.4.5
+
+Les installateurs système livrés avec `1.2.1`, `1.2.3` et `1.3.0` confondent
+une configuration invalide avec une configuration valide mais temporairement
+non opérationnelle (`valid: true`, `ready: false`). Ils téléchargent et
+authentifient le nouveau binaire, puis s'arrêtent avant de remplacer leur
+propre moteur. Le nouvel installateur corrigé ne peut donc pas prendre le
+relais par la seule commande `wol update`.
+
+Le bootstrap
+[`upgrade-network-validation.sh`](../scripts/migration/upgrade-network-validation.sh)
+résout uniquement ce cas. Il accepte ces trois versions, vérifie le manifeste
+officiel avec la clé Ed25519 déjà installée, contrôle le SHA-256 de
+`dist/install.sh`, sauvegarde l'ancien installateur et remplace atomiquement sa
+copie système. Il ne modifie ni le binaire `wol`, ni `wol.yaml`, ni les secrets,
+ni les états, ni les services.
+
+Téléchargez le script depuis le **commit de publication exact** de `1.4.5`, et
+non depuis une archive ou une copie non identifiée. Pour le canal `dev`, le
+commit est celui annoncé par la ligne « Canal dev résolu vers le commit de
+publication … » de `wol update`. Remplacez la valeur ci-dessous par ce SHA de
+40 caractères :
+
+```sh
+publication='<COMMIT_DE_PUBLICATION_1.4.5>'
+curl -fSLo upgrade-network-validation.sh \
+  "https://raw.githubusercontent.com/HaasGa-Factory/WOL-Manager/$publication/scripts/migration/upgrade-network-validation.sh"
+chmod 700 upgrade-network-validation.sh
+```
+
+Inspectez le fichier téléchargé, puis effectuez d'abord la simulation :
+
+```sh
+sudo ./upgrade-network-validation.sh --channel dev --dry-run
+sudo ./upgrade-network-validation.sh --channel dev
+sudo wol update --channel dev
+```
+
+Pour une publication stable, utilisez le commit de publication `main` et
+remplacez `--channel dev` par `--channel main`. Le script refuse un manifeste
+d'un autre canal, une signature invalide, un installateur altéré, une version
+candidate antérieure à `1.4.5` ou une version installée hors de la liste prise
+en charge. Un second passage est idempotent.
+
+Après la mise à jour :
+
+```sh
+wol version
+wol config check
+wol network test IDENTIFIANT_MACHINE
+```
+
+`wol config check` peut légitimement retourner le code `1` avec
+`valid: true, ready: false` si un réseau distant n'a aucun transport disponible.
+La mise à jour reste installée, mais les réveils concernés restent bloqués. Les
+installations `1.4.1` et ultérieures connaissent déjà cette distinction et ne
+doivent pas utiliser ce bootstrap.
+
 ## Mise à jour 1.4.3 vers 1.4.4
 
 La version `1.4.4` corrige les fins de ligne Windows `CRLF` qui peuvent rendre

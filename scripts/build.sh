@@ -95,6 +95,10 @@ source_revision=$(git rev-parse HEAD)
 export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
 
+echo "Tests du bootstrap de migration..."
+bash -n scripts/migration/upgrade-network-validation.sh tests/migration_test.sh
+bash tests/migration_test.sh
+
 echo "Tests Go..."
 source_tree="$work/source"
 mkdir -p "$source_tree"
