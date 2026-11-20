@@ -109,7 +109,7 @@ func TestConfigCheckUsesHumanReadinessReportAndPreservesJSON(t *testing.T) {
 	config, expectedIssues := writeNotReadyConfig(t)
 
 	stdout, stderr, code := runStatusProcess(t, "--config", config, "config", "check")
-	if code != 1 || !strings.Contains(stdout, "CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE") {
+	if code != 1 || !strings.Contains(stdout, "CONFIGURATION VALIDE, MAIS PARTIELLEMENT NON OPÉRATIONNELLE") {
 		t.Fatalf("rapport humain absent: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if strings.Count(stdout, "RÉSEAU À CORRIGER : lan") != 1 {

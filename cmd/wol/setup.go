@@ -103,13 +103,24 @@ func setupWithIOMode(path string, input io.Reader, output io.Writer, interactive
 				fmt.Fprintf(output, "Configuration invalide :\n%v\n", err)
 				continue
 			}
-			if issues := readinessIssues(session.cfg); len(issues) > 0 {
-				fmt.Fprintln(output, "PRÉPARATION IMPOSSIBLE: la syntaxe est valide, mais la configuration n'est pas opérationnelle:")
-				for _, issue := range issues {
-					fmt.Fprintln(output, "-", issue)
+			problems := collectReadinessProblems(session.cfg)
+			if len(problems) > 0 {
+				renderReadinessReport(output, session.cfg, problems)
+				if err := simulateReadyMachines(output, session.cfg, problems); err != nil {
+					fmt.Fprintln(output, "Simulation partielle échouée:", err)
+					fmt.Fprintln(output, "Aucun paquet n’a été envoyé.")
 				}
-				fmt.Fprintln(output, "Ouvrez Réseaux WoL, modifiez le réseau indiqué et activez le broadcast local, un broadcast dirigé autorisé ou un relais utilisable.")
-				continue
+				fmt.Fprintln(output, "\nLa configuration peut être sauvegardée.")
+				fmt.Fprintln(output, "Les réveils concernés resteront refusés.")
+				if !confirmPrompt(reader, output, "Enregistrer malgré ces limitations ?") {
+					fmt.Fprintln(output, "Aucune modification enregistrée.")
+					continue
+				}
+				if err := writeManagedConfig(path, session.base, session.cfg, session.existing); err != nil {
+					return err
+				}
+				fmt.Fprintln(output, "Configuration enregistrée avec avertissements.")
+				return nil
 			}
 			if err := simulateAllMachines(output, session.cfg); err != nil {
 				fmt.Fprintln(output, "Simulation finale échouée:", err)
@@ -1219,11 +1230,130 @@ func readinessUnavailableInterface(decisions []TransportDecision) string {
 	return ""
 }
 
-func renderReadinessReport(output io.Writer, problems []readinessProblem) {
+func readinessDiagnosticInterfaces() []ipv4Interface {
+	items := detectIPv4Interfaces()
+	result := make([]ipv4Interface, 0, len(items))
+	for _, item := range items {
+		ip := net.ParseIP(strings.TrimSpace(item.Address))
+		if ip == nil || ip.To4() == nil || ip.IsLoopback() {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func sameNetworkInterfaces(network Network) []ipv4Interface {
+	configured, err := parseIPv4CIDR(network.CIDR)
+	if err != nil {
+		return nil
+	}
+	var matches []ipv4Interface
+	for _, item := range readinessDiagnosticInterfaces() {
+		ip := net.ParseIP(item.Address)
+		_, actual, parseErr := net.ParseCIDR(item.CIDR)
+		if parseErr == nil && ip != nil && configured.Contains(ip) && actual.String() == configured.String() {
+			matches = append(matches, item)
+		}
+	}
+	return matches
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func renderReadinessNetworkDeclaration(output io.Writer, cfg *Config, id string) {
+	network, ok := cfg.Networks[id]
+	if !ok {
+		return
+	}
+	port := network.Port
+	portSource := "valeur du réseau"
+	if port == 0 {
+		port = cfg.Global.Port
+		portSource = "valeur globale"
+	}
+	order := network.TransportOrder
+	if len(order) == 0 {
+		order = cfg.Global.TransportOrder
+	}
+	interfaceName := emptyAs(network.Interface, "aucune")
+	source := emptyAs(network.SourceIP, "automatique")
+	relay := emptyAs(network.Relay, "aucun")
+	local := "désactivé"
+	if network.AllowLocalBroadcast {
+		local = "autorisé"
+	}
+	directed := "désactivé"
+	if network.AllowDirectedBroadcast {
+		directed = "autorisé explicitement"
+	}
+	fmt.Fprintf(output, "\nRéseau : %s — %s\n", sanitizeExternalText(id), sanitizeExternalText(network.CIDR))
+	fmt.Fprintf(output, "  CIDR                  : %s\n", sanitizeExternalText(network.CIDR))
+	fmt.Fprintf(output, "  Interface configurée  : %s\n", sanitizeExternalText(interfaceName))
+	fmt.Fprintf(output, "  Adresse source        : %s\n", sanitizeExternalText(source))
+	fmt.Fprintf(output, "  Broadcast local       : %s\n", local)
+	fmt.Fprintf(output, "  Broadcast dirigé      : %s\n", directed)
+	fmt.Fprintf(output, "  Relais                : %s\n", sanitizeExternalText(relay))
+	fmt.Fprintf(output, "  Port WoL              : %d (%s)\n", port, portSource)
+	fmt.Fprintf(output, "  Ordre des transports  : %s\n", sanitizeExternalText(emptyAs(strings.Join(order, ", "), "aucun")))
+}
+
+func renderReadinessRecommendation(output io.Writer, cfg *Config, networkID string, decisions []TransportDecision) {
+	network, ok := cfg.Networks[networkID]
+	if !ok {
+		fmt.Fprintln(output, "  1. Ouvrez l’assistant avec sudo wol setup.")
+		fmt.Fprintln(output, "  2. Corrigez la référence au réseau absent.")
+		return
+	}
+	if !network.AllowLocalBroadcast && !network.AllowDirectedBroadcast && network.Relay == "" {
+		fmt.Fprintln(output, "  Aucun transport WoL n’est autorisé dans la déclaration du réseau.")
+		fmt.Fprintln(output, "  Ouvrez sudo wol setup -> Réseaux WoL et autorisez explicitement")
+		fmt.Fprintln(output, "  un broadcast local, un broadcast dirigé ou un relais.")
+		return
+	}
+
+	unavailable := readinessUnavailableInterface(decisions)
+	if unavailable == "" {
+		fmt.Fprintln(output, "  1. Ouvrez l’assistant :")
+		fmt.Fprintln(output, "       sudo wol setup")
+		fmt.Fprintf(output, "  2. Sélectionnez Réseaux WoL -> Modifier -> %s.\n", sanitizeExternalText(networkID))
+		fmt.Fprintln(output, "  3. Rendez au moins un transport utilisable pour ce réseau.")
+		return
+	}
+
+	matches := sameNetworkInterfaces(network)
+	if len(matches) > 0 {
+		fmt.Fprintln(output, "  Une autre interface IPv4 porte déjà le même CIDR :")
+		for _, item := range matches {
+			fmt.Fprintf(output, "    - %s — %s (%s)\n", sanitizeExternalText(item.Name), sanitizeExternalText(item.Address), sanitizeExternalText(item.CIDR))
+		}
+		fmt.Fprintln(output, "  Ouvrez sudo wol setup -> Réseaux WoL -> Modifier.")
+		fmt.Fprintf(output, "  Remplacez l’interface « %s » par l’interface correcte et vérifiez l’adresse source.\n", sanitizeExternalText(unavailable))
+		return
+	}
+
+	fmt.Fprintln(output, "  1. Vérifiez les interfaces IPv4 réellement disponibles :")
+	fmt.Fprintln(output, "       ip -br -4 address")
+	fmt.Fprintln(output, "  2. Ouvrez sudo wol setup -> Réseaux WoL -> Modifier.")
+	fmt.Fprintf(output, "  3. Corrigez l’interface « %s » et l’adresse source, ou configurez un autre transport.\n", sanitizeExternalText(unavailable))
+	fmt.Fprintln(output, "\nTEST TEMPORAIRE (facultatif)")
+	fmt.Fprintln(output, "  Uniquement si ce réseau doit être présenté localement par un VLAN et si")
+	fmt.Fprintln(output, "  vous connaissez l’interface parente, l’identifiant VLAN et une IP libre :")
+	quotedInterface := shellQuote(unavailable)
+	fmt.Fprintf(output, "  sudo ip link add link <INTERFACE_PARENTE> name %s type vlan id <VLAN_ID>\n", quotedInterface)
+	fmt.Fprintf(output, "  sudo ip address add <IP_LIBRE>/<PREFIXE> dev %s\n", quotedInterface)
+	fmt.Fprintf(output, "  sudo ip link set %s up\n", quotedInterface)
+	fmt.Fprintln(output, "  Cette configuration temporaire disparaît au redémarrage.")
+	fmt.Fprintln(output, "  Un résultat ready: true valide seulement le plan local; il ne prouve ni la livraison du paquet ni le réveil physique.")
+}
+
+func renderReadinessReport(output io.Writer, cfg *Config, problems []readinessProblem) {
 	if len(problems) == 0 {
 		return
 	}
-	fmt.Fprintln(output, "CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE")
+	fmt.Fprintln(output, "CONFIGURATION VALIDE, MAIS PARTIELLEMENT NON OPÉRATIONNELLE")
 	fmt.Fprintln(output)
 	fmt.Fprintln(output, "Le fichier YAML est syntaxiquement valide et n’a pas été modifié.")
 	fmt.Fprintln(output, "Cet état n’empêche pas une mise à jour logicielle, mais les réveils resteront")
@@ -1257,6 +1387,7 @@ func renderReadinessReport(output io.Writer, problems []readinessProblem) {
 
 	for _, group := range groups {
 		fmt.Fprintf(output, "\nRÉSEAU À CORRIGER : %s\n", sanitizeExternalText(group.Network))
+		renderReadinessNetworkDeclaration(output, cfg, group.Network)
 		for failureIndex, failure := range group.Failures {
 			if len(group.Failures) > 1 {
 				fmt.Fprintf(output, "\nCAS %d\n", failureIndex+1)
@@ -1274,19 +1405,7 @@ func renderReadinessReport(output io.Writer, problems []readinessProblem) {
 				fmt.Fprintf(output, "  - %s : %s\n", sanitizeExternalText(readinessDecisionName(decision.Name)), sanitizeExternalText(reason))
 			}
 			fmt.Fprintln(output, "\nCORRECTION RECOMMANDÉE")
-			if unavailable := readinessUnavailableInterface(failure.Decisions); unavailable != "" {
-				fmt.Fprintln(output, "  1. Identifiez l’interface IPv4 actuellement utilisée :")
-				fmt.Fprintln(output, "       ip -br -4 address")
-				fmt.Fprintln(output, "  2. Ouvrez l’assistant :")
-				fmt.Fprintln(output, "       sudo wol setup")
-				fmt.Fprintf(output, "  3. Sélectionnez Réseaux WoL -> Modifier -> %s.\n", sanitizeExternalText(group.Network))
-				fmt.Fprintf(output, "  4. Remplacez l’interface « %s » et vérifiez l’adresse IP source.\n", sanitizeExternalText(unavailable))
-			} else {
-				fmt.Fprintln(output, "  1. Ouvrez l’assistant :")
-				fmt.Fprintln(output, "       sudo wol setup")
-				fmt.Fprintf(output, "  2. Sélectionnez Réseaux WoL -> Modifier -> %s.\n", sanitizeExternalText(group.Network))
-				fmt.Fprintln(output, "  3. Rendez au moins un transport utilisable pour ce réseau.")
-			}
+			renderReadinessRecommendation(output, cfg, group.Network, failure.Decisions)
 			fmt.Fprintln(output, "\nVérifications")
 			for _, server := range failure.Servers {
 				fmt.Fprintf(output, "  wol network test %s\n", sanitizeExternalText(server))
@@ -1322,6 +1441,29 @@ func simulateAllMachines(output io.Writer, cfg *Config) error {
 			return fmt.Errorf("machine %s: %w", id, err)
 		}
 		fmt.Fprintf(output, "Simulation WoL automatique réussie pour %s (aucun paquet envoyé).\n", id)
+	}
+	return nil
+}
+
+func simulateReadyMachines(output io.Writer, cfg *Config, problems []readinessProblem) error {
+	blocked := make(map[string]error, len(problems))
+	for _, problem := range problems {
+		blocked[problem.Server] = problem.Err
+	}
+	engine := &Engine{cfg: cfg, audit: &Auditor{}, dry: true, noWait: true}
+	for _, id := range sortedKeys(cfg.Servers) {
+		if !enabled(cfg.Servers[id]) {
+			continue
+		}
+		if problem, found := blocked[id]; found {
+			fmt.Fprintf(output, "Simulation ignorée pour %s : %s.\n", sanitizeExternalText(id), sanitizeExternalText(problem.Error()))
+			continue
+		}
+		if _, err := engine.wakeTree(context.Background(), id, map[string]bool{}); err != nil {
+			fmt.Fprintf(output, "Simulation ignorée pour %s : %s.\n", sanitizeExternalText(id), sanitizeExternalText(err.Error()))
+			continue
+		}
+		fmt.Fprintf(output, "Simulation WoL automatique réussie pour %s (aucun paquet envoyé).\n", sanitizeExternalText(id))
 	}
 	return nil
 }

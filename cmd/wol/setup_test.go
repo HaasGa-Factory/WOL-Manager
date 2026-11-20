@@ -802,7 +802,7 @@ func TestReadinessReportGroupsIdenticalTransportFailuresByNetwork(t *testing.T) 
 	delete(cfg.Servers, "two")
 
 	var output strings.Builder
-	renderReadinessReport(&output, collectReadinessProblems(cfg))
+	renderReadinessReport(&output, cfg, collectReadinessProblems(cfg))
 	report := output.String()
 	if strings.Count(report, "RÉSEAU À CORRIGER : lan") != 1 {
 		t.Fatalf("réseau non regroupé:\n%s", report)
@@ -835,7 +835,7 @@ func TestReadinessExplainsIPOutsideNetwork(t *testing.T) {
 		}
 	}
 	var output strings.Builder
-	renderReadinessReport(&output, collectReadinessProblems(cfg))
+	renderReadinessReport(&output, cfg, collectReadinessProblems(cfg))
 	for _, expected := range []string{"MACHINE À CORRIGER : two", "Adresse IP", "CIDR", "wol network test two"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("rapport IP/réseau incomplet (%s):\n%s", expected, output.String())
@@ -845,7 +845,8 @@ func TestReadinessExplainsIPOutsideNetwork(t *testing.T) {
 
 func TestReadinessReportSeparatesDifferentFailuresOnSameNetwork(t *testing.T) {
 	var output strings.Builder
-	renderReadinessReport(&output, []readinessProblem{
+	cfg := &Config{Networks: map[string]Network{"lan": {CIDR: "192.0.2.0/24"}}}
+	renderReadinessReport(&output, cfg, []readinessProblem{
 		{
 			Server: "one", Network: "lan", Err: errors.New("aucun transport autorisé et disponible pour one"),
 			Decisions: []TransportDecision{{Name: "local_broadcast", State: "unavailable", Reason: "interface eth0 indisponible"}},
@@ -867,7 +868,8 @@ func TestReadinessReportSeparatesDifferentFailuresOnSameNetwork(t *testing.T) {
 
 func TestReadinessReportSanitizesControlCharacters(t *testing.T) {
 	var output strings.Builder
-	renderReadinessReport(&output, []readinessProblem{{
+	cfg := &Config{Networks: map[string]Network{"lan\x1b": {CIDR: "192.0.2.0/24"}}}
+	renderReadinessReport(&output, cfg, []readinessProblem{{
 		Server: "server\nname", Network: "lan\x1b", Err: errors.New("aucun transport autorisé et disponible"),
 		Decisions: []TransportDecision{{Name: "local_broadcast", State: "unavailable", Reason: "interface eth0\x1b[31m\nindisponible"}},
 	}})
@@ -879,6 +881,319 @@ func TestReadinessReportSanitizesControlCharacters(t *testing.T) {
 		if !strings.Contains(report, escaped) {
 			t.Fatalf("valeur neutralisée absente (%s): %q", escaped, report)
 		}
+	}
+}
+
+func TestReadinessReportShowsCompleteNetworkDeclaration(t *testing.T) {
+	previousResolver := localBroadcastResolver
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{}, errors.New("interface eth0 indisponible")
+	}
+	t.Cleanup(func() { localBroadcastResolver = previousResolver })
+
+	cfg := testConfig(t)
+	cfg.Global.Port = 9
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{
+		CIDR:                   "192.168.1.0/24",
+		Interface:              "eth0",
+		SourceIP:               "192.168.1.231",
+		AllowLocalBroadcast:    true,
+		AllowDirectedBroadcast: false,
+		Relay:                  "",
+		TransportOrder:         []string{"local_broadcast", "directed_broadcast", "relay"},
+	}
+	server := cfg.Servers["two"]
+	server.IP = "192.168.1.20"
+	cfg.Servers["two"] = server
+
+	var output strings.Builder
+	renderReadinessReport(&output, cfg, collectReadinessProblems(cfg))
+	report := output.String()
+	for _, expected := range []string{
+		"Réseau : lan", "CIDR", "192.168.1.0/24", "Interface configurée", "eth0",
+		"Adresse source", "192.168.1.231", "Broadcast local", "autorisé",
+		"Broadcast dirigé", "désactivé", "Relais", "aucun", "Port WoL", "9 (valeur globale)",
+		"Ordre des transports", "local_broadcast, directed_broadcast, relay",
+	} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("déclaration réseau incomplète (%s):\n%s", expected, report)
+		}
+	}
+}
+
+func TestReadinessReportSuggestsRenamedInterfaceOnSameCIDR(t *testing.T) {
+	previousResolver := localBroadcastResolver
+	previousInterfaces := detectIPv4Interfaces
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{}, errors.New("interface eth0 indisponible")
+	}
+	detectIPv4Interfaces = func() []ipv4Interface {
+		return []ipv4Interface{{Name: "ens18", Address: "192.168.1.231", CIDR: "192.168.1.0/24"}}
+	}
+	t.Cleanup(func() {
+		localBroadcastResolver = previousResolver
+		detectIPv4Interfaces = previousInterfaces
+	})
+
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{CIDR: "192.168.1.0/24", Interface: "eth0", SourceIP: "192.168.1.231", AllowLocalBroadcast: true}
+	server := cfg.Servers["two"]
+	server.IP = "192.168.1.20"
+	cfg.Servers["two"] = server
+
+	var output strings.Builder
+	renderReadinessReport(&output, cfg, collectReadinessProblems(cfg))
+	report := output.String()
+	for _, expected := range []string{"ens18", "192.168.1.231", "même CIDR", "Remplacez l’interface « eth0 »"} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("diagnostic d’interface renommée incomplet (%s):\n%s", expected, report)
+		}
+	}
+	if strings.Contains(report, "sudo ip link add") {
+		t.Fatalf("un VLAN temporaire ne doit pas être suggéré lorsqu’une interface correspond déjà:\n%s", report)
+	}
+}
+
+func TestReadinessReportDoesNotTreatDifferentMaskAsSameCIDR(t *testing.T) {
+	previousResolver := localBroadcastResolver
+	previousInterfaces := detectIPv4Interfaces
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{}, errors.New("interface eth0 indisponible")
+	}
+	detectIPv4Interfaces = func() []ipv4Interface {
+		return []ipv4Interface{{Name: "ens18", Address: "192.168.1.231", CIDR: "192.168.0.0/16"}}
+	}
+	t.Cleanup(func() {
+		localBroadcastResolver = previousResolver
+		detectIPv4Interfaces = previousInterfaces
+	})
+
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{CIDR: "192.168.1.0/24", Interface: "eth0", AllowLocalBroadcast: true}
+	server := cfg.Servers["two"]
+	server.IP = "192.168.1.20"
+	cfg.Servers["two"] = server
+
+	var output strings.Builder
+	renderReadinessReport(&output, cfg, collectReadinessProblems(cfg))
+	report := output.String()
+	if strings.Contains(report, "porte déjà le même CIDR") {
+		t.Fatalf("un masque différent a été présenté comme le même CIDR:\n%s", report)
+	}
+	if !strings.Contains(report, "TEST TEMPORAIRE (facultatif)") {
+		t.Fatalf("le diagnostic prudent attendu est absent:\n%s", report)
+	}
+}
+
+func TestReadinessReportOffersOnlyExplicitTemporaryInterfaceAdvice(t *testing.T) {
+	previousResolver := localBroadcastResolver
+	previousInterfaces := detectIPv4Interfaces
+	localBroadcastResolver = func(Network, int) (localBroadcastTarget, error) {
+		return localBroadcastTarget{}, errors.New("interface eth0 indisponible")
+	}
+	detectIPv4Interfaces = func() []ipv4Interface {
+		return []ipv4Interface{
+			{Name: "lo", Address: "127.0.0.1", CIDR: "127.0.0.0/8"},
+			{Name: "ens18", Address: "10.0.0.10", CIDR: "10.0.0.0/24"},
+		}
+	}
+	t.Cleanup(func() {
+		localBroadcastResolver = previousResolver
+		detectIPv4Interfaces = previousInterfaces
+	})
+
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{CIDR: "192.168.1.0/24", Interface: "eth0", AllowLocalBroadcast: true}
+	server := cfg.Servers["two"]
+	server.IP = "192.168.1.20"
+	cfg.Servers["two"] = server
+
+	var output strings.Builder
+	renderReadinessReport(&output, cfg, collectReadinessProblems(cfg))
+	report := output.String()
+	for _, expected := range []string{
+		"TEST TEMPORAIRE (facultatif)",
+		"sudo ip link add link <INTERFACE_PARENTE> name 'eth0' type vlan id <VLAN_ID>",
+		"sudo ip address add <IP_LIBRE>/<PREFIXE> dev 'eth0'",
+		"sudo ip link set 'eth0' up",
+		"disparaît au redémarrage",
+		"ne prouve ni la livraison du paquet ni le réveil physique",
+	} {
+		if !strings.Contains(report, expected) {
+			t.Fatalf("conseil temporaire incomplet (%s):\n%s", expected, report)
+		}
+	}
+	if strings.Contains(report, "127.0.0.1") || strings.Contains(report, "interface lo") {
+		t.Fatalf("le loopback ne doit pas apparaître dans les conseils:\n%s", report)
+	}
+}
+
+func TestShellQuoteProtectsSuggestedInterfaceCommands(t *testing.T) {
+	got := shellQuote("eth0; touch /tmp/unsafe ' value")
+	want := `'eth0; touch /tmp/unsafe '"'"' value'`
+	if got != want {
+		t.Fatalf("citation shell = %q, attendu %q", got, want)
+	}
+}
+
+func TestReadinessReportDoesNotSuggestInterfaceWhenAllTransportsDisabled(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks["lan"] = Network{CIDR: "127.0.0.0/8", Interface: "eth0"}
+
+	var output strings.Builder
+	renderReadinessReport(&output, cfg, collectReadinessProblems(cfg))
+	report := output.String()
+	if !strings.Contains(report, "Aucun transport WoL n’est autorisé dans la déclaration du réseau") {
+		t.Fatalf("cause de configuration absente:\n%s", report)
+	}
+	for _, unexpected := range []string{"sudo ip link add", "interface IPv4 actuellement utilisée", "Remplacez l’interface"} {
+		if strings.Contains(report, unexpected) {
+			t.Fatalf("conseil d’interface trompeur (%s):\n%s", unexpected, report)
+		}
+	}
+}
+
+func partiallyReadySetupConfig(t *testing.T) (*Config, func()) {
+	t.Helper()
+	previousResolver := localBroadcastResolver
+	localBroadcastResolver = func(network Network, port int) (localBroadcastTarget, error) {
+		if network.Interface == "missing0" {
+			return localBroadcastTarget{}, errors.New("interface missing0 indisponible")
+		}
+		return localBroadcastTarget{Interface: network.Interface, Source: network.SourceIP, Destination: "192.168.2.255:9"}, nil
+	}
+	cfg := testConfig(t)
+	cfg.Global.TransportOrder = []string{"local_broadcast", "directed_broadcast", "relay"}
+	cfg.Networks = map[string]Network{
+		"broken-lan": {
+			CIDR: "192.168.1.0/24", Interface: "missing0", SourceIP: "192.168.1.231",
+			AllowLocalBroadcast: true, TransportOrder: []string{"local_broadcast"},
+		},
+		"ready-lan": {
+			CIDR: "192.168.2.0/24", AllowDirectedBroadcast: true,
+			TransportOrder: []string{"directed_broadcast"},
+		},
+	}
+	cfg.Groups = map[string]Group{}
+	cfg.Servers = map[string]Server{
+		"broken": {Name: "Broken", MAC: "02:00:00:00:00:11", IP: "192.168.1.10", Network: "broken-lan"},
+		"ready":  {Name: "Ready", MAC: "02:00:00:00:00:12", IP: "192.168.2.10", Network: "ready-lan"},
+	}
+	return cfg, func() { localBroadcastResolver = previousResolver }
+}
+
+func TestSimulateReadyMachinesSkipsOnlyUnavailableMachines(t *testing.T) {
+	cfg, restore := partiallyReadySetupConfig(t)
+	t.Cleanup(restore)
+	problems := collectReadinessProblems(cfg)
+	var output strings.Builder
+	if err := simulateReadyMachines(&output, cfg, problems); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"Simulation WoL automatique réussie pour ready (aucun paquet envoyé)",
+		"Simulation ignorée pour broken",
+		"aucun transport autorisé et disponible",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("simulation partielle incomplète (%s):\n%s", expected, text)
+		}
+	}
+}
+
+func TestSetupSavesPartiallyReadyConfigAfterExplicitConfirmation(t *testing.T) {
+	cfg, restore := partiallyReadySetupConfig(t)
+	t.Cleanup(restore)
+	path := filepath.Join(testDir(t), "wol.yaml")
+	if err := writeManagedConfig(path, []byte(minimalConfig), cfg, false); err != nil {
+		t.Fatal(err)
+	}
+
+	var output strings.Builder
+	if err := setupWithIO(path, strings.NewReader("5\no\nn\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"CONFIGURATION VALIDE, MAIS PARTIELLEMENT NON OPÉRATIONNELLE",
+		"La configuration peut être sauvegardée.",
+		"Les réveils concernés resteront refusés.",
+		"Enregistrer malgré ces limitations ?",
+		"Configuration enregistrée avec avertissements.",
+		"Simulation ignorée pour broken",
+		"Simulation WoL automatique réussie pour ready",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("parcours de sauvegarde partielle incomplet (%s):\n%s", expected, text)
+		}
+	}
+	reloaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Servers) != 2 || reloaded.Servers["broken"].Network != "broken-lan" {
+		t.Fatalf("configuration partielle non préservée: %#v", reloaded.Servers)
+	}
+	backups, err := filepath.Glob(path + ".bak-*")
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("sauvegarde datée absente: %v (%v)", backups, err)
+	}
+}
+
+func TestSetupDeclinesPartiallyReadyConfigWithoutWriting(t *testing.T) {
+	cfg, restore := partiallyReadySetupConfig(t)
+	t.Cleanup(restore)
+	path := filepath.Join(testDir(t), "wol.yaml")
+	if err := writeManagedConfig(path, []byte(minimalConfig), cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output strings.Builder
+	if err := setupWithIO(path, strings.NewReader("5\nn\n6\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("le refus a modifié le fichier")
+	}
+	if !strings.Contains(output.String(), "Aucune modification enregistrée.") {
+		t.Fatalf("refus non confirmé:\n%s", output.String())
+	}
+	backups, _ := filepath.Glob(path + ".bak-*")
+	if len(backups) != 0 {
+		t.Fatalf("un refus a créé une sauvegarde: %v", backups)
+	}
+}
+
+func TestSetupStillRejectsStructurallyInvalidConfig(t *testing.T) {
+	path := filepath.Join(testDir(t), "wol.yaml")
+	invalid := strings.Replace(minimalConfig, "servers: {}", `servers:
+  bad: {name: Bad, mac: "02:00:00:00:00:21", ip: 192.168.1.10, network: missing}`, 1)
+	if err := os.WriteFile(path, []byte(invalid), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	var output strings.Builder
+	err := setupWithIO(path, strings.NewReader("5\no\n"), &output)
+	if err == nil || !strings.Contains(err.Error(), "réseau inconnu") {
+		t.Fatalf("configuration structurellement invalide acceptée: %v\n%s", err, output.String())
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("la configuration invalide a été modifiée")
 	}
 }
 

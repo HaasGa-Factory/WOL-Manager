@@ -440,7 +440,7 @@ func TestMenuValidationReportsOperationalReadiness(t *testing.T) {
 	plain := string(text)
 	for _, expected := range []string{
 		"WoL Manager — VALIDATION",
-		"CONFIGURATION VALIDE, MAIS NON OPÉRATIONNELLE",
+		"CONFIGURATION VALIDE, MAIS PARTIELLEMENT NON OPÉRATIONNELLE",
 		"RÉSEAU À CORRIGER : lan",
 		"home_assistant",
 		"proxmox",

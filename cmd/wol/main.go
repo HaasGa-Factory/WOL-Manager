@@ -120,7 +120,7 @@ func run(args []string) error {
 					return err
 				}
 			} else {
-				renderReadinessReport(os.Stdout, problems)
+				renderReadinessReport(os.Stdout, c, problems)
 			}
 			return fmt.Errorf("configuration syntaxiquement valide mais non opérationnelle: %d machine(s) concernée(s); consultez le rapport ci-dessus", len(issues))
 		}
@@ -562,7 +562,7 @@ func menu(configPath string, c *Config, e *Engine, jsonOut bool) error {
 			if err := c.Validate(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			} else if problems := collectReadinessProblems(c); len(problems) > 0 {
-				renderReadinessReport(os.Stdout, problems)
+				renderReadinessReport(os.Stdout, c, problems)
 			} else {
 				fmt.Println("configuration syntaxiquement valide et opérationnelle")
 			}
