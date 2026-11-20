@@ -1,6 +1,6 @@
 # Mises à jour et rollback
 
-## Migration 1.2.1, 1.2.3 et 1.3.0 vers 1.4.5
+## Migration depuis un ancien installateur vers une publication complète
 
 Les installateurs système livrés avec `1.2.1`, `1.2.3` et `1.3.0` confondent
 une configuration invalide avec une configuration valide mais temporairement
@@ -9,9 +9,16 @@ authentifient le nouveau binaire, puis s'arrêtent avant de remplacer leur
 propre moteur. Le nouvel installateur corrigé ne peut donc pas prendre le
 relais par la seule commande `wol update`.
 
+Plus généralement, les installateurs jusqu'à `1.4.5` exécutent la migration
+avec la logique de la version de départ. Le nouvel `install.sh` signé est bien
+copié, mais il ne pilote que l'exécution suivante. Une mise à jour peut alors
+laisser un ancien modèle systemd ou omettre Logrotate si cette ressource
+n'existait pas dans l'ancien agencement.
+
 Le bootstrap
 [`upgrade-network-validation.sh`](../scripts/migration/upgrade-network-validation.sh)
-résout uniquement ce cas. Il accepte ces trois versions, vérifie le manifeste
+résout ces cas. Il accepte les versions `1.2.1`, `1.2.3`, `1.3.0` et `1.4.x`
+jusqu'à `1.4.5`, vérifie le manifeste
 officiel avec la clé Ed25519 déjà installée, contrôle le SHA-256 de
 `dist/install.sh`, sauvegarde l'ancien installateur et remplace atomiquement sa
 copie système. Il ne modifie ni le binaire `wol`, ni `wol.yaml`, ni les secrets,
@@ -33,11 +40,14 @@ printf '%s\n' "$publication" | grep -Eq '^[0-9a-f]{40}$' || exit 1
 curl -fSLo upgrade-network-validation.sh \
   "https://raw.githubusercontent.com/HaasGa-Factory/WOL-Manager/$publication/scripts/migration/upgrade-network-validation.sh"
 
-echo '3c1927909a0f118b568695b4e884878bef9bfd241fcc4f780f6a04fbe8054995  upgrade-network-validation.sh' \
+echo '60de23bb3062ffbbbb508220ced9a0f2146a83b392d55c2fe87934d946f1ae4f  upgrade-network-validation.sh' \
   | sha256sum -c -
 
 chmod 700 upgrade-network-validation.sh
 ```
+
+Le nom historique du script est conservé pour ne pas casser les procédures déjà
+publiées, mais son rôle est désormais d'amorcer l'installateur complet.
 
 Le contrôle doit afficher `upgrade-network-validation.sh: OK`. Inspectez ensuite
 le fichier téléchargé, puis effectuez d'abord la simulation :
@@ -62,11 +72,18 @@ wol config check
 wol network test IDENTIFIANT_MACHINE
 ```
 
+À la fin, le contrôle de conformité classe chaque composant en `OK`,
+`Désactivé volontairement`, `AVERTISSEMENT` ou `ERREUR`. Logrotate,
+l'autocomplétion, les modèles systemd, les permissions et les ressources
+embarquées sont comparés à la version cible. Une ressource obligatoire absente
+provoque un échec et un rollback au lieu d'un succès partiel.
+
 `wol config check` peut légitimement retourner le code `1` avec
 `valid: true, ready: false` si un réseau distant n'a aucun transport disponible.
 La mise à jour reste installée, mais les réveils concernés restent bloqués. Les
-installations `1.4.1` et ultérieures connaissent déjà cette distinction et ne
-doivent pas utiliser ce bootstrap.
+Même si les installations `1.4.1` et ultérieures connaissent déjà cette
+distinction, utilisez aussi ce bootstrap lorsqu'un contrôle signale une
+ressource système absente ou obsolète.
 
 ## Mise à jour 1.4.3 vers 1.4.4
 

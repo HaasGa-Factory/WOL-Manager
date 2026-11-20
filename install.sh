@@ -34,12 +34,17 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 TMP_WORK=""
 BACKUP_DIR=""
 INSTALLER_CANDIDATE=""
+CONFIG_EXAMPLE_CANDIDATE=""
+DAEMON_UNIT_CANDIDATE=""
+API_UNIT_CANDIDATE=""
+LOGROTATE_CANDIDATE=""
 ROLLBACK_READY=0
 PREVIOUS_ACTIVE=0
 PREVIOUS_ENABLED=0
 PREVIOUS_API_ACTIVE=0
 PREVIOUS_API_ENABLED=0
 LEGACY_COMBINED_SERVICE=0
+REPAIR_ONLY=0
 PUBLIC_KEY="$SCRIPT_DIR/packaging/release-public.pem"
 
 path() { printf '%s%s' "$ROOT" "$1"; }
@@ -47,6 +52,11 @@ can_manage_systemd() { [ "$TEST_MODE" != 1 ] || [ "$TEST_SYSTEMD" = 1 ]; }
 BIN=$(path /usr/local/bin/wol)
 HELPER_DIR=$(path /usr/local/lib/wol-manager)
 HELPER="$HELPER_DIR/install.sh"
+HELPER_CONFIG_EXAMPLE="$HELPER_DIR/configs/wol.example.yaml"
+HELPER_DAEMON_UNIT="$HELPER_DIR/packaging/systemd/wol-manager.service"
+HELPER_API_UNIT="$HELPER_DIR/packaging/systemd/wol-manager-api.service"
+HELPER_LOGROTATE="$HELPER_DIR/packaging/logrotate/wol-manager"
+DOC_CONFIG_EXAMPLE=$(path /usr/share/doc/wol-manager/wol.example.yaml)
 UNIT=$(path /etc/systemd/system/wol-manager.service)
 API_UNIT=$(path /etc/systemd/system/wol-manager-api.service)
 LOGROTATE=$(path /etc/logrotate.d/wol-manager)
@@ -361,6 +371,14 @@ validate_manifest() {
   KEY_ID=$(manifest_value key_id "$manifest")
   INSTALLER_NAME=$(manifest_value installer_file "$manifest")
   INSTALLER_HASH=$(manifest_value installer_sha256 "$manifest")
+  CONFIG_EXAMPLE_NAME=$(manifest_value config_example_file "$manifest")
+  CONFIG_EXAMPLE_HASH=$(manifest_value config_example_sha256 "$manifest")
+  DAEMON_UNIT_NAME=$(manifest_value systemd_daemon_file "$manifest")
+  DAEMON_UNIT_HASH=$(manifest_value systemd_daemon_sha256 "$manifest")
+  API_UNIT_NAME=$(manifest_value systemd_api_file "$manifest")
+  API_UNIT_HASH=$(manifest_value systemd_api_sha256 "$manifest")
+  LOGROTATE_NAME=$(manifest_value logrotate_file "$manifest")
+  LOGROTATE_HASH=$(manifest_value logrotate_sha256 "$manifest")
   case "$ARCH" in
     amd64) CANDIDATE_NAME=$(manifest_value linux_amd64_file "$manifest"); CANDIDATE_HASH=$(manifest_value linux_amd64_sha256 "$manifest") ;;
     arm64) CANDIDATE_NAME=$(manifest_value linux_arm64_file "$manifest"); CANDIDATE_HASH=$(manifest_value linux_arm64_sha256 "$manifest") ;;
@@ -372,6 +390,18 @@ validate_manifest() {
   valid_hash "$INSTALLER_HASH" || die "SHA-256 de l'installateur invalide"
   [ "$CANDIDATE_NAME" = "wol-linux-$ARCH" ] || die "Nom de binaire inattendu: $CANDIDATE_NAME"
   [ "$INSTALLER_NAME" = install.sh ] || die "Nom d'installateur inattendu: $INSTALLER_NAME"
+  TARGET_RESOURCES_AUTHENTICATED=0
+  if [ -n "$CONFIG_EXAMPLE_NAME$CONFIG_EXAMPLE_HASH$DAEMON_UNIT_NAME$DAEMON_UNIT_HASH$API_UNIT_NAME$API_UNIT_HASH$LOGROTATE_NAME$LOGROTATE_HASH" ]; then
+    [ "$CONFIG_EXAMPLE_NAME" = wol.example.yaml ] || die "Nom de configuration exemple inattendu: $CONFIG_EXAMPLE_NAME"
+    [ "$DAEMON_UNIT_NAME" = wol-manager.service ] || die "Nom d'unité daemon inattendu: $DAEMON_UNIT_NAME"
+    [ "$API_UNIT_NAME" = wol-manager-api.service ] || die "Nom d'unité API inattendu: $API_UNIT_NAME"
+    [ "$LOGROTATE_NAME" = wol-manager.logrotate ] || die "Nom de ressource Logrotate inattendu: $LOGROTATE_NAME"
+    valid_hash "$CONFIG_EXAMPLE_HASH" || die "SHA-256 de la configuration exemple invalide"
+    valid_hash "$DAEMON_UNIT_HASH" || die "SHA-256 de l'unité daemon invalide"
+    valid_hash "$API_UNIT_HASH" || die "SHA-256 de l'unité API invalide"
+    valid_hash "$LOGROTATE_HASH" || die "SHA-256 de la ressource Logrotate invalide"
+    TARGET_RESOURCES_AUTHENTICATED=1
+  fi
   printf '%s\n' "$MANIFEST_VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.+-]*$' || die "Version invalide dans le manifeste"
   success "Manifeste signé vérifié ($KEY_ID)"
 }
@@ -379,6 +409,20 @@ verify_installer_candidate() {
   actual=$(sha256sum "$INSTALLER_CANDIDATE" | awk '{print $1}')
   [ "$actual" = "$INSTALLER_HASH" ] || die "SHA-256 invalide pour $INSTALLER_NAME"
   sh -n "$INSTALLER_CANDIDATE" || die "Syntaxe de l'installateur distribué invalide"
+}
+verify_resource_candidate() {
+  resource_file=$1 expected_hash=$2 resource_label=$3
+  [ ! -L "$resource_file" ] || die "Ressource système signée interdite (lien symbolique): $resource_label"
+  [ -f "$resource_file" ] || die "Ressource système signée indisponible: $resource_label"
+  actual=$(sha256sum "$resource_file" | awk '{print $1}')
+  [ "$actual" = "$expected_hash" ] || die "SHA-256 invalide pour la ressource système $resource_label"
+}
+verify_resource_candidates() {
+  [ "${TARGET_RESOURCES_AUTHENTICATED:-0}" -eq 1 ] || return 0
+  verify_resource_candidate "$CONFIG_EXAMPLE_CANDIDATE" "$CONFIG_EXAMPLE_HASH" "$CONFIG_EXAMPLE_NAME"
+  verify_resource_candidate "$DAEMON_UNIT_CANDIDATE" "$DAEMON_UNIT_HASH" "$DAEMON_UNIT_NAME"
+  verify_resource_candidate "$API_UNIT_CANDIDATE" "$API_UNIT_HASH" "$API_UNIT_NAME"
+  verify_resource_candidate "$LOGROTATE_CANDIDATE" "$LOGROTATE_HASH" "$LOGROTATE_NAME"
 }
 verify_candidate() {
   actual=$(sha256sum "$CANDIDATE" | awk '{print $1}')
@@ -417,6 +461,12 @@ prepare_candidate() {
 	  info "Paquet local signé détecté: canal $CHANNEL (la version sera vérifiée avant installation)"
 	fi
     verify_manifest "$manifest" "$signature"
+    if [ "${TARGET_RESOURCES_AUTHENTICATED:-0}" -eq 1 ]; then
+      CONFIG_EXAMPLE_CANDIDATE="$SCRIPT_DIR/dist/$CONFIG_EXAMPLE_NAME"
+      DAEMON_UNIT_CANDIDATE="$SCRIPT_DIR/dist/$DAEMON_UNIT_NAME"
+      API_UNIT_CANDIDATE="$SCRIPT_DIR/dist/$API_UNIT_NAME"
+      LOGROTATE_CANDIDATE="$SCRIPT_DIR/dist/$LOGROTATE_NAME"
+    fi
     info "Paquet local signé vérifié: version $MANIFEST_VERSION, canal $MANIFEST_CHANNEL"
     log "Distribution locale sélectionnée"
   else
@@ -431,8 +481,19 @@ prepare_candidate() {
     download "$base/$CANDIDATE_NAME" "$CANDIDATE" || die "Aucun binaire compatible linux/$ARCH n'est disponible"
     INSTALLER_CANDIDATE="$TMP_WORK/$INSTALLER_NAME"
     download "$base/$INSTALLER_NAME" "$INSTALLER_CANDIDATE" || die "Installateur signé indisponible pour $CHANNEL"
+    if [ "${TARGET_RESOURCES_AUTHENTICATED:-0}" -eq 1 ]; then
+      CONFIG_EXAMPLE_CANDIDATE="$TMP_WORK/$CONFIG_EXAMPLE_NAME"
+      DAEMON_UNIT_CANDIDATE="$TMP_WORK/$DAEMON_UNIT_NAME"
+      API_UNIT_CANDIDATE="$TMP_WORK/$API_UNIT_NAME"
+      LOGROTATE_CANDIDATE="$TMP_WORK/$LOGROTATE_NAME"
+      download "$base/$CONFIG_EXAMPLE_NAME" "$CONFIG_EXAMPLE_CANDIDATE" || die "Ressource système signée indisponible: $CONFIG_EXAMPLE_NAME"
+      download "$base/$DAEMON_UNIT_NAME" "$DAEMON_UNIT_CANDIDATE" || die "Ressource système signée indisponible: $DAEMON_UNIT_NAME"
+      download "$base/$API_UNIT_NAME" "$API_UNIT_CANDIDATE" || die "Ressource système signée indisponible: $API_UNIT_NAME"
+      download "$base/$LOGROTATE_NAME" "$LOGROTATE_CANDIDATE" || die "Ressource système signée indisponible: $LOGROTATE_NAME"
+    fi
   fi
   verify_installer_candidate
+  verify_resource_candidates
   verify_candidate
 }
 
@@ -590,6 +651,12 @@ create_account_and_dirs() {
       printf '%s\n' "wol-manager:wol-manager $STATE_DIR/state.json" >>"$WOL_TEST_CHOWN_LOG"
     fi
   fi
+  [ ! -L "$CONFIG" ] || die "La configuration ne doit pas être un lien symbolique: $CONFIG"
+  [ ! -e "$CONFIG" ] || [ -f "$CONFIG" ] || die "Le chemin de configuration n'est pas un fichier régulier: $CONFIG"
+  if [ -f "$CONFIG" ]; then
+    chmod 0640 "$CONFIG"
+    [ "$TEST_MODE" = 1 ] || chown root:wol-manager "$CONFIG"
+  fi
   [ ! -L "$AUDIT_FILE" ] || die "Le journal d'audit ne doit pas être un lien symbolique: $AUDIT_FILE"
   [ ! -e "$AUDIT_FILE" ] || [ -f "$AUDIT_FILE" ] || die "Le chemin du journal d'audit n'est pas un fichier régulier: $AUDIT_FILE"
   [ -e "$AUDIT_FILE" ] || : >"$AUDIT_FILE"
@@ -616,14 +683,216 @@ install_logrotate_resource() {
   install -m 0644 "$normalized" "$destination"
 }
 
-repair_logrotate_installation() {
-  local resource="$HELPER_DIR/packaging/logrotate/wol-manager"
-  if [ -f "$resource" ]; then
-    install_logrotate_resource "$resource" "$resource"
-    install_logrotate_resource "$resource" "$LOGROTATE"
-  elif [ -f "$LOGROTATE" ]; then
-    install_logrotate_resource "$LOGROTATE" "$LOGROTATE"
+install_verified_resource() {
+  resource_source=$1 resource_destination=$2 resource_mode=$3
+  [ ! -L "$resource_source" ] || die "Ressource système interdite (lien symbolique): $resource_source"
+  [ -f "$resource_source" ] || die "Ressource système obligatoire absente: $resource_source"
+  [ ! -L "$resource_destination" ] || die "Destination système interdite (lien symbolique): $resource_destination"
+  install -m "$resource_mode" "$resource_source" "$resource_destination.new.$$"
+  [ "$TEST_MODE" = 1 ] || chown root:root "$resource_destination.new.$$"
+  mv -f "$resource_destination.new.$$" "$resource_destination"
+}
+
+install_target_resources() {
+  if [ "${TARGET_RESOURCES_AUTHENTICATED:-0}" -eq 1 ]; then
+    install_verified_resource "$CONFIG_EXAMPLE_CANDIDATE" "$HELPER_CONFIG_EXAMPLE" 0644
+    install_verified_resource "$CONFIG_EXAMPLE_CANDIDATE" "$DOC_CONFIG_EXAMPLE" 0644
+    install_verified_resource "$DAEMON_UNIT_CANDIDATE" "$HELPER_DAEMON_UNIT" 0644
+    install_verified_resource "$API_UNIT_CANDIDATE" "$HELPER_API_UNIT" 0644
+    install_verified_resource "$LOGROTATE_CANDIDATE" "$HELPER_LOGROTATE" 0644
+    install_verified_resource "$LOGROTATE_CANDIDATE" "$LOGROTATE" 0644
+    if [ "$SYSTEMD" = yes ] && { can_manage_systemd || [ "$REPAIR_ONLY" -eq 0 ]; }; then
+      [ "$INSTALL_DAEMON" -eq 0 ] || install_verified_resource "$DAEMON_UNIT_CANDIDATE" "$UNIT" 0644
+      [ "$INSTALL_API" -eq 0 ] || install_verified_resource "$API_UNIT_CANDIDATE" "$API_UNIT" 0644
+    fi
+    return 0
   fi
+
+  [ -f "$SCRIPT_DIR/configs/wol.example.yaml" ] || die "Ressource de configuration exemple absente"
+  install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$HELPER_CONFIG_EXAMPLE"
+  install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$DOC_CONFIG_EXAMPLE"
+  write_daemon_unit "$HELPER_DAEMON_UNIT"
+  write_api_unit "$HELPER_API_UNIT"
+  if [ "$SYSTEMD" = yes ] && { can_manage_systemd || [ "$REPAIR_ONLY" -eq 0 ]; }; then
+    [ "$INSTALL_DAEMON" -eq 0 ] || write_daemon_unit "$UNIT"
+    [ "$INSTALL_API" -eq 0 ] || write_api_unit "$API_UNIT"
+  fi
+  logrotate_source="$SCRIPT_DIR/packaging/logrotate/wol-manager"
+  if [ -f "$logrotate_source" ]; then
+    install_logrotate_resource "$logrotate_source" "$HELPER_LOGROTATE"
+    install_logrotate_resource "$HELPER_LOGROTATE" "$LOGROTATE"
+  elif [ "$ACTION" = update ] && [ -f "$LOGROTATE" ]; then
+    install_logrotate_resource "$LOGROTATE" "$LOGROTATE"
+    warn "Ressource Logrotate cible non authentifiée; configuration existante conservée"
+  else
+    die "Ressource Logrotate obligatoire absente"
+  fi
+}
+
+verify_installed_file() {
+  installed_path=$1 installed_mode=$2 installed_label=$3 expected_hash=${4:-}
+  [ ! -L "$installed_path" ] || die "Contrôle post-installation: $installed_label est un lien symbolique"
+  [ -f "$installed_path" ] || die "Contrôle post-installation: $installed_label absent"
+  [ "$(stat -c %a "$installed_path")" = "$installed_mode" ] || die "Contrôle post-installation: permissions incorrectes pour $installed_label"
+  if [ -n "$expected_hash" ]; then
+    installed_hash=$(sha256sum "$installed_path" | awk '{print $1}')
+    [ "$installed_hash" = "$expected_hash" ] || die "Contrôle post-installation: contenu incorrect pour $installed_label"
+  fi
+  info "OK: $installed_label"
+}
+
+verify_installed_directory() {
+  installed_path=$1 installed_mode=$2 installed_label=$3
+  [ ! -L "$installed_path" ] || die "Contrôle post-installation: $installed_label est un lien symbolique"
+  [ -d "$installed_path" ] || die "Contrôle post-installation: $installed_label absent"
+  [ "$(stat -c %a "$installed_path")" = "$installed_mode" ] || die "Contrôle post-installation: permissions incorrectes pour $installed_label"
+  info "OK: $installed_label"
+}
+
+verify_installed_owner() {
+  installed_path=$1 expected_owner=$2 installed_label=$3
+  [ "$TEST_MODE" = 1 ] && return 0
+  [ "$(stat -c %U:%G "$installed_path")" = "$expected_owner" ] || die "Contrôle post-installation: propriétaire incorrect pour $installed_label"
+}
+
+verify_post_installation() {
+  verify_installed_directory "$(path /etc/wol-manager)" 750 "répertoire de configuration"
+  verify_installed_directory "$(path /etc/wol-manager/secrets)" 750 "répertoire des secrets"
+  verify_installed_directory "$STATE_DIR" 750 "répertoire d'état"
+  verify_installed_directory "$LOG_DIR" 750 "répertoire d'audit"
+  verify_installed_owner "$(path /etc/wol-manager)" root:wol-manager "répertoire de configuration"
+  verify_installed_owner "$(path /etc/wol-manager/secrets)" root:wol-manager "répertoire des secrets"
+  verify_installed_owner "$STATE_DIR" wol-manager:wol-manager "répertoire d'état"
+  verify_installed_owner "$LOG_DIR" wol-manager:wol-manager "répertoire d'audit"
+  verify_installed_file "$BIN" 755 "binaire WoL Manager"
+  verify_installed_file "$HELPER" 755 "installateur système" "$INSTALLER_HASH"
+  verify_installed_file "$COMPLETION" 644 "autocomplétion Bash"
+  verify_installed_file "$RELEASE_CONFIG" 640 "métadonnées de publication"
+  verify_installed_file "$AUDIT_FILE" 640 "journal d'audit"
+  verify_installed_file "$TOKENS_FILE" 600 "magasin de jetons"
+  verify_installed_owner "$AUDIT_FILE" wol-manager:wol-manager "journal d'audit"
+  verify_installed_owner "$TOKENS_FILE" wol-manager:wol-manager "magasin de jetons"
+  verify_installed_owner "$BIN" root:root "binaire WoL Manager"
+  verify_installed_owner "$HELPER" root:root "installateur système"
+  verify_installed_owner "$COMPLETION" root:root "autocomplétion Bash"
+  verify_installed_owner "$RELEASE_CONFIG" root:root "métadonnées de publication"
+  if [ -f "$STATE_DIR/state.json" ]; then
+    verify_installed_file "$STATE_DIR/state.json" 640 "état persistant"
+    verify_installed_owner "$STATE_DIR/state.json" wol-manager:wol-manager "état persistant"
+  fi
+  if [ -f "$CONFIG" ]; then
+    verify_installed_file "$CONFIG" 640 "configuration utilisateur"
+    verify_installed_owner "$CONFIG" root:wol-manager "configuration utilisateur"
+  fi
+  if [ "${TARGET_RESOURCES_AUTHENTICATED:-0}" -eq 1 ]; then
+    verify_installed_file "$HELPER_CONFIG_EXAMPLE" 644 "configuration exemple embarquée" "$CONFIG_EXAMPLE_HASH"
+    verify_installed_file "$DOC_CONFIG_EXAMPLE" 644 "configuration exemple documentée" "$CONFIG_EXAMPLE_HASH"
+    verify_installed_file "$HELPER_DAEMON_UNIT" 644 "modèle systemd daemon" "$DAEMON_UNIT_HASH"
+    verify_installed_file "$HELPER_API_UNIT" 644 "modèle systemd API" "$API_UNIT_HASH"
+    verify_installed_file "$HELPER_LOGROTATE" 644 "ressource Logrotate embarquée" "$LOGROTATE_HASH"
+    verify_installed_file "$LOGROTATE" 644 "configuration Logrotate" "$LOGROTATE_HASH"
+    verify_installed_owner "$HELPER_CONFIG_EXAMPLE" root:root "configuration exemple embarquée"
+    verify_installed_owner "$DOC_CONFIG_EXAMPLE" root:root "configuration exemple documentée"
+    verify_installed_owner "$HELPER_DAEMON_UNIT" root:root "modèle systemd daemon"
+    verify_installed_owner "$HELPER_API_UNIT" root:root "modèle systemd API"
+    verify_installed_owner "$HELPER_LOGROTATE" root:root "ressource Logrotate embarquée"
+    verify_installed_owner "$LOGROTATE" root:root "configuration Logrotate"
+    if [ "$SYSTEMD" = yes ] && { can_manage_systemd || [ "$REPAIR_ONLY" -eq 0 ]; } && [ "$INSTALL_DAEMON" -eq 1 ]; then
+      verify_installed_file "$UNIT" 644 "unité systemd daemon" "$DAEMON_UNIT_HASH"
+      verify_installed_owner "$UNIT" root:root "unité systemd daemon"
+    elif [ "$INSTALL_DAEMON" -eq 1 ]; then
+      warn "Unité systemd daemon non contrôlée: systemd n'est pas gérable dans cet environnement"
+    else
+      info "Désactivé volontairement: unité systemd daemon non installée"
+    fi
+    if [ "$SYSTEMD" = yes ] && { can_manage_systemd || [ "$REPAIR_ONLY" -eq 0 ]; } && [ "$INSTALL_API" -eq 1 ]; then
+      verify_installed_file "$API_UNIT" 644 "unité systemd API" "$API_UNIT_HASH"
+      verify_installed_owner "$API_UNIT" root:root "unité systemd API"
+    elif [ "$INSTALL_API" -eq 1 ]; then
+      warn "Unité systemd API non contrôlée: systemd n'est pas gérable dans cet environnement"
+    else
+      info "Désactivé volontairement: unité systemd API non installée"
+    fi
+  else
+    verify_installed_file "$LOGROTATE" 644 "configuration Logrotate"
+    warn "Manifeste historique sans empreintes des ressources système: conformité de contenu limitée"
+  fi
+  success "Installation conforme aux ressources obligatoires de $CANDIDATE_VERSION"
+}
+
+file_is_conformant() {
+  conformity_path=$1 conformity_mode=$2 conformity_hash=${3:-}
+  [ ! -L "$conformity_path" ] || return 1
+  [ -f "$conformity_path" ] || return 1
+  [ "$(stat -c %a "$conformity_path")" = "$conformity_mode" ] || return 1
+  if [ -n "$conformity_hash" ]; then
+    [ "$(sha256sum "$conformity_path" | awk '{print $1}')" = "$conformity_hash" ] || return 1
+  fi
+}
+
+owner_is_conformant() {
+  conformity_path=$1 conformity_owner=$2
+  [ "$TEST_MODE" = 1 ] && return 0
+  [ "$(stat -c %U:%G "$conformity_path")" = "$conformity_owner" ]
+}
+
+directory_is_conformant() {
+  conformity_path=$1 conformity_mode=$2 conformity_owner=$3
+  [ ! -L "$conformity_path" ] || return 1
+  [ -d "$conformity_path" ] || return 1
+  [ "$(stat -c %a "$conformity_path")" = "$conformity_mode" ] || return 1
+  owner_is_conformant "$conformity_path" "$conformity_owner"
+}
+
+installation_is_conformant() {
+  [ "${TARGET_RESOURCES_AUTHENTICATED:-0}" -eq 1 ] || return 1
+  file_is_conformant "$BIN" 755 "$CANDIDATE_HASH" || return 1
+  owner_is_conformant "$BIN" root:root || return 1
+  file_is_conformant "$HELPER" 755 "$INSTALLER_HASH" || return 1
+  owner_is_conformant "$HELPER" root:root || return 1
+  file_is_conformant "$COMPLETION" 644 || return 1
+  owner_is_conformant "$COMPLETION" root:root || return 1
+  file_is_conformant "$RELEASE_CONFIG" 640 || return 1
+  owner_is_conformant "$RELEASE_CONFIG" root:root || return 1
+  file_is_conformant "$HELPER_CONFIG_EXAMPLE" 644 "$CONFIG_EXAMPLE_HASH" || return 1
+  owner_is_conformant "$HELPER_CONFIG_EXAMPLE" root:root || return 1
+  file_is_conformant "$DOC_CONFIG_EXAMPLE" 644 "$CONFIG_EXAMPLE_HASH" || return 1
+  owner_is_conformant "$DOC_CONFIG_EXAMPLE" root:root || return 1
+  file_is_conformant "$HELPER_DAEMON_UNIT" 644 "$DAEMON_UNIT_HASH" || return 1
+  owner_is_conformant "$HELPER_DAEMON_UNIT" root:root || return 1
+  file_is_conformant "$HELPER_API_UNIT" 644 "$API_UNIT_HASH" || return 1
+  owner_is_conformant "$HELPER_API_UNIT" root:root || return 1
+  file_is_conformant "$HELPER_LOGROTATE" 644 "$LOGROTATE_HASH" || return 1
+  owner_is_conformant "$HELPER_LOGROTATE" root:root || return 1
+  file_is_conformant "$LOGROTATE" 644 "$LOGROTATE_HASH" || return 1
+  owner_is_conformant "$LOGROTATE" root:root || return 1
+  file_is_conformant "$AUDIT_FILE" 640 || return 1
+  owner_is_conformant "$AUDIT_FILE" wol-manager:wol-manager || return 1
+  file_is_conformant "$TOKENS_FILE" 600 || return 1
+  owner_is_conformant "$TOKENS_FILE" wol-manager:wol-manager || return 1
+  directory_is_conformant "$(path /etc/wol-manager)" 750 root:wol-manager || return 1
+  directory_is_conformant "$(path /etc/wol-manager/secrets)" 750 root:wol-manager || return 1
+  directory_is_conformant "$STATE_DIR" 750 wol-manager:wol-manager || return 1
+  directory_is_conformant "$LOG_DIR" 750 wol-manager:wol-manager || return 1
+  if [ -f "$CONFIG" ]; then
+    file_is_conformant "$CONFIG" 640 || return 1
+    owner_is_conformant "$CONFIG" root:wol-manager || return 1
+  fi
+  if [ -f "$STATE_DIR/state.json" ]; then
+    file_is_conformant "$STATE_DIR/state.json" 640 || return 1
+    owner_is_conformant "$STATE_DIR/state.json" wol-manager:wol-manager || return 1
+  fi
+  if [ "$SYSTEMD" = yes ] && can_manage_systemd; then
+    if [ "$INSTALL_DAEMON" -eq 1 ]; then
+      file_is_conformant "$UNIT" 644 "$DAEMON_UNIT_HASH" || return 1
+      owner_is_conformant "$UNIT" root:root || return 1
+    fi
+    if [ "$INSTALL_API" -eq 1 ]; then
+      file_is_conformant "$API_UNIT" 644 "$API_UNIT_HASH" || return 1
+      owner_is_conformant "$API_UNIT" root:root || return 1
+    fi
+  fi
+  return 0
 }
 
 write_daemon_unit() {
@@ -720,6 +989,11 @@ backup_existing() {
   backup_file "$API_UNIT" "$BACKUP_DIR/wol-manager-api.service" 0644
   backup_file "$LOGROTATE" "$BACKUP_DIR/logrotate-wol-manager" 0644
   backup_file "$HELPER" "$BACKUP_DIR/install.sh" 0755
+  backup_file "$HELPER_CONFIG_EXAMPLE" "$BACKUP_DIR/helper-wol.example.yaml" 0644
+  backup_file "$HELPER_DAEMON_UNIT" "$BACKUP_DIR/helper-wol-manager.service" 0644
+  backup_file "$HELPER_API_UNIT" "$BACKUP_DIR/helper-wol-manager-api.service" 0644
+  backup_file "$HELPER_LOGROTATE" "$BACKUP_DIR/helper-logrotate-wol-manager" 0644
+  backup_file "$DOC_CONFIG_EXAMPLE" "$BACKUP_DIR/doc-wol.example.yaml" 0644
   backup_file "$COMPLETION" "$BACKUP_DIR/bash-completion-wol" 0644
   backup_file "$RELEASE_CONFIG" "$BACKUP_DIR/release.conf" 0640
   log "Sauvegarde créée: $BACKUP_DIR; configuration, secrets, données et journaux restent en place"
@@ -752,6 +1026,11 @@ rollback() {
   if [ -e "$BACKUP_DIR/wol-manager-api.service" ] || [ -L "$BACKUP_DIR/wol-manager-api.service" ]; then verify_backup_file "$BACKUP_DIR/wol-manager-api.service" 644; install -m 0644 "$BACKUP_DIR/wol-manager-api.service" "$API_UNIT"; else rm -f "$API_UNIT"; fi
   if [ -e "$BACKUP_DIR/logrotate-wol-manager" ] || [ -L "$BACKUP_DIR/logrotate-wol-manager" ]; then verify_backup_file "$BACKUP_DIR/logrotate-wol-manager" 644; install -m 0644 "$BACKUP_DIR/logrotate-wol-manager" "$LOGROTATE"; else rm -f "$LOGROTATE"; fi
   if [ -e "$BACKUP_DIR/install.sh" ] || [ -L "$BACKUP_DIR/install.sh" ]; then verify_backup_file "$BACKUP_DIR/install.sh" 755; install -m 0755 "$BACKUP_DIR/install.sh" "$HELPER"; else rm -f "$HELPER"; fi
+  if [ -e "$BACKUP_DIR/helper-wol.example.yaml" ] || [ -L "$BACKUP_DIR/helper-wol.example.yaml" ]; then verify_backup_file "$BACKUP_DIR/helper-wol.example.yaml" 644; install -m 0644 "$BACKUP_DIR/helper-wol.example.yaml" "$HELPER_CONFIG_EXAMPLE"; else rm -f "$HELPER_CONFIG_EXAMPLE"; fi
+  if [ -e "$BACKUP_DIR/helper-wol-manager.service" ] || [ -L "$BACKUP_DIR/helper-wol-manager.service" ]; then verify_backup_file "$BACKUP_DIR/helper-wol-manager.service" 644; install -m 0644 "$BACKUP_DIR/helper-wol-manager.service" "$HELPER_DAEMON_UNIT"; else rm -f "$HELPER_DAEMON_UNIT"; fi
+  if [ -e "$BACKUP_DIR/helper-wol-manager-api.service" ] || [ -L "$BACKUP_DIR/helper-wol-manager-api.service" ]; then verify_backup_file "$BACKUP_DIR/helper-wol-manager-api.service" 644; install -m 0644 "$BACKUP_DIR/helper-wol-manager-api.service" "$HELPER_API_UNIT"; else rm -f "$HELPER_API_UNIT"; fi
+  if [ -e "$BACKUP_DIR/helper-logrotate-wol-manager" ] || [ -L "$BACKUP_DIR/helper-logrotate-wol-manager" ]; then verify_backup_file "$BACKUP_DIR/helper-logrotate-wol-manager" 644; install -m 0644 "$BACKUP_DIR/helper-logrotate-wol-manager" "$HELPER_LOGROTATE"; else rm -f "$HELPER_LOGROTATE"; fi
+  if [ -e "$BACKUP_DIR/doc-wol.example.yaml" ] || [ -L "$BACKUP_DIR/doc-wol.example.yaml" ]; then verify_backup_file "$BACKUP_DIR/doc-wol.example.yaml" 644; install -m 0644 "$BACKUP_DIR/doc-wol.example.yaml" "$DOC_CONFIG_EXAMPLE"; else rm -f "$DOC_CONFIG_EXAMPLE"; fi
   if [ -e "$BACKUP_DIR/bash-completion-wol" ] || [ -L "$BACKUP_DIR/bash-completion-wol" ]; then verify_backup_file "$BACKUP_DIR/bash-completion-wol" 644; install -m 0644 "$BACKUP_DIR/bash-completion-wol" "$COMPLETION"; else rm -f "$COMPLETION"; fi
   if [ -e "$BACKUP_DIR/release.conf" ] || [ -L "$BACKUP_DIR/release.conf" ]; then verify_backup_file "$BACKUP_DIR/release.conf" 640; install -m 0640 "$BACKUP_DIR/release.conf" "$RELEASE_CONFIG"; else rm -f "$RELEASE_CONFIG"; fi
   if [ ! -f "$BACKUP_DIR/install.sh" ]; then
@@ -866,12 +1145,21 @@ install_candidate() {
   if [ "$ACTION" = update ]; then
     show_comparison
     if [ "$UPDATE_NEEDED" -ne 1 ]; then
-      repair_logrotate_installation
-      migrate_legacy_combined_service
-      return 0
+      if [ "$current" != "$CANDIDATE_VERSION" ] || [ "$current_revision" != "$CANDIDATE_REVISION" ] || [ "$(installed_channel)" != "$CHANNEL" ]; then
+        return 0
+      fi
+      REPAIR_ONLY=1
+      info "Version déjà installée: contrôle et réparation de conformité des ressources système"
+      capture_service_state
+      choose_service_mode
+      if installation_is_conformant; then
+        success "Installation conforme: aucune modification nécessaire"
+        return 0
+      fi
+    else
+      version_lt "$CANDIDATE_VERSION" "$current" && [ "$ALLOW_DOWNGRADE" -ne 1 ] && die "Rétrogradation $current vers $CANDIDATE_VERSION refusée"
+      confirm "Installer cette mise à jour ?" || { log "Mise à jour annulée"; return 0; }
     fi
-    version_lt "$CANDIDATE_VERSION" "$current" && [ "$ALLOW_DOWNGRADE" -ne 1 ] && die "Rétrogradation $current vers $CANDIDATE_VERSION refusée"
-    confirm "Installer cette mise à jour ?" || { log "Mise à jour annulée"; return 0; }
   fi
   validate_candidate_config
   capture_service_state
@@ -883,40 +1171,31 @@ install_candidate() {
   if [ "$PREVIOUS_API_ACTIVE" -ne 0 ] && [ "$LEGACY_COMBINED_SERVICE" -eq 0 ]; then
     run systemctl stop wol-manager-api.service
   fi
-  install -m 0755 "$CANDIDATE" "$BIN.new.$$"
-  mv -f "$BIN.new.$$" "$BIN"
-  install -m 0755 "$INSTALLER_CANDIDATE" "$HELPER.new.$$"
-  mv -f "$HELPER.new.$$" "$HELPER"
+  if [ "$REPAIR_ONLY" -eq 0 ] || ! file_is_conformant "$BIN" 755 "$CANDIDATE_HASH"; then
+    install -m 0755 "$CANDIDATE" "$BIN.new.$$"
+    mv -f "$BIN.new.$$" "$BIN"
+  fi
+  if [ "$REPAIR_ONLY" -eq 0 ] || ! file_is_conformant "$HELPER" 755 "$INSTALLER_HASH"; then
+    install -m 0755 "$INSTALLER_CANDIDATE" "$HELPER.new.$$"
+    mv -f "$HELPER.new.$$" "$HELPER"
+  fi
   "$BIN" completion bash >"$TMP_WORK/bash-completion-wol" || die "Génération de l'autocomplétion Bash impossible"
   install -m 0644 "$TMP_WORK/bash-completion-wol" "$COMPLETION.new.$$"
   [ "$TEST_MODE" = 1 ] || chown root:root "$COMPLETION.new.$$"
   mv -f "$COMPLETION.new.$$" "$COMPLETION"
   if [ "$SCRIPT_DIR" != "$HELPER_DIR" ]; then
     install -m 0644 "$SCRIPT_DIR/packaging/release-public.pem" "$HELPER_DIR/packaging/release-public.pem"
-    install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$HELPER_DIR/configs/wol.example.yaml"
   fi
-  write_daemon_unit "$HELPER_DIR/packaging/systemd/wol-manager.service"
-  write_api_unit "$HELPER_DIR/packaging/systemd/wol-manager-api.service"
-  install -m 0644 "$SCRIPT_DIR/configs/wol.example.yaml" "$(path /usr/share/doc/wol-manager/wol.example.yaml)"
-  [ "$INSTALL_DAEMON" -eq 0 ] || write_daemon_unit "$UNIT"
-  [ "$INSTALL_API" -eq 0 ] || write_api_unit "$API_UNIT"
-  logrotate_source="$SCRIPT_DIR/packaging/logrotate/wol-manager"
-  if [ -f "$logrotate_source" ]; then
-    install_logrotate_resource "$logrotate_source" "$HELPER_DIR/packaging/logrotate/wol-manager"
-    install_logrotate_resource "$HELPER_DIR/packaging/logrotate/wol-manager" "$LOGROTATE"
-  elif [ "$ACTION" = update ]; then
-    if [ -f "$LOGROTATE" ]; then
-      install_logrotate_resource "$LOGROTATE" "$LOGROTATE"
-      warn "Ressource Logrotate absente de l'ancien agencement; configuration existante conservée"
-    else
-      warn "Ressource Logrotate absente de l'ancien agencement; rotation Logrotate non installée pendant cette mise à jour"
-    fi
-  else
-    die "Ressource Logrotate absente: $logrotate_source"
+  install_target_resources
+  if [ "$TEST_MODE" = 1 ] && [ "${WOL_TEST_INTERRUPT_AFTER_RESOURCES:-0}" = 1 ]; then
+    kill -TERM "$$"
   fi
   umask 027
   printf 'repository=%s\ndefault_channel=main\ninstalled_channel=%s\ninstalled_version=%s\nsource_revision=%s\npublication_commit=%s\n' \
-    "$REPOSITORY" "$CHANNEL" "$CANDIDATE_VERSION" "$CANDIDATE_REVISION" "$PUBLICATION_COMMIT" >"$RELEASE_CONFIG"
+    "$REPOSITORY" "$CHANNEL" "$CANDIDATE_VERSION" "$CANDIDATE_REVISION" "$PUBLICATION_COMMIT" >"$TMP_WORK/release.conf"
+  install -m 0640 "$TMP_WORK/release.conf" "$RELEASE_CONFIG.new.$$"
+  [ "$TEST_MODE" = 1 ] || chown root:root "$RELEASE_CONFIG.new.$$"
+  mv -f "$RELEASE_CONFIG.new.$$" "$RELEASE_CONFIG"
   "$BIN" version >>"$LOG_FILE" 2>&1 || die "Le binaire installé ne démarre pas"
   if [ -f "$CONFIG" ]; then
     post_config_check_output="$TMP_WORK/post-config-check.out"
@@ -939,6 +1218,10 @@ install_candidate() {
       esac
     fi
   fi
+  if [ "$LEGACY_COMBINED_SERVICE" -eq 1 ]; then
+    success "Migration systemd terminée; les états actif et activé ont été conservés"
+  fi
+  verify_post_installation
   success "Installation atomique terminée: $CANDIDATE_VERSION ($CANDIDATE_REVISION)"
 }
 run_setup_if_requested() {

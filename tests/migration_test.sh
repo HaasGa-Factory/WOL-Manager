@@ -96,7 +96,7 @@ run_migration "$ROOT" >"$WORK/idempotent.log"
   || fail 'une sauvegarde inutile a été créée au second passage'
 assert_contains "$WORK/idempotent.log" 'déjà installé'
 
-for LEGACY_VERSION in 1.2.1 1.2.3; do
+for LEGACY_VERSION in 1.2.1 1.2.3 1.4.1 1.4.3 1.4.5; do
   echo "[migration] simulation sans modification depuis $LEGACY_VERSION"
   DRY="$WORK/dry-$LEGACY_VERSION"
   prepare_root "$DRY" "$LEGACY_VERSION"
@@ -107,9 +107,9 @@ done
 
 echo '[migration] version hors périmètre refusée sans modification'
 UNSUPPORTED="$WORK/unsupported"
-prepare_root "$UNSUPPORTED" 1.4.1
+prepare_root "$UNSUPPORTED" 1.4.6
 if run_migration "$UNSUPPORTED" >"$WORK/unsupported.log" 2>&1; then
-  fail 'version 1.4.1 acceptée par un bootstrap inutile'
+  fail 'version future 1.4.6 acceptée par un bootstrap prévu jusqu’à 1.4.5'
 fi
 assert_contains "$UNSUPPORTED/usr/local/lib/wol-manager/install.sh" 'old installer'
 assert_contains "$WORK/unsupported.log" 'version installée non prise en charge'

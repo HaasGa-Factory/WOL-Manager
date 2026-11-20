@@ -6,6 +6,10 @@
 
 - une configuration structurellement valide reste acceptée lorsque certains réseaux distants, VLAN, interfaces ou transports ne sont pas disponibles sur l'hôte actuel ; ces machines restent signalées `ready: false` et aucun réveil sans transport n'est autorisé ;
 - après restauration d'une sauvegarde, WoL Manager avertit lorsque aucun réseau déclaré ne correspond à un sous-réseau IPv4 directement connecté, sans modifier ni supprimer les réseaux et machines restaurés.
+- les ressources système de la version cible (Logrotate, modèles systemd et configuration exemple) sont maintenant couvertes par le manifeste signé, téléchargées avec leur SHA-256 et contrôlées après installation ;
+- une mise à jour vers la même version répare les ressources ou permissions manquantes sans modifier une installation déjà conforme ;
+- une ressource obligatoire absente déclenche désormais un échec et un rollback au lieu d'un résultat global de succès ;
+- le rollback restaure également les copies auxiliaires conservées sous `/usr/local/lib/wol-manager` et `/usr/share/doc/wol-manager`.
 
 ### Migration depuis les anciennes versions
 
@@ -27,7 +31,7 @@ printf '%s\n' "$publication" | grep -Eq '^[0-9a-f]{40}$' || exit 1
 curl -fSLo upgrade-network-validation.sh \
   "https://raw.githubusercontent.com/HaasGa-Factory/WOL-Manager/$publication/scripts/migration/upgrade-network-validation.sh"
 
-echo '3c1927909a0f118b568695b4e884878bef9bfd241fcc4f780f6a04fbe8054995  upgrade-network-validation.sh' \
+echo '60de23bb3062ffbbbb508220ced9a0f2146a83b392d55c2fe87934d946f1ae4f  upgrade-network-validation.sh' \
   | sha256sum -c -
 
 chmod 700 upgrade-network-validation.sh

@@ -272,8 +272,16 @@ make_distribution() {
   arm64_sha=$(sha256sum "$directory/wol-linux-arm64" | awk '{print $1}')
   cp "$REPO/install.sh" "$directory/install.sh"
   chmod +x "$directory/install.sh"
-  local installer_sha
+  cp "$REPO/configs/wol.example.yaml" "$directory/wol.example.yaml"
+  cp "$REPO/packaging/systemd/wol-manager.service" "$directory/wol-manager.service"
+  cp "$REPO/packaging/systemd/wol-manager-api.service" "$directory/wol-manager-api.service"
+  cp "$REPO/packaging/logrotate/wol-manager" "$directory/wol-manager.logrotate"
+  local installer_sha config_sha daemon_unit_sha api_unit_sha logrotate_sha
   installer_sha=$(sha256sum "$directory/install.sh" | awk '{print $1}')
+  config_sha=$(sha256sum "$directory/wol.example.yaml" | awk '{print $1}')
+  daemon_unit_sha=$(sha256sum "$directory/wol-manager.service" | awk '{print $1}')
+  api_unit_sha=$(sha256sum "$directory/wol-manager-api.service" | awk '{print $1}')
+  logrotate_sha=$(sha256sum "$directory/wol-manager.logrotate" | awk '{print $1}')
   cat >"$directory/manifest.json" <<EOF
 {
   "manifest_version": 2,
@@ -283,6 +291,14 @@ make_distribution() {
   "key_id": "wol-manager-2026-01",
   "installer_file": "install.sh",
   "installer_sha256": "$installer_sha",
+  "config_example_file": "wol.example.yaml",
+  "config_example_sha256": "$config_sha",
+  "systemd_daemon_file": "wol-manager.service",
+  "systemd_daemon_sha256": "$daemon_unit_sha",
+  "systemd_api_file": "wol-manager-api.service",
+  "systemd_api_sha256": "$api_unit_sha",
+  "logrotate_file": "wol-manager.logrotate",
+  "logrotate_sha256": "$logrotate_sha",
   "linux_amd64_file": "wol-linux-amd64",
   "linux_amd64_sha256": "$amd64_sha",
   "linux_arm64_file": "wol-linux-arm64",
@@ -752,8 +768,38 @@ run_installer "$PAYLOAD" "$ROOT_LEGACY_LAYOUT" amd64 --non-interactive --yes --s
 rm -f "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
 rm -f "$ROOT_LEGACY_LAYOUT/etc/logrotate.d/wol-manager"
 run_update "$ROOT_LEGACY_LAYOUT" main --yes --non-interactive >"$WORK/legacy-layout-update.log" 2>&1
-assert_contains "$WORK/legacy-layout-update.log" "rotation Logrotate non installée"
-[[ $("$ROOT_LEGACY_LAYOUT/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "la ressource logrotate optionnelle a bloqué la mise à jour"
+assert_file "$ROOT_LEGACY_LAYOUT/etc/logrotate.d/wol-manager"
+assert_file "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+cmp -s "$REPO/packaging/logrotate/wol-manager" "$ROOT_LEGACY_LAYOUT/etc/logrotate.d/wol-manager" \
+  || fail "la migration 1.2.1 n'a pas installé la ressource Logrotate cible"
+assert_not_contains "$WORK/legacy-layout-update.log" "rotation Logrotate non installée"
+[[ $("$ROOT_LEGACY_LAYOUT/usr/local/bin/wol" version) = 1.0.0-beta.2 ]] || fail "la réparation logrotate a bloqué la mise à jour"
+
+echo "[réparation] même version et ressources système supprimées"
+rm -f "$ROOT_LEGACY_LAYOUT/etc/bash_completion.d/wol-manager"
+rm -f "$ROOT_LEGACY_LAYOUT/etc/logrotate.d/wol-manager"
+rm -f "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+rm -f "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/systemd/wol-manager-api.service"
+run_update "$ROOT_LEGACY_LAYOUT" main --yes --non-interactive >"$WORK/same-version-repair.log" 2>&1
+assert_file "$ROOT_LEGACY_LAYOUT/etc/bash_completion.d/wol-manager"
+assert_file "$ROOT_LEGACY_LAYOUT/etc/logrotate.d/wol-manager"
+assert_file "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/logrotate/wol-manager"
+assert_file "$ROOT_LEGACY_LAYOUT/usr/local/lib/wol-manager/packaging/systemd/wol-manager-api.service"
+assert_contains "$WORK/same-version-repair.log" "Installation conforme"
+
+echo "[ressource obligatoire] absence distante bloquante"
+ROOT_MISSING_RESOURCE="$WORK/root-missing-resource"
+prepare_root "$ROOT_MISSING_RESOURCE" 13
+run_installer "$PAYLOAD" "$ROOT_MISSING_RESOURCE" amd64 --non-interactive --yes --service cli >/dev/null
+cp "$REMOTE/main/wol-manager.logrotate" "$WORK/mandatory-logrotate.saved"
+rm -f "$REMOTE/main/wol-manager.logrotate"
+if run_update "$ROOT_MISSING_RESOURCE" main --yes --non-interactive >"$WORK/missing-resource.log" 2>&1; then
+  fail "une mise à jour sans ressource Logrotate cible a annoncé un succès"
+fi
+mv "$WORK/mandatory-logrotate.saved" "$REMOTE/main/wol-manager.logrotate"
+assert_contains "$WORK/missing-resource.log" "Ressource système signée indisponible"
+[[ $("$ROOT_MISSING_RESOURCE/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] \
+  || fail "l'échec de ressource obligatoire a remplacé le binaire"
 
 echo "[9/16] mise à jour main et préservation des données"
 mkdir -p "$ROOT12/etc/wol-manager/secrets" "$ROOT12/var/lib/wol-manager" "$ROOT12/var/log/wol-manager"
@@ -804,6 +850,7 @@ LOGROTATE_REPAIRED_SHA=$(sha256sum "$ROOT12/etc/logrotate.d/wol-manager" | awk '
 run_update "$ROOT12" main --yes --non-interactive >"$WORK/current-idempotent.log"
 [[ $(sha256sum "$ROOT12/etc/logrotate.d/wol-manager" | awk '{print $1}') = "$LOGROTATE_REPAIRED_SHA" ]] \
   || fail "la réparation logrotate n'est pas idempotente"
+assert_contains "$WORK/current-idempotent.log" "Installation conforme: aucune modification nécessaire"
 run_update "$ROOT12" main --check --non-interactive >"$WORK/current.log"
 assert_contains "$WORK/current.log" "est à jour"
 
@@ -935,9 +982,21 @@ run_installer "$PAYLOAD" "$ROOT_ROLL" amd64 --non-interactive --yes --service in
 printf 'ancienne complétion WoL Manager\n' >"$ROOT_ROLL/etc/bash_completion.d/wol-manager"
 printf 'ancienne rotation\n' >"$ROOT_ROLL/etc/logrotate.d/wol-manager"
 cp "$REPO/configs/wol.example.yaml" "$ROOT_ROLL/etc/wol-manager/wol.yaml"
+ROLL_HELPER_CONFIG_SHA=$(sha256sum "$ROOT_ROLL/usr/local/lib/wol-manager/configs/wol.example.yaml" | awk '{print $1}')
+ROLL_HELPER_DAEMON_SHA=$(sha256sum "$ROOT_ROLL/usr/local/lib/wol-manager/packaging/systemd/wol-manager.service" | awk '{print $1}')
+ROLL_DOC_CONFIG_SHA=$(sha256sum "$ROOT_ROLL/usr/share/doc/wol-manager/wol.example.yaml" | awk '{print $1}')
 : >"$ROOT_ROLL/systemd-state/enabled"
 : >"$ROOT_ROLL/systemd-state/active"
 make_distribution "$REMOTE/main" 1.0.0-beta.4 dddddddddddddddddddddddddddddddddddddddd main 1
+printf '\n# ressource candidate différente pour tester le rollback\n' >>"$REMOTE/main/wol.example.yaml"
+printf '\n# unité candidate différente pour tester le rollback\n' >>"$REMOTE/main/wol-manager.service"
+ROLL_CANDIDATE_CONFIG_SHA=$(sha256sum "$REMOTE/main/wol.example.yaml" | awk '{print $1}')
+ROLL_CANDIDATE_DAEMON_SHA=$(sha256sum "$REMOTE/main/wol-manager.service" | awk '{print $1}')
+sed -i "s/\(\"config_example_sha256\": \"\)[0-9a-f]*/\1$ROLL_CANDIDATE_CONFIG_SHA/" "$REMOTE/main/manifest.json"
+sed -i "s/\(\"systemd_daemon_sha256\": \"\)[0-9a-f]*/\1$ROLL_CANDIDATE_DAEMON_SHA/" "$REMOTE/main/manifest.json"
+openssl pkeyutl -sign -rawin -inkey "$PRIVATE_KEY" -in "$REMOTE/main/manifest.json" -out "$REMOTE/main/signature.bin"
+openssl base64 -A -in "$REMOTE/main/signature.bin" -out "$REMOTE/main/manifest.json.sig"
+printf '\n' >>"$REMOTE/main/manifest.json.sig"
 if APT_LOG="$WORK/apt.log" GO_LOG="$WORK/go.log" SYSTEMD_STATE="$ROOT_ROLL/systemd-state" \
   REMOTE_DIR="$REMOTE" REMOTE_CHANNEL=main PUBLICATION_COMMIT="$PUBLICATION_COMMIT" \
   WOL_ROOT="$ROOT_ROLL" WOL_OS_RELEASE="$ROOT_ROLL/os-release" WOL_ARCH=amd64 WOL_TEST_MODE=1 WOL_TEST_UNAME=Linux WOL_TEST_SYSTEMD=1 \
@@ -950,8 +1009,24 @@ assert_file "$ROOT_ROLL/systemd-state/enabled"
 assert_file "$ROOT_ROLL/systemd-state/active"
 assert_contains "$ROOT_ROLL/etc/bash_completion.d/wol-manager" "ancienne complétion WoL Manager"
 assert_contains "$ROOT_ROLL/etc/logrotate.d/wol-manager" "ancienne rotation"
+[[ $(sha256sum "$ROOT_ROLL/usr/local/lib/wol-manager/configs/wol.example.yaml" | awk '{print $1}') = "$ROLL_HELPER_CONFIG_SHA" ]] || fail "rollback de la configuration exemple embarquée absent"
+[[ $(sha256sum "$ROOT_ROLL/usr/local/lib/wol-manager/packaging/systemd/wol-manager.service" | awk '{print $1}') = "$ROLL_HELPER_DAEMON_SHA" ]] || fail "rollback du modèle systemd embarqué absent"
+[[ $(sha256sum "$ROOT_ROLL/usr/share/doc/wol-manager/wol.example.yaml" | awk '{print $1}') = "$ROLL_DOC_CONFIG_SHA" ]] || fail "rollback de la configuration exemple documentée absent"
 assert_contains "$ROOT_ROLL/usr/share/bash-completion/completions/wol" "_comp_cmd_wol"
 assert_contains "$WORK/rollback.log" "Rollback terminé"
+
+echo "[interruption] signal TERM après déploiement des ressources"
+ROOT_INTERRUPTED="$WORK/root-interrupted"
+prepare_root "$ROOT_INTERRUPTED" 13
+run_installer "$PAYLOAD" "$ROOT_INTERRUPTED" amd64 --non-interactive --yes --service cli >/dev/null
+INTERRUPTED_CONFIG_SHA=$(sha256sum "$ROOT_INTERRUPTED/usr/local/lib/wol-manager/configs/wol.example.yaml" | awk '{print $1}')
+if WOL_TEST_INTERRUPT_AFTER_RESOURCES=1 run_update "$ROOT_INTERRUPTED" main --yes --non-interactive >"$WORK/interrupted.log" 2>&1; then
+  fail "une interruption TERM a été annoncée comme un succès"
+fi
+assert_contains "$WORK/interrupted.log" "Rollback terminé"
+[[ $("$ROOT_INTERRUPTED/usr/local/bin/wol" version) = 1.0.0-beta.1 ]] || fail "l'interruption n'a pas restauré le binaire"
+[[ $(sha256sum "$ROOT_INTERRUPTED/usr/local/lib/wol-manager/configs/wol.example.yaml" | awk '{print $1}') = "$INTERRUPTED_CONFIG_SHA" ]] \
+  || fail "l'interruption n'a pas restauré les ressources auxiliaires"
 
 echo "[14/16] échec initial sans installation partielle"
 PAYLOAD_FAIL="$WORK/payload-fail"

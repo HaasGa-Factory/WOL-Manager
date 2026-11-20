@@ -145,6 +145,14 @@ amd64_sha=$(sha256sum "$work/wol-linux-amd64" | awk '{print $1}')
 arm64_sha=$(sha256sum "$work/wol-linux-arm64" | awk '{print $1}')
 install -m 0755 install.sh "$work/install.sh"
 installer_sha=$(sha256sum "$work/install.sh" | awk '{print $1}')
+install -m 0644 configs/wol.example.yaml "$work/wol.example.yaml"
+install -m 0644 packaging/systemd/wol-manager.service "$work/wol-manager.service"
+install -m 0644 packaging/systemd/wol-manager-api.service "$work/wol-manager-api.service"
+install -m 0644 packaging/logrotate/wol-manager "$work/wol-manager.logrotate"
+config_example_sha=$(sha256sum "$work/wol.example.yaml" | awk '{print $1}')
+systemd_daemon_sha=$(sha256sum "$work/wol-manager.service" | awk '{print $1}')
+systemd_api_sha=$(sha256sum "$work/wol-manager-api.service" | awk '{print $1}')
+logrotate_sha=$(sha256sum "$work/wol-manager.logrotate" | awk '{print $1}')
 govulncheck_version=$(govulncheck -version 2>&1 | sed -n 's/^Scanner: //p' | head -n1 | tr -d '\r')
 required_govulncheck=govulncheck@v1.9.0
 [[ "$govulncheck_version" == "$required_govulncheck" ]] || {
@@ -165,6 +173,14 @@ cat >"$work/manifest.json" <<EOF
   "key_id": "wol-manager-2026-01",
   "installer_file": "install.sh",
   "installer_sha256": "$installer_sha",
+  "config_example_file": "wol.example.yaml",
+  "config_example_sha256": "$config_example_sha",
+  "systemd_daemon_file": "wol-manager.service",
+  "systemd_daemon_sha256": "$systemd_daemon_sha",
+  "systemd_api_file": "wol-manager-api.service",
+  "systemd_api_sha256": "$systemd_api_sha",
+  "logrotate_file": "wol-manager.logrotate",
+  "logrotate_sha256": "$logrotate_sha",
   "linux_amd64_file": "wol-linux-amd64",
   "linux_amd64_sha256": "$amd64_sha",
   "linux_arm64_file": "wol-linux-arm64",
@@ -181,11 +197,15 @@ openssl pkeyutl -verify -rawin -pubin -inkey "$PUBLIC_KEY" \
 
 (
   cd "$work"
-  sha256sum wol-linux-amd64 wol-linux-arm64 install.sh manifest.json manifest.json.sig >SHA256SUMS
+  sha256sum wol-linux-amd64 wol-linux-arm64 install.sh wol.example.yaml \
+    wol-manager.service wol-manager-api.service wol-manager.logrotate \
+    manifest.json manifest.json.sig >SHA256SUMS
 )
 
-for artifact in wol-linux-amd64 wol-linux-arm64 install.sh manifest.json manifest.json.sig SHA256SUMS; do
-  install -m "$(case "$artifact" in wol-*|install.sh) echo 0755;; *) echo 0644;; esac)" \
+for artifact in wol-linux-amd64 wol-linux-arm64 install.sh wol.example.yaml \
+  wol-manager.service wol-manager-api.service wol-manager.logrotate \
+  manifest.json manifest.json.sig SHA256SUMS; do
+  install -m "$(case "$artifact" in wol-linux-*|install.sh) echo 0755;; *) echo 0644;; esac)" \
     "$work/$artifact" "$DIST/$artifact"
 done
 

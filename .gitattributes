@@ -11,4 +11,8 @@ dist/manifest.json -text
 dist/manifest.json.sig -text
 dist/SHA256SUMS -text
 dist/install.sh -text
+dist/wol.example.yaml -text
+dist/wol-manager.service -text
+dist/wol-manager-api.service -text
+dist/wol-manager.logrotate -text
 dist/wol-linux-* binary

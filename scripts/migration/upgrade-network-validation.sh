@@ -15,7 +15,7 @@ usage() {
   cat <<'EOF'
 Usage: sudo ./scripts/migration/upgrade-network-validation.sh [OPTIONS]
 
-Remplace uniquement l'ancien installateur système après vérification du
+Amorce une mise à jour fiable depuis un ancien installateur système après vérification du
 manifeste officiel, de sa signature Ed25519 et du SHA-256 de l'installateur.
 La configuration, les secrets, les états, le binaire et les services ne sont
 pas modifiés. Exécutez ensuite la commande wol update habituelle.
@@ -81,7 +81,7 @@ fi
 
 INSTALLED_VERSION=$($BIN version 2>/dev/null | head -n1 | tr -d '\r')
 case "$INSTALLED_VERSION" in
-  1.2.1|1.2.3|1.3.0) ;;
+  1.2.1|1.2.3|1.3.0|1.4.1|1.4.2|1.4.3|1.4.4|1.4.5) ;;
   *)
     echo "ERREUR: version installée non prise en charge par ce bootstrap: ${INSTALLED_VERSION:-inconnue}" >&2
     echo "Utilisez la procédure de mise à jour correspondant à votre version." >&2
@@ -171,7 +171,7 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-BACKUP_DIR="$BACKUP_ROOT/bootstrap-network-validation-$STAMP.$$"
+BACKUP_DIR="$BACKUP_ROOT/bootstrap-installer-$STAMP.$$"
 if [ "$TEST_MODE" = 1 ]; then
   install -d -m 0700 "$BACKUP_DIR"
   [ ! -f "$INSTALLER" ] || install -m 0755 "$INSTALLER" "$BACKUP_DIR/install.sh"

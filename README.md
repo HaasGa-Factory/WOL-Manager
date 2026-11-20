@@ -115,7 +115,11 @@ source /etc/bash_completion.d/wol-manager
 source <(wol completion bash)
 ```
 
-L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose cinq choix systemd : daemon NUT, API, daemon + API (choix 3), CLI seule, ou installation des deux unités sans activation. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
+L'installateur sélectionne automatiquement le binaire Linux AMD64/ARM64 signé présent dans `dist/`, contrôle les dépendances et propose cinq choix systemd : daemon NUT, API, daemon + API (choix 3), CLI seule, ou installation des deux unités sans activation. Le manifeste signé couvre aussi la copie de l'installateur système afin que les corrections d'installation suivent les mises à jour futures. Il couvre également les modèles systemd, la configuration Logrotate et l'exemple YAML de la version cible. Le contrôle final refuse un succès partiel si l'un de ces composants obligatoires est absent ou altéré. Il n'installe, ne télécharge et n'utilise jamais Go. Si aucun artefact compatible et vérifiable n'est disponible, l'installation s'arrête proprement.
+
+Pour migrer depuis un ancien installateur qui ne sait pas encore déployer ces
+ressources, utilisez la procédure d'amorçage authentifiée de
+[Mises à jour et rollback](docs/updates.md).
 
 Le [guide d'installation détaille les cinq choix ligne par ligne](docs/installation.md#choix-du-mode-systemd), notamment les services activés, les fonctions disponibles et les limites de chaque mode. En résumé : le choix `1` assure l'automatisation NUT sans API, le choix `2` fournit l'API sans moteur de jobs permanent, le choix `3` active les deux composants, le choix `4` conserve uniquement la CLI et le choix `5` prépare les deux unités sans les démarrer.
 
